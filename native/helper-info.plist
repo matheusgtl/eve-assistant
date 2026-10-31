@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.matheus.eve.listen</string>
+  <key>CFBundleName</key>
+  <string>E.V.E Escuta</string>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>A E.V.E usa o microfone para ouvir seus comandos de voz.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>A E.V.E transcreve sua fala para entender o que você pede.</string>
+</dict>
+</plist>

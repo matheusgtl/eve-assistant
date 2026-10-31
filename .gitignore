@@ -1,0 +1,34 @@
+# Dependências e saída de build
+node_modules/
+dist/
+
+# O ícone inteiro é GERADO: make-icon.swift desenha o icon.png e o pack.sh
+# converte em .icns. O que vale versionar é o desenho em código.
+build/icon.png
+build/icon.icns
+build/icon.iconset/
+
+# Segredos. As chaves de verdade moram fora do projeto, em
+# ~/Library/Application Support/E.V.E/config.json — mas .env fica barrado
+# aqui de qualquer forma, porque um .env esquecido é a forma mais comum de
+# vazar chave. O modelo versionado é o .env.example.
+.env
+.env.*
+!.env.example
+
+# Helpers nativos COMPILADOS. O fonte .swift é que vale; o binário sai de
+# `npm run native` em cada máquina — e versionar binário de 90 KB que muda a
+# cada compilação só engorda o histórico.
+native/ev-listen
+native/ev-pdf
+native/ev-cal
+
+# Cópias que o empacotamento deixa na raiz. O app carrega renderer/index.html
+# (main.js:1240); estas são rastro do build, idênticas às de renderer/, e
+# versionar as duas versões garante que um dia elas divirjam em silêncio.
+/esfera.js
+/index.html
+/interface.js
+
+# macOS
+.DS_Store

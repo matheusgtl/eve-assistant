@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline' 'self'; script-src 'self' 'unsafe-inline'" />
+<title>E.V.E</title>
+<style>
+  :root {
+    /* Preenchidos pelo tema (ver TEMAS no interface.js). */
+    --fundo: #04070c;
+    --painel: #070d16;
+    --borda: #12202f;
+    --texto: #cfe3f2;
+    --fraco: #4e6e88;
+    --ac: #5fd0ff;
+    --ac2: #9b8cff;
+    --ok: #4ade80;
+    --meio: #fbbf24;
+    --alto: #f87171;
+    --erro: #ff8f8f;
+    --level: 0;
+    --barra-off: var(--borda);
+    --grade-fina: color-mix(in srgb, var(--ac) 7%, transparent);
+    --grade-forte: color-mix(in srgb, var(--ac) 13%, transparent);
+    --esfera-lado: 460px;
+  }
+
+  /* Ajustes que não saem só da troca de variáveis. No escuro o painel se
+     destaca por ser mais claro que o fundo; no claro é o contrário, e sem
+     sombra os quadros somem contra o fundo. */
+  :root[data-claro="1"] .quadro {
+    box-shadow: 0 1px 2px rgba(15, 30, 45, .06);
+  }
+  :root[data-claro="1"] .topo {
+    background: linear-gradient(180deg, var(--painel), var(--fundo));
+  }
+  /* A barra apagada era "mais escura que o painel"; no claro precisa ser
+     mais escura que o branco, e não some. */
+  :root[data-claro="1"] {
+    --grade-fina: color-mix(in srgb, var(--ac) 11%, transparent);
+    --grade-forte: color-mix(in srgb, var(--ac) 20%, transparent);
+    /* No claro a borda é clara demais para marcar bloco apagado: precisa de
+       um cinza próprio, mais escuro, para a barra continuar legível vazia. */
+    --barra-off: #c3cdd9;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  :root {
+    --mono: ui-monospace, "SF Mono", Menlo, monospace;
+    --texto-fonte: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  }
+  body {
+    background: var(--fundo);
+    color: var(--texto);
+    font: 400 13.5px/1.55 var(--mono);
+    height: 100%; overflow: hidden; user-select: none;
+    -webkit-font-smoothing: antialiased;
+    display: flex; flex-direction: column;
+  }
+
+  /* Moldura geral: quadros finos, cantos marcados, tudo monoespaçado. */
+  .quadro {
+    border: 1px solid var(--borda);
+    background: var(--painel);
+    border-radius: 8px;
+    position: relative;
+  }
+  .quadro > .titulo {
+    font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
+    color: var(--fraco); padding: 6px 9px 5px;
+    border-bottom: 1px solid var(--borda);
+    display: flex; align-items: center; gap: 5px;
+  }
+  .quadro > .titulo::before { content: "▸"; font-size: 9px; color: var(--ac); }
+  /* Um fio de luz no topo do quadro: dá relevo sem pesar o desenho. */
+  .quadro > .titulo {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--ac) 7%, transparent), transparent);
+  }
+
+  /* ------------------------------------------------------------ topo */
+  .topo {
+    -webkit-app-region: drag;
+    flex: 0 0 46px; display: flex; align-items: center;
+    padding: 0 12px 0 80px; gap: 10px;
+    border-bottom: 1px solid var(--borda);
+    background: linear-gradient(180deg, var(--painel), var(--fundo));
+    position: relative; z-index: 5;
+  }
+  .topo .marca { font-size: 10px; letter-spacing: .2em; color: var(--fraco); }
+  .topo .acoes { display: flex; gap: 6px; }
+  /* Botão de ícone: quadrado, traço fino, enche de cor ao passar o mouse.
+     O SVG herda a cor pelo currentColor, então ele acompanha o tema sozinho. */
+  .btn-icone {
+    -webkit-app-region: no-drag;
+    width: 34px; height: 34px; flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none; border: 1px solid var(--borda); border-radius: 7px;
+    color: var(--fraco); cursor: pointer; padding: 0;
+    transition: color .16s, border-color .16s, background-color .16s;
+  }
+  .btn-icone svg {
+    width: 19px; height: 19px; fill: none; stroke: currentColor;
+    stroke-width: 1.45; stroke-linecap: round; stroke-linejoin: round;
+  }
+  .btn-icone:hover {
+    color: var(--ac); border-color: var(--ac);
+    background: color-mix(in srgb, var(--ac) 12%, transparent);
+  }
+  .btn-icone:active { transform: translateY(1px); }
+
+  /* Sol e lua no mesmo ícone: aparece o do modo para onde o clique leva. */
+  /* Um ícone por vez: lua no escuro, sol no claro. O atributo data-claro no
+     <html> é o "ternário" — quem decide é o modo, e o CSS só obedece, sem
+     precisar reconstruir o SVG no JavaScript a cada clique. */
+  #btnClaro .sol { display: none; }
+  #btnClaro .lua { display: block; }
+  :root[data-claro="1"] #btnClaro .sol { display: block; }
+  :root[data-claro="1"] #btnClaro .lua { display: none; }
+
+  .topo .centro {
+    position: absolute; left: 0; right: 0; text-align: center; pointer-events: none;
+  }
+  .topo .centro .nome {
+    font-size: 19px; letter-spacing: .34em; color: var(--ac);
+    text-shadow: 0 0 14px color-mix(in srgb, var(--ac) 45%, transparent);
+  }
+  .topo .centro .sub { font-size: 9.5px; letter-spacing: .26em; color: var(--fraco); margin-top: 1px; }
+
+  .topo .relogio { margin-left: auto; text-align: right; }
+  .topo .relogio .h { font-size: 17px; color: var(--ac); letter-spacing: .08em; }
+  .topo .relogio .d { font-size: 9.5px; color: var(--fraco); letter-spacing: .12em; }
+
+  /* ------------------------------------------------------------ corpo */
+  .corpo {
+    flex: 1 1 auto; min-height: 0;
+    display: grid; grid-template-columns: 212px minmax(0, 1fr) 390px;
+    gap: 10px; padding: 10px;
+  }
+  .coluna { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+
+  /* ---------------------------------------------------- monitor (btop) */
+  .monitor .medidas { padding: 8px; display: flex; flex-direction: column; gap: 9px; }
+
+  .medida .linha {
+    display: flex; align-items: baseline; gap: 6px;
+    font-size: 11.5px; margin-bottom: 3px;
+  }
+  .medida .rot { color: var(--fraco); letter-spacing: .14em; }
+  .medida .val { margin-left: auto; color: var(--texto); }
+  .medida .det { font-size: 10px; color: var(--fraco); margin-top: 2px; letter-spacing: .04em; }
+
+  /* A barra é feita de blocos, como no btop: cada bloco tem a cor da FAIXA em
+     que ele está (verde no começo, amarelo no meio, vermelho no fim), e acende
+     conforme o uso sobe. Assim dá para ver "onde" está o uso, não só quanto. */
+  .barra { display: flex; gap: 1.5px; height: 9px; }
+  .barra i {
+    flex: 1; border-radius: 1px; background: var(--barra-off);
+    transition: background-color .25s linear;
+  }
+  .barra i.on-ok { background: var(--ok); }
+  .barra i.on-meio { background: var(--meio); }
+  .barra i.on-alto { background: var(--alto); }
+  .barra i.on-ok, .barra i.on-meio, .barra i.on-alto { opacity: 1; }
+
+  .valorCor.ok { color: var(--ok); }
+  .valorCor.meio { color: var(--meio); }
+  .valorCor.alto { color: var(--alto); }
+
+  .infos {
+    padding: 7px 8px; border-top: 1px solid var(--borda);
+    display: grid; grid-template-columns: auto 1fr; gap: 2px 10px; font-size: 10.5px;
+  }
+  .infos b { color: var(--fraco); font-weight: 400; letter-spacing: .14em; }
+  .infos span { color: var(--texto); text-align: right; }
+
+  /* ------------------------------------------------- blocos de estado */
+  /* ------------------------------------------------------------ centro */
+  /* Grade de blueprint atrás da esfera. Duas camadas: a fina de 34px dá a
+     textura, a grossa de 170px dá a estrutura. Bem apagada de propósito — ela
+     é para o fundo não ficar vazio, não para competir com a esfera. A máscara
+     radial apaga as bordas, senão a grade termina num corte reto. */
+  .palco::before {
+    content: ""; position: absolute; inset: -10%;
+    background-image:
+      linear-gradient(var(--grade-fina) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grade-fina) 1px, transparent 1px),
+      linear-gradient(var(--grade-forte) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grade-forte) 1px, transparent 1px);
+    background-size: 34px 34px, 34px 34px, 170px 170px, 170px 170px;
+    -webkit-mask-image: radial-gradient(ellipse at center, #000 35%, transparent 78%);
+    mask-image: radial-gradient(ellipse at center, #000 35%, transparent 78%);
+    pointer-events: none;
+    /* A grade acompanha a respiração da voz: some um pouco quando ela fala,
+       para a esfera ficar sozinha no momento em que ela importa.
+       SEM transição, de propósito. --level é reescrito a cada quadro enquanto
+       ela fala, e cada valor novo reiniciava esta transição de 300ms antes da
+       anterior acabar — o que deixava uma animação de composição permanente
+       em cima de um elemento grande, pintado com quatro degradês e cortado
+       por uma máscara radial. Era a parte mais cara da GPU. E a transição não
+       era necessária: o nível já chega suavizado do JS (nivelSuave), então a
+       opacidade varia macio sozinha. */
+    opacity: calc(1 - var(--level) * .35);
+  }
+  .palco > * { position: relative; }
+
+  .palco {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    position: relative;
+  }
+  .palco canvas { width: var(--esfera-lado); height: var(--esfera-lado); max-width: 100%; cursor: pointer; display: block; }
+
+  .estado {
+    margin-top: 10px; font-size: 10px; letter-spacing: .34em; text-transform: uppercase;
+    color: var(--fraco); min-height: 14px;
+  }
+  body.listening .estado { color: var(--ok); }
+  body.thinking  .estado { color: var(--ac2); }
+  body.speaking  .estado { color: var(--meio); }
+
+  .parcial-centro {
+    margin-top: 6px; max-width: 70%; text-align: center; font-size: 12px;
+    color: var(--fraco); font-style: italic; min-height: 18px;
+  }
+
+  /* Uma barra só, que respira com o volume: um elemento transformado é quase
+     de graça para a GPU; dezenas de barrinhas animadas não são. */
+  .onda {
+    margin-top: 14px; width: min(420px, 70%); height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, var(--ac), transparent);
+    opacity: calc(.18 + var(--level) * .8);
+    transform: scaleY(calc(1 + var(--level) * 6));
+  }
+  body.speaking .onda { background: linear-gradient(90deg, transparent, var(--meio), transparent); }
+  body.listening .onda { background: linear-gradient(90deg, transparent, var(--ok), transparent); }
+
+  /* ------------------------------------------------------------ direita */
+  .conversa .rolo {
+    flex: 1; overflow-y: auto; padding: 10px 11px; font-size: 13px; line-height: 1.65;
+    font-family: var(--texto-fonte);
+    user-select: text; scrollbar-width: thin;
+  }
+  .conversa .rolo::-webkit-scrollbar { width: 6px; }
+  .conversa .rolo::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fraco) 45%, transparent); border-radius: 6px;
+  }
+  .conversa .rolo::-webkit-scrollbar-thumb:hover { background: var(--fraco); }
+  .compositor textarea::-webkit-scrollbar { width: 6px; }
+  .compositor textarea::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fraco) 45%, transparent); border-radius: 6px;
+  }
+
+  .linha-log { margin-bottom: 9px; word-break: break-word; }
+  /* A fala dela ganha uma guia à esquerda: num rolo longo, é o que deixa ver
+     de relance onde começa cada resposta. */
+  .linha-log.eve {
+    border-left: 2px solid color-mix(in srgb, var(--ac) 45%, transparent);
+    padding-left: 8px; margin-left: 1px;
+  }
+  .linha-log.voce { padding-left: 11px; }
+  .linha-log .quem { color: var(--fraco); letter-spacing: .1em; }
+  .linha-log.eve .quem { color: var(--ac); }
+  .linha-log.eve .txt { color: var(--texto); }
+  .linha-log.voce .txt { color: color-mix(in srgb, var(--texto) 72%, var(--fraco)); }
+  .linha-log.sis { color: var(--fraco); font-size: 11.5px; }
+  .linha-log.erro .quem, .linha-log.erro .txt { color: var(--erro); }
+  .linha-log.lembrete .quem, .linha-log.lembrete .txt { color: var(--meio); }
+  .linha-log .ferr { color: var(--fraco); font-size: 11px; font-family: var(--mono); display: block; padding-left: 10px; }
+  .linha-log code {
+    background: var(--fundo); border: 1px solid var(--borda); border-radius: 2px; padding: 0 3px;
+  }
+
+  /* ------------------------------------------- compositor (anexo + texto) */
+  .quadro.conversa { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+  .compositor {
+    border-top: 1px solid var(--borda);
+    background: color-mix(in srgb, var(--fundo) 55%, var(--painel));
+    padding: 8px; display: flex; flex-direction: column; gap: 7px;
+    border-radius: 0 0 7px 7px;
+    transition: background-color .18s, box-shadow .18s;
+  }
+  /* Arrastar um arquivo para cá acende o compositor inteiro: o alvo é o
+     lugar onde você ia escrever, não um retângulo tracejado à parte. */
+  .compositor.sobre {
+    background: color-mix(in srgb, var(--ac) 10%, var(--painel));
+    box-shadow: inset 0 0 0 1px var(--ac);
+  }
+
+  .compositor textarea {
+    width: 100%; resize: none; min-height: 68px; max-height: 190px;
+    background: var(--fundo); border: 1px solid var(--borda); border-radius: 6px;
+    color: var(--texto); font: inherit; font-family: var(--texto-fonte);
+    font-size: 14px; line-height: 1.6;
+    padding: 9px 11px; outline: none; user-select: text; overflow-y: auto;
+    scrollbar-width: thin;
+    transition: border-color .16s, box-shadow .16s;
+  }
+  .compositor textarea::placeholder { color: var(--fraco); opacity: .75; }
+  .compositor textarea:focus {
+    border-color: var(--ac);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ac) 18%, transparent);
+  }
+
+  .barra-compositor { display: flex; align-items: center; gap: 8px; }
+  .barra-compositor .dica {
+    font-size: 10px; color: var(--fraco); letter-spacing: .06em;
+  }
+  .barra-compositor .dica b {
+    font-weight: 400; color: color-mix(in srgb, var(--texto) 60%, var(--fraco));
+  }
+  .barra-compositor .enviar {
+    margin-left: auto; cursor: pointer; font: inherit; font-size: 11px;
+    letter-spacing: .14em; text-transform: uppercase;
+    padding: 8px 16px; border-radius: 8px;
+    border: 1px solid var(--ac);
+    background: color-mix(in srgb, var(--ac) 14%, transparent);
+    color: var(--ac);
+    transition: background-color .16s;
+  }
+  .barra-compositor .enviar:hover { background: color-mix(in srgb, var(--ac) 26%, transparent); }
+  .barra-compositor .enviar:active { transform: translateY(1px); }
+
+  .anexado {
+    display: none; align-items: center; gap: 7px; font-size: 11.5px;
+    padding: 6px 9px; border-radius: 6px; color: var(--ac);
+    border: 1px solid color-mix(in srgb, var(--ac) 55%, var(--borda));
+    background: color-mix(in srgb, var(--ac) 10%, transparent);
+  }
+  .anexado.tem { display: flex; }
+  .anexado .clipe {
+    width: 13px; height: 13px; flex: 0 0 auto;
+    fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round;
+  }
+  .anexado span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .anexado .x {
+    margin-left: auto; cursor: pointer; border: none; background: none;
+    color: var(--fraco); font: inherit; font-size: 11px; padding: 0 2px;
+  }
+  .anexado .x:hover { color: var(--alto); }
+
+  .acoes-grandes { display: flex; flex-direction: column; gap: 6px; }
+  .linha-acoes { display: flex; gap: 6px; }
+  .linha-acoes .acao { flex: 1; }
+  /* O mute é um interruptor, não uma ação principal: ocupa o canto da linha. */
+  .acao.pequena {
+    flex: 0 0 auto; padding: 10px 12px; font-size: 10px; letter-spacing: .12em;
+  }
+  .acao.pequena.mudo {
+    border-color: var(--meio); color: var(--meio);
+    background: color-mix(in srgb, var(--meio) 12%, transparent);
+  }
+  .acao {
+    border: 1px solid var(--borda); border-radius: 7px; background: none;
+    transition: color .16s, border-color .16s, background-color .16s;
+    padding: 10px; cursor: pointer; font: inherit; font-size: 11.5px;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--fraco);
+  }
+  .acao:hover { color: var(--texto); }
+  .acao.perigo { border-color: color-mix(in srgb, var(--alto) 45%, var(--borda)); color: var(--alto); }
+  .acao.perigo:hover { background: color-mix(in srgb, var(--alto) 12%, transparent); }
+  .acao.mic.ligado {
+    border-color: var(--ok); color: var(--ok);
+    background: color-mix(in srgb, var(--ok) 12%, transparent);
+  }
+
+  /* ------------------------------------------------------------ rodapé */
+  .rodape {
+    flex: 0 0 22px; display: flex; align-items: center; gap: 14px;
+    padding: 0 12px; border-top: 1px solid var(--borda);
+    font-size: 9px; letter-spacing: .1em; color: var(--fraco);
+  }
+  .rodape b { color: color-mix(in srgb, var(--texto) 55%, var(--fraco)); font-weight: 400; }
+  .rodape .fim { margin-left: auto; }
+
+  /* --------------------------------------------------------------- telas */
+  .tela {
+    position: fixed; inset: 0; z-index: 30;
+    background: color-mix(in srgb, var(--fundo) 97%, transparent);
+    display: none; flex-direction: column; align-items: center;
+    padding: 46px 22px 18px;
+  }
+  .tela.show { display: flex; }
+  .tela > * { width: 100%; max-width: 560px; }
+  .tela h2 { font-size: 13px; letter-spacing: .24em; text-transform: uppercase; color: var(--ac); text-align: center; }
+  .tela .sub { color: var(--fraco); font-size: 11px; margin: 8px 0 14px; line-height: 1.6; }
+  .tela .sub a { color: var(--ac); text-decoration: none; cursor: pointer; }
+
+  .abas { display: flex; gap: 5px; margin-bottom: 14px; flex-wrap: wrap; justify-content: center; }
+  .aba {
+    background: none; border: 1px solid var(--borda); color: var(--fraco);
+    border-radius: 3px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 10px;
+    letter-spacing: .16em; text-transform: uppercase;
+  }
+  .aba.ativa { border-color: var(--ac); color: var(--ac); }
+
+  .folha { display: none; flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
+  .folha.ativa { display: block; }
+
+  .campo { margin-bottom: 14px; }
+  .divisor { height: 1px; background: var(--borda); margin: 20px 0 16px; }
+
+  /* ---------------------------------------- uso dos agentes */
+  /* A coluna pode ficar curta (janela no mínimo, ou tela pequena). Sem isto o
+     painel de agentes era simplesmente cortado fora da tela, e os provedores
+     do fim da lista — justamente as reservas — desapareciam sem aviso. */
+  .quadro.agentes { margin-top: 10px; min-height: 0; display: flex; flex-direction: column; }
+  .listaAgentes {
+    padding: 7px 8px 3px; display: flex; flex-direction: column; gap: 7px;
+    overflow-y: auto; min-height: 0; scrollbar-width: thin;
+  }
+  .listaAgentes::-webkit-scrollbar { width: 5px; }
+  .listaAgentes::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--fraco) 45%, transparent); border-radius: 5px;
+  }
+  /* Em janela curta os dois dividem o espaço: o monitor cede primeiro (as
+     medidas rolam), e o de agentes guarda altura para pelo menos dois
+     provedores — espremido só no título ele não informa nada. */
+  .quadro.monitor { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+  .monitor .medidas { overflow-y: auto; min-height: 0; scrollbar-width: thin; }
+  .quadro.agentes { min-height: 118px; }
+  .semAgente { font-size: 10px; color: var(--fraco); letter-spacing: .08em; padding: 2px 0 4px; }
+  .agente { display: flex; flex-direction: column; gap: 3px; }
+  .agente .linha1 {
+    display: flex; align-items: baseline; gap: 5px; font-size: 11px; line-height: 1.15;
+  }
+  .agente .nome { color: var(--texto); letter-spacing: .06em; }
+  .agente .nome.off { color: var(--fraco); }
+  .agente .tag {
+    font-size: 8.5px; letter-spacing: .1em; text-transform: uppercase;
+    border: 1px solid var(--borda); border-radius: 2px; padding: 0 3px; color: var(--fraco);
+  }
+  .agente .tag.on { color: var(--ac); border-color: var(--ac); }
+  .agente .tag.erro { color: var(--alto); border-color: var(--alto); }
+  .agente .num { margin-left: auto; color: var(--fraco); font-size: 10px; letter-spacing: .04em; }
+  /* Só a geometria. `background` aqui APAGAVA a barra inteira: esta regra tem
+     a mesma especificidade de `.barra i.on-ok` (0,2,1) e vem depois no arquivo,
+     então ganhava o desempate por ordem e pintava de cinza até os blocos
+     acesos. A cor vem de `.barra i` lá em cima, uma vez, para as duas barras. */
+  .agente .barra { display: flex; gap: 1px; height: 5px; }
+  .agente .barra i { flex: 1; }
+  /* Barra de fatia do dia: não é cota, então não usa a escala de perigo
+     (verde→vermelho). Cor neutra de acento, para ninguém ler "metade do
+     limite" onde está escrito "metade do trabalho do dia". */
+  .agente .barra.relativa i.aceso { background: color-mix(in srgb, var(--ac) 70%, transparent); }
+  .agente .det { font-size: 9px; color: var(--fraco); letter-spacing: .04em; }
+  .campo > label {
+    display: block; font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
+    color: var(--fraco); margin-bottom: 5px;
+  }
+  .campo .ajuda { font-size: 10px; color: var(--fraco); margin-top: 4px; line-height: 1.5; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 8px 10px; border-radius: 3px;
+    border: 1px solid var(--borda); background: var(--fundo); color: var(--texto);
+    font: inherit; font-size: 12px; outline: none; user-select: text;
+  }
+  input[type=text]:focus, input[type=password]:focus { border-color: var(--ac); }
+  input[type=range] { width: 190px; accent-color: var(--ac); vertical-align: middle; }
+  input[type=checkbox] { accent-color: var(--ac); }
+
+  .opcoes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .opcao {
+    border: 1px solid var(--borda); background: var(--painel); color: var(--fraco);
+    border-radius: 3px; padding: 7px 10px; cursor: pointer; text-align: left;
+    font: inherit; font-size: 10px; line-height: 1.4;
+  }
+  .opcao b { display: block; color: var(--texto); font-weight: 400; font-size: 11px; letter-spacing: .1em; }
+  .opcao.sel { border-color: var(--ac); color: var(--texto); }
+  .opcao .amostra { display: flex; gap: 3px; margin-top: 5px; }
+  .opcao .amostra i { width: 13px; height: 5px; border-radius: 1px; }
+
+  .linha-cfg { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .valor { font-size: 10px; color: var(--fraco); min-width: 34px; }
+
+  .lista { max-height: 230px; overflow-y: auto; border: 1px solid var(--borda); border-radius: 3px; }
+  .item {
+    display: flex; align-items: center; gap: 9px; padding: 7px 9px; cursor: pointer;
+    border-bottom: 1px solid color-mix(in srgb, var(--borda) 55%, transparent); font-size: 11px;
+  }
+  .item:last-child { border-bottom: none; }
+  .item:hover { background: var(--painel); }
+  .item.sel { border-left: 2px solid var(--ac); }
+  .item .n { flex: 1; }
+  .item .t { font-size: 8.5px; letter-spacing: .1em; color: var(--fraco); }
+  .item .t.boa { color: var(--ok); }
+  .item .ouvir, .item .x {
+    background: none; border: 1px solid var(--borda); color: var(--fraco);
+    border-radius: 2px; padding: 3px 7px; cursor: pointer; font: inherit; font-size: 9px;
+  }
+  .item .ouvir:hover, .item .x:hover { color: var(--ac); border-color: var(--ac); }
+
+  .rodape-tela {
+    flex: 0 0 auto; display: flex; gap: 10px; justify-content: center;
+    padding-top: 12px; margin-top: 10px; border-top: 1px solid var(--borda);
+  }
+  button.primario {
+    border: 1px solid var(--ac); border-radius: 3px; padding: 8px 16px; cursor: pointer;
+    background: color-mix(in srgb, var(--ac) 14%, transparent); color: var(--ac);
+    font: inherit; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
+  }
+  button.primario:hover { background: color-mix(in srgb, var(--ac) 24%, transparent); }
+  button.primario:disabled { opacity: .3; cursor: default; }
+  button.secundario {
+    border: 1px solid var(--borda); border-radius: 3px; padding: 8px 14px; cursor: pointer;
+    background: none; color: var(--fraco); font: inherit; font-size: 10.5px;
+    letter-spacing: .18em; text-transform: uppercase;
+  }
+  button.secundario:hover { color: var(--texto); }
+
+  .setup { justify-content: center; text-align: center; gap: 12px; z-index: 40; }
+  .setup.show { display: flex; }
+  .setup > * { max-width: 420px; }
+  .setup h1 { font-size: 20px; letter-spacing: .3em; color: var(--ac); }
+  .setup p { color: var(--fraco); font-size: 11px; line-height: 1.7; }
+  .setup input { text-align: center; }
+  .setup button { width: auto; align-self: center; }
+
+  /* Janela pequena: as colunas laterais encolhem antes de sumir. */
+  @media (max-width: 1100px) { .corpo { grid-template-columns: 190px minmax(0,1fr) 330px; } }
+  @media (max-width: 900px)  { .corpo { grid-template-columns: 180px minmax(0,1fr); } .coluna.direita { display: none; } }
+</style>
+</head>
+<body tabindex="-1">
+
+  <!-- ============================================================ topo -->
+  <div class="topo">
+    <span class="marca" id="marcaModelo">E.V.E</span>
+    <div class="acoes">
+      <button class="btn-icone" id="btnClaro" title="alternar claro e escuro" aria-label="claro ou escuro">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <g class="sol"><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/><path d="M12 2.6v2.3M12 19.1v2.3M2.6 12h2.3M19.1 12h2.3M5.4 5.4l1.6 1.6M17 17l1.6 1.6M18.6 5.4L17 7M7 17l-1.6 1.6"/></g>
+          <path class="lua" d="M20.3 14.8A8.3 8.3 0 0 1 9.2 3.7a8.5 8.5 0 1 0 11.1 11.1z" fill="currentColor" stroke="none"/>
+        </svg>
+      </button>
+      <button class="btn-icone" id="btnLimpar" title="limpar a conversa (⌘K)" aria-label="limpar">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4.2 5.8h11.6M8.2 5.8V4.2h3.6v1.6M5.8 5.8l.6 9.1a1 1 0 0 0 1 .9h5.2a1 1 0 0 0 1-.9l.6-9.1"/></svg>
+      </button>
+      <button class="btn-icone" id="btnConfig" title="configurações (⌘,)" aria-label="configurações">
+        <svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="2.7"/><path d="M10 2.4l1 2.1 2.3-.5 1.4 1.4-.5 2.3 2.1 1v2l-2.1 1 .5 2.3-1.4 1.4-2.3-.5-1 2.1H9l-1-2.1-2.3.5-1.4-1.4.5-2.3-2.1-1v-2l2.1-1-.5-2.3L5.7 4l2.3.5 1-2.1z"/></svg>
+      </button>
+    </div>
+    <div class="centro">
+      <div class="nome" id="tituloNome">E.V.E</div>
+      <div class="sub" id="tituloSub">assistente pessoal</div>
+    </div>
+    <div class="relogio">
+      <div class="h" id="relogioHora">--:--:--</div>
+      <div class="d" id="relogioData">—</div>
+    </div>
+  </div>
+
+  <!-- =========================================================== corpo -->
+  <div class="corpo">
+
+    <!-- ------------------------------------------------ coluna esquerda -->
+    <div class="coluna">
+      <div class="quadro monitor">
+        <div class="titulo">monitor do sistema</div>
+        <div class="medidas" id="medidas"></div>
+        <div class="infos">
+          <b>LIGADO</b><span id="infoUp">—</span>
+          <b>PROC</b><span id="infoProc">—</span>
+          <b>SO</b><span id="infoSo">—</span>
+        </div>
+      </div>
+
+      <div class="quadro agentes">
+        <div class="titulo">uso dos agentes</div>
+        <div class="listaAgentes" id="listaAgentes">
+          <div class="semAgente">nenhum pedido hoje</div>
+        </div>
+        <div class="infos">
+          <b>HOJE</b><span id="agentesDia">—</span>
+          <b>TOTAL</b><span id="agentesTotal">—</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- -------------------------------------------------- coluna central -->
+    <div class="coluna">
+      <div class="palco">
+        <canvas id="esfera"></canvas>
+        <div class="estado" id="estado">pronta</div>
+        <div class="parcial-centro" id="parcial"></div>
+        <div class="onda"></div>
+      </div>
+    </div>
+
+    <!-- -------------------------------------------------- coluna direita -->
+    <div class="coluna direita">
+      <!-- Conversa e comando num painel só: quem escreve está lendo a resposta
+           logo acima, e dois quadros separados partiam essa leitura em duas. -->
+      <div class="quadro conversa">
+        <div class="titulo">conversa</div>
+        <div class="rolo" id="rolo"></div>
+
+        <div class="compositor" id="compositor">
+          <div class="anexado" id="anexado">
+            <svg class="clipe" viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 8.1l-4.8 4.8a2.1 2.1 0 0 1-3-3l5.6-5.6a3.4 3.4 0 0 1 4.8 4.8l-5.6 5.6a4.7 4.7 0 0 1-6.7-6.7l4.9-4.9"/></svg>
+            <span id="anexadoNome"></span>
+            <button class="x" id="anexadoX" title="remover anexo" aria-label="remover anexo">✕</button>
+          </div>
+
+          <textarea id="entrada" rows="3" spellcheck="false"
+            placeholder="escreva aqui — arraste um arquivo, cole uma imagem, ou aperte espaço para falar"></textarea>
+
+          <div class="barra-compositor">
+            <button class="btn-icone" id="btnAnexar" title="anexar arquivo ou imagem" aria-label="anexar">
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.5 8.1l-4.8 4.8a2.1 2.1 0 0 1-3-3l5.6-5.6a3.4 3.4 0 0 1 4.8 4.8l-5.6 5.6a4.7 4.7 0 0 1-6.7-6.7l4.9-4.9"/></svg>
+            </button>
+            <span class="dica"><b>enter</b> envia · <b>⇧enter</b> quebra linha</span>
+            <button class="enviar" id="btnEnviar" title="enviar">enviar</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="acoes-grandes">
+        <div class="linha-acoes">
+          <button class="acao perigo" id="btnInterromper">interromper [esc]</button>
+          <button class="acao pequena" id="btnMudo" title="silenciar a voz (⌘M)">voz on</button>
+        </div>
+        <button class="acao mic" id="btnMic">microfone</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========================================================== rodapé -->
+  <div class="rodape">
+    <span><b>espaço</b> falar</span>
+    <span><b>⌥espaço</b> global</span>
+    <span><b>enter</b> enviar</span>
+    <span><b>esc</b> parar</span>
+    <span><b>⌘M</b> mudo</span>
+    <span><b>⌘,</b> configurações</span>
+    <span class="fim" id="rodapeFim">e.v.e</span>
+  </div>
+
+  <!-- ==================================================== configurações -->
+  <div class="tela" id="telaConfig">
+    <h2>configurações</h2>
+    <div class="sub" style="text-align:center">Tudo fica salvo só neste Mac.</div>
+
+    <div class="abas">
+      <button class="aba ativa" data-folha="geral">geral</button>
+      <button class="aba" data-folha="voz">voz</button>
+      <button class="aba" data-folha="visual">visual</button>
+      <button class="aba" data-folha="lembretes">lembretes</button>
+      <button class="aba" data-folha="chave">cérebro</button>
+    </div>
+
+    <div class="folha ativa" id="folhaGeral">
+      <div class="campo">
+        <label>nome dela</label>
+        <input type="text" id="cfgNome" spellcheck="false" />
+      </div>
+      <div class="campo">
+        <label>como se pronuncia</label>
+        <input type="text" id="cfgPronuncia" spellcheck="false" />
+        <div class="ajuda">A voz lê isto em vez das letras. "E.V.E" soletrado fica estranho; "Ivi" sai certo.</div>
+      </div>
+      <div class="campo">
+        <label>como ela te chama</label>
+        <input type="text" id="cfgDono" spellcheck="false" placeholder="seu nome (opcional)" />
+      </div>
+      <div class="campo">
+        <label>jeito de falar</label>
+        <div class="opcoes" id="cfgEstilo">
+          <button class="opcao" data-v="doce"><b>doce</b>calorosa e próxima</button>
+          <button class="opcao" data-v="direta"><b>direta</b>objetiva, sem rodeio</button>
+          <button class="opcao" data-v="divertida"><b>divertida</b>leve e espirituosa</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>microfone</label>
+        <div class="opcoes" id="cfgModoMic">
+          <button class="opcao" data-v="toque"><b>aperte e fale</b>espaço abre; fecha quando você cala</button>
+          <button class="opcao" data-v="aberto"><b>sempre aberto</b>fica ouvindo até você desligar</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>pausa até ela responder</label>
+        <div class="linha-cfg">
+          <input type="range" id="cfgPausa" min="1" max="6" step="0.5" />
+          <span class="valor" id="vPausa"></span>
+        </div>
+        <div class="ajuda">
+          Quanto silêncio ela espera antes de considerar que você terminou. Se ela estiver
+          te cortando no meio da frase, aumente.
+        </div>
+      </div>
+      <div class="campo linha-cfg">
+        <label style="margin:0"><input type="checkbox" id="cfgProativa" /> sugerir ideias sem eu pedir</label>
+      </div>
+      <div class="campo linha-cfg">
+        <label style="margin:0"><input type="checkbox" id="cfgNotificacoes" /> avisar por notificação do macOS</label>
+      </div>
+    </div>
+
+    <div class="folha" id="folhaVoz">
+      <div class="abas" style="margin-bottom:10px">
+        <button class="aba ativa" data-motor="macos">macos</button>
+        <button class="aba" data-motor="eleven">elevenlabs</button>
+      </div>
+
+      <div id="painelMacos">
+        <div class="sub">
+          Clique para ouvir. As verdes são de alta qualidade.
+          <a id="baixarVozes">Baixar vozes melhores no macOS</a>
+        </div>
+        <div class="lista" id="listaVozes"></div>
+        <div class="campo linha-cfg" style="margin-top:12px">
+          <label style="margin:0">velocidade</label>
+          <input type="range" id="cfgRate" min="120" max="260" step="5" />
+          <span class="valor" id="vRate"></span>
+        </div>
+        <div class="campo linha-cfg">
+          <label style="margin:0">tom</label>
+          <input type="range" id="cfgPitch" min="30" max="70" step="1" />
+          <span class="valor" id="vPitch"></span>
+          <button class="secundario" id="btnOuvirTom">ouvir</button>
+        </div>
+      </div>
+
+      <div id="painelEleven" style="display:none">
+        <div class="sub" id="subEleven">
+          Vozes neurais, as mais naturais em português. A chave vem de elevenlabs.io › Profile ›
+          API Keys, com <b>Text to Speech</b> e <b>Voices › Read</b> marcadas.
+        </div>
+        <div class="campo linha-cfg" id="conectarEleven">
+          <input type="password" id="chaveEleven" placeholder="chave da ElevenLabs" spellcheck="false" style="max-width:280px" />
+          <button class="primario" id="btnEleven">conectar</button>
+        </div>
+        <div class="lista" id="listaEleven"></div>
+        <div class="campo linha-cfg" style="margin-top:12px">
+          <label style="margin:0">velocidade da fala</label>
+          <input type="range" id="cfgVelocidade" min="0.7" max="1.2" step="0.01" />
+          <span class="valor" id="vVelocidade"></span>
+        </div>
+        <div class="campo linha-cfg">
+          <label style="margin:0"><input type="checkbox" id="cfgRapido" /> resposta mais rápida (menor latência)</label>
+        </div>
+        <button class="primario" id="btnUsarEleven" disabled>usar esta voz</button>
+      </div>
+    </div>
+
+    <div class="folha" id="folhaVisual">
+      <div class="campo">
+        <label>tema</label>
+        <div class="opcoes" id="cfgTema"></div>
+      </div>
+      <div class="campo">
+        <label>tamanho da esfera</label>
+        <div class="opcoes" id="cfgEsfera">
+          <button class="opcao" data-v="pequena"><b>pequena</b>340 px</button>
+          <button class="opcao" data-v="media"><b>média</b>460 px</button>
+          <button class="opcao" data-v="grande"><b>grande</b>580 px</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>desempenho do gráfico</label>
+        <div class="opcoes" id="cfgDesempenho">
+          <button class="opcao" data-v="economico"><b>econômico</b>18 fps, sem partículas — menos GPU</button>
+          <button class="opcao" data-v="normal"><b>equilibrado</b>30 fps</button>
+          <button class="opcao" data-v="fluido"><b>fluido</b>60 fps, mais detalhe</button>
+        </div>
+        <div class="ajuda" id="ajudaDesempenho"></div>
+      </div>
+    </div>
+
+    <div class="folha" id="folhaLembretes">
+      <div class="sub">
+        Na hora marcada ela avisa com notificação do macOS e falando.
+        Para criar, é só pedir — "me lembra de ligar pro dentista amanhã às dez".
+      </div>
+      <div class="lista" id="listaLembretes"></div>
+    </div>
+
+    <div class="folha" id="folhaChave">
+      <div class="campo">
+        <label>chave da api</label>
+        <input type="password" id="cfgChave" placeholder="AIza… / AQ.… (Gemini)  ou  sk-ant-… (Claude)" spellcheck="false" />
+        <div class="ajuda" id="ajudaChave"></div>
+      </div>
+      <button class="primario" id="btnSalvarChave">conectar</button>
+      <div class="sub" style="margin-top:16px">
+        Grátis, sem cartão: <a data-url="https://aistudio.google.com/apikey">aistudio.google.com › Get API key</a><br />
+        Pago, com créditos: <a data-url="https://console.anthropic.com/settings/keys">console.anthropic.com › API Keys</a><br />
+        A pesquisa na web usa a mesma chave do Gemini.
+      </div>
+
+      <div class="divisor"></div>
+
+      <div class="sub" style="margin-bottom:12px">
+        <strong>Provedores de reserva.</strong> Quando o principal bate o limite, eu passo
+        para o próximo que tiver chave — em vez de ficar muda. Nenhum dos dois pede cartão.
+        Ao trocar, eu respondo a pergunta do momento <em>sem</em> o histórico da conversa:
+        cada provedor guarda a conversa no formato dele, e eu prefiro avisar a inventar.
+      </div>
+
+      <div class="campo">
+        <label>groq — o mais rápido (bom para voz)</label>
+        <input type="password" id="cfgGroq" placeholder="gsk_…" spellcheck="false" />
+        <div class="ajuda">~200 mil tokens/dia · <a data-url="https://console.groq.com/keys">console.groq.com › Keys</a></div>
+      </div>
+
+      <div class="campo">
+        <label>nvidia nim — sem teto diário publicado</label>
+        <input type="password" id="cfgNvidia" placeholder="nvapi-…" spellcheck="false" />
+        <div class="ajuda">~40 pedidos/min, conta de desenvolvedor · <a data-url="https://build.nvidia.com">build.nvidia.com</a></div>
+      </div>
+
+      <div class="campo">
+        <label>mistral — teto alto, se a sua conta liberar</label>
+        <input type="password" id="cfgMistral" placeholder="chave do Mistral" spellcheck="false" />
+        <div class="ajuda">o "Free mode" existe, mas alguns consoles pedem plano — confira em Limits · <a data-url="https://console.mistral.ai/api-keys">console.mistral.ai › API Keys</a></div>
+      </div>
+
+      <button class="secundario" id="btnSalvarReservas">salvar reservas</button>
+      <div class="ajuda" id="ajudaReservas"></div>
+      <div class="ajuda">Campo em branco não mexe no que já está salvo. Para remover uma chave, escreva <b>-</b> e salve.</div>
+
+      <div class="divisor"></div>
+
+      <div class="campo">
+        <label>pesquisa na web</label>
+        <div class="ajuda" id="buscadoresAtivos" style="margin-bottom:6px"></div>
+        <div class="ajuda" style="margin-bottom:10px">Campo em branco não mexe no que já está salvo. Para remover uma chave, escreva <b>-</b> e salve.</div>
+      </div>
+
+      <div class="campo">
+        <label>tavily — feito para IA, grátis sem cartão</label>
+        <input type="password" id="cfgTavily" placeholder="tvly-…" spellcheck="false" />
+        <div class="ajuda">1.000 buscas/mês · <a data-url="https://app.tavily.com">app.tavily.com</a></div>
+      </div>
+
+      <div class="campo">
+        <label>serper — resultados do Google</label>
+        <input type="password" id="cfgSerper" placeholder="chave do Serper" spellcheck="false" />
+        <div class="ajuda">2.500 buscas grátis ao criar a conta, sem cartão · <a data-url="https://serper.dev">serper.dev</a></div>
+      </div>
+
+      <div class="campo">
+        <label>brave search — pede cartão</label>
+        <input type="password" id="cfgBrave" placeholder="chave do Brave" spellcheck="false" />
+        <div class="ajuda">US$ 5 de crédito por mês (~1.000 buscas) · <a data-url="https://brave.com/search/api/">brave.com/search/api</a></div>
+      </div>
+
+      <div class="campo">
+        <label>langsearch — plano gratuito por tokens</label>
+        <input type="password" id="cfgLangsearch" placeholder="chave do LangSearch" spellcheck="false" />
+        <div class="ajuda"><a data-url="https://langsearch.com">langsearch.com</a></div>
+      </div>
+
+      <div class="campo">
+        <label>searxng próprio — endereço, não chave</label>
+        <input type="text" id="cfgSearx" placeholder="https://searx.minha-maquina" spellcheck="false" />
+        <div class="ajuda">As instâncias públicas bloqueiam robô; uma sua funciona e não custa chave.</div>
+      </div>
+
+      <button class="secundario" id="btnSalvarBusca">salvar buscadores</button>
+      <div class="ajuda" id="ajudaBusca"></div>
+
+      <div class="divisor"></div>
+
+      <div class="campo">
+        <label>quem pensa primeiro</label>
+        <select id="cfgPrincipal"></select>
+        <div class="ajuda">
+          Os outros ficam de reserva, nesta ordem: groq, gemini, nvidia, mistral.
+          Para voz, o groq é o mais rápido.
+        </div>
+      </div>
+    </div>
+
+    <div class="rodape-tela">
+      <button class="secundario" id="btnFecharConfig">fechar</button>
+    </div>
+  </div>
+
+  <!-- ===================================================== primeira vez -->
+  <div class="tela setup" id="setup">
+    <h1>E.V.E</h1>
+    <p>Pode me chamar de Ivi. Para eu pensar, preciso de uma chave de API — ela fica salva só neste computador.</p>
+    <input type="password" id="chaveSetup" placeholder="AIza… ou AQ.… (Gemini) · sk-ant-… (Claude)" spellcheck="false" />
+    <button class="primario" id="btnSetup">conectar</button>
+    <p>
+      Grátis e sem cartão:
+      <a data-url="https://aistudio.google.com/apikey" style="color:var(--ac);cursor:pointer">aistudio.google.com › Get API key</a>
+    </p>
+  </div>
+
+<script src="esfera.js"></script>
+<script src="interface.js"></script>
+</body>
+</html>

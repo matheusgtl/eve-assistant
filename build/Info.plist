@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>NSMicrophoneUsageDescription</key>
+  <string>A E.V.E usa o microfone para ouvir seus comandos de voz.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>A E.V.E transcreve sua fala para entender o que você pede.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>A E.V.E controla outros aplicativos quando você pede — abrir, tocar música, mandar mensagem, mover arquivo para o Lixo.</string>
+  <key>NSDesktopFolderUsageDescription</key>
+  <string>A E.V.E cria e lê arquivos na sua Mesa quando você pede.</string>
+  <key>NSDocumentsFolderUsageDescription</key>
+  <string>A E.V.E cria e lê arquivos em Documentos quando você pede.</string>
+  <key>NSDownloadsFolderUsageDescription</key>
+  <string>A E.V.E lê e organiza seus Downloads quando você pede.</string>
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+</dict>
+</plist>

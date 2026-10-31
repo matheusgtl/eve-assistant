@@ -1,0 +1,21 @@
+{
+  "name": "eve-assistant",
+  "version": "2.0.0",
+  "description": "E.V.E — assistente pessoal de desktop com voz feminina, esfera holográfica, pesquisa na web por vários buscadores, leitura de PDF com OCR, skills e acesso ao Mac",
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "native": "swiftc -O native/ev-listen.swift -o native/ev-listen -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/helper-info.plist && swiftc -O native/ev-pdf.swift -o native/ev-pdf && swiftc -O native/ev-cal.swift -o native/ev-cal -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/cal-info.plist",
+    "start": "npm run native && electron .",
+    "build": "bash build/pack.sh",
+    "install-app": "bash build/pack.sh && rm -rf ~/Applications/'E.V.E.app' ~/Applications/'E.V.app' && cp -R dist/E.V.E-darwin-*/E.V.E.app ~/Applications/ && echo '✓ instalado em ~/Applications/E.V.E.app'",
+    "test": "node test/chave.test.js && node test/gemini.test.js && node test/modelo.test.js && node test/modelo-ruim.test.js && node test/provedores.test.js && node test/cota.test.js && node test/sobrecarga.test.js && node test/voz.test.js && node test/esfera.test.js && node test/fala.test.js && node test/lembretes.test.js && node test/memoria.test.js && node test/web.test.js && node test/buscadores.test.js && node test/tools.test.js && node test/sistema.test.js && node test/agentes.test.js && node test/pdf.test.js && node test/calendario.test.js && node test/skills.test.js && node test/ponte.test.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.0.4",
+    "electron": "^33.0.0"
+  }
+}

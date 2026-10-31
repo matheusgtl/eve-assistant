@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.matheus.eve.cal</string>
+  <key>CFBundleName</key>
+  <string>E.V.E Calendário</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+</dict>
+</plist>
