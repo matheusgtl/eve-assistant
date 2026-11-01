@@ -89,6 +89,18 @@ function montarSystemPrompt({
       "de calendário ou agenda, é criar_evento. Na dúvida entre os dois, faça o evento.",
     "- Nunca diga que pôs algo no calendário sem ter chamado criar_evento e recebido o evento " +
       "de volta. Se vier erro de permissão, diga a ele em uma frase o que ligar nos Ajustes.",
+    // 31/10: ele pediu "tire os eventos do dia 21/22 e adicione agenda com o
+    // Felipe". Ela criou o evento novo, não tirou os antigos — e respondeu
+    // "Feito". Uma parte cumprida de duas, anunciada como se fossem as duas.
+    // Depois gastou 13 chamadas de run_command tentando apagar pelo terminal,
+    // porque a ferramenta de apagar não existia ainda. Ela existe agora.
+    "- Para TIRAR algo do calendário: listar_eventos no dia, pegue o id do evento certo, " +
+      "apagar_evento com esse id. Nunca diga que tirou sem ter recebido apagado: true. " +
+      "Nada de terminal para isso — run_command não mexe no Calendário.",
+    "- Pedido com várias partes (\"tire isto E marque aquilo\") só está feito quando TODAS " +
+      "foram feitas. Se uma falhou ou você não soube fazer, diga qual parte ficou de fora, " +
+      "com essas palavras. \"Feito\" por meio pedido é pior do que dizer que não conseguiu: " +
+      "ele só descobre quando abre o calendário e o compromisso velho ainda está lá.",
     "- Ao usar ferramentas, não narre o que vai fazer antes; faça e diga o resultado.",
     "",
     "VOCÊ TEM AUTORIZAÇÃO PERMANENTE PARA AGIR",

@@ -350,13 +350,26 @@ const toolDefinitions = [
   },
   {
     name: "listar_eventos",
-    description: "Compromissos do Calendário. Sem datas, os próximos 7 dias.",
+    description: "Compromissos do Calendário. Sem datas, os próximos 7 dias. Devolve o id de cada um.",
     input_schema: {
       type: "object",
       properties: {
         de: { type: "string", description: "ISO local" },
         ate: { type: "string", description: "ISO local" },
       },
+    },
+  },
+  {
+    // Só por id, nunca por título ou data. O id vem de listar_eventos, então
+    // para apagar ela é obrigada a olhar a lista primeiro — e é exatamente
+    // esse passo que a impede de apagar o evento errado por causa de um
+    // título parecido.
+    name: "apagar_evento",
+    description: "Remove um compromisso do Calendário. O id vem de listar_eventos.",
+    input_schema: {
+      type: "object",
+      properties: { id: { type: "string" } },
+      required: ["id"],
     },
   },
   {
@@ -866,6 +879,22 @@ const executors = {
     if (!ctx.calendario) return { error: "o Calendário não está disponível agora" };
     try {
       return await ctx.calendario.listar({ de, ate });
+    } catch (err) {
+      return { error: err.message, codigo: err.codigo || undefined };
+    }
+  },
+
+  async apagar_evento({ id }) {
+    if (!ctx.calendario) return { error: "o Calendário não está disponível agora" };
+    if (!id) {
+      return {
+        error:
+          "apagar_evento precisa do id do evento. Chame listar_eventos no dia certo " +
+          "e use o id que vier de lá.",
+      };
+    }
+    try {
+      return await ctx.calendario.apagar(id);
     } catch (err) {
       return { error: err.message, codigo: err.codigo || undefined };
     }

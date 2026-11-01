@@ -284,6 +284,14 @@ case "apagar":
     } catch {
         morrer("não consegui apagar: \(error.localizedDescription)")
     }
+    // Mesmo cuidado do "criar", e pela mesma razão: `remove` sem erro não é
+    // prova de que o evento saiu — num calendário de conta remota a remoção
+    // pode ser recusada depois. E "disse que fez" é o defeito exato que já
+    // apareceu duas vezes neste app, então aqui se confirma antes de dizer.
+    if store.event(withIdentifier: id) != nil {
+        morrer("o evento foi aceito para remoção mas continua no Calendário",
+               codigo: "nao_confirmado")
+    }
     imprimir(["apagado": true, "evento": resumo])
 
 default:

@@ -177,9 +177,72 @@ const chamadas = () =>
   const pkg = JSON.parse(fs.readFileSync(path.join(raiz, "package.json"), "utf8"));
   assert.match(pkg.scripts.native, /ev-cal\.swift/, "`npm run native` precisa compilar o ev-cal");
 
+  // ------------------------------------- 8. TIRAR do calendário -----------
+  // 31/10: ele pediu "tire os eventos do dia 21/22 e adicione agenda com o
+  // Felipe". Ela criou o novo, não tirou os velhos, e disse "Feito". Não era
+  // mentira nem teimosia: apagar_evento não existia. Ela então gastou 13
+  // chamadas de run_command tentando fazer pelo terminal, que não alcança o
+  // Calendário. Esta seção existe para isso não voltar calado.
+  assert.ok(
+    nomes.includes("apagar_evento"),
+    "sem a ferramenta apagar_evento ela vai tentar apagar pelo terminal outra vez"
+  );
+  // Apagar é por id, e o id só existe porque listar devolve. As duas andam juntas.
+  const defApagar = toolDefinitions.find((t) => t.name === "apagar_evento");
+  assert.deepStrictEqual(defApagar.input_schema.required, ["id"], "apagar_evento exige o id");
+  assert.match(
+    toolDefinitions.find((t) => t.name === "listar_eventos").description,
+    /id/i,
+    "listar_eventos tem de avisar que devolve o id, senão ela não sabe o que passar"
+  );
+
+  // O wrapper manda o id, e só o id.
+  process.env.EV_CAL_BIN = helperFalso({ apagado: true, evento: { id: "XYZ-9", titulo: "gravação Nicolly" } });
+  delete require.cache[require.resolve("../calendario.js")];
+  const cal4 = require("../calendario.js");
+  const apagado = await cal4.apagar("XYZ-9");
+  assert.strictEqual(apagado.apagado, true);
+  const chamadaApagar = chamadas().at(-1);
+  assert.match(chamadaApagar, /^apagar /, "a ação tem de ser 'apagar'");
+  assert.match(chamadaApagar, /--id XYZ-9/, "o id tem de viajar no argumento --id");
+
+  // Sem id não se inventa: apagar por título parecido é apagar o evento errado.
+  const semId = await cal4.apagar().then(() => null, (e) => e);
+  assert.ok(semId instanceof Error, "apagar sem id tem de ser recusado");
+  assert.match(semId.message, /id/i);
+
+  // E o helper precisa CONFERIR que saiu. `remove` sem erro não é prova: num
+  // calendário de conta remota a remoção pode ser recusada depois.
+  // Aqui a ORDEM é o que importa, então medimos posição em vez de casar um
+  // regex longo: um `assert.match` com distância fixa quebraria no primeiro
+  // comentário que alguém escrevesse entre as duas linhas.
+  const swift = fs.readFileSync(path.join(raiz, "native/ev-cal.swift"), "utf8");
+  const ondeRemove = swift.indexOf("store.remove(");
+  const ondeConfere = swift.indexOf("store.event(withIdentifier: id) != nil");
+  assert.ok(ondeRemove > 0, "ev-cal.swift precisa remover o evento");
+  assert.ok(
+    ondeConfere > ondeRemove,
+    "ev-cal.swift: depois de remover, confira que o evento saiu ANTES de dizer que saiu — " +
+      "`remove` sem erro não é prova"
+  );
+  assert.match(swift, /nao_confirmado/, "a remoção não confirmada precisa de código próprio");
+
+  // ------------------- 9. meio pedido não é pedido feito -------------------
+  for (const [regra, esperado] of [
+    ["o caminho do apagar", /listar_eventos[\s\S]{0,160}apagar_evento/],
+    ["não dizer que tirou sem confirmação", /[Nn]unca diga que tirou sem/],
+    ["terminal não mexe no Calendário", /run_command não mexe no Calendário/],
+    ["pedido com várias partes", /várias partes[\s\S]{0,240}TODAS/],
+    ["dizer qual parte ficou de fora", /qual parte ficou de fora/],
+  ]) {
+    assert.match(prompt, esperado, `o prompt precisa dizer: ${regra}`);
+  }
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");
   console.log("   sem permissão  → código sem_permissao + o que ligar nos Ajustes");
   console.log("   evento ≠ lembrete → dito no prompt, com empate caindo para o evento");
+  console.log("   apagar         →", chamadaApagar, "· confere a remoção antes de responder");
+  console.log("   meio pedido    → prompt exige dizer qual parte ficou de fora");
 })();
