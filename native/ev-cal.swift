@@ -144,6 +144,96 @@ func garantirPermissao() {
 
 /// O calendário onde gravar. Sem nome, o padrão do sistema — o mesmo que o
 /// Calendário.app usa quando você cria um evento sem escolher nada.
+/// Permissão do app LEMBRETES. É OUTRA permissão, não a do Calendário.
+///
+/// O EventKit serve as duas coisas pela mesma classe, e é fácil achar que uma
+/// autorização cobre as duas — não cobre. São dois interruptores nos Ajustes
+/// (Calendários e Lembretes), duas chaves no Info.plist, e do macOS 14 em
+/// diante dois pedidos diferentes. Sem NSRemindersFullAccessUsageDescription o
+/// sistema MATA o processo em vez de mostrar a janela, igual ao calendário.
+func garantirPermissaoLembretes() {
+    let estado = EKEventStore.authorizationStatus(for: .reminder)
+    if #available(macOS 14.0, *) {
+        if estado == .fullAccess { return }
+    } else if estado == .authorized {
+        return
+    }
+
+    if estado == .denied || estado == .restricted {
+        morrer(
+            "o acesso aos Lembretes está negado. Abra Ajustes do Sistema › "
+                + "Privacidade e Segurança › Lembretes e ligue a E.V.E.",
+            codigo: "sem_permissao_lembretes"
+        )
+    }
+
+    let espera = DispatchSemaphore(value: 0)
+    var liberado = false
+    var falha: Error?
+    if #available(macOS 14.0, *) {
+        store.requestFullAccessToReminders { ok, erro in
+            liberado = ok; falha = erro; espera.signal()
+        }
+    } else {
+        store.requestAccess(to: .reminder) { ok, erro in
+            liberado = ok; falha = erro; espera.signal()
+        }
+    }
+    if espera.wait(timeout: .now() + 60) == .timedOut {
+        morrer("ninguém respondeu à janela de permissão dos Lembretes", codigo: "sem_resposta")
+    }
+    if !liberado {
+        morrer(
+            "não recebi permissão para os Lembretes"
+                + (falha != nil ? ": \(falha!.localizedDescription)" : ""),
+            codigo: "sem_permissao_lembretes"
+        )
+    }
+}
+
+/// A lista onde o lembrete vai. Sem nome, a lista padrão do app Lembretes.
+func listaDeLembretes(_ nome: String?) -> EKCalendar {
+    let graváveis = store.calendars(for: .reminder).filter { $0.allowsContentModifications }
+    if let nome = nome, !nome.isEmpty {
+        let alvo = nome.lowercased()
+        if let exato = graváveis.first(where: { $0.title.lowercased() == alvo }) { return exato }
+        if let parecido = graváveis.first(where: { $0.title.lowercased().contains(alvo) }) {
+            return parecido
+        }
+        morrer(
+            "não encontrei uma lista de lembretes chamada \"\(nome)\". As que dá para escrever: "
+                + graváveis.map { $0.title }.joined(separator: ", "),
+            codigo: "sem_lista"
+        )
+    }
+    // defaultCalendarForNewReminders() é MÉTODO, enquanto o de eventos
+    // (defaultCalendarForNewEvents) é propriedade. Assimetria da própria API.
+    if let padrao = store.defaultCalendarForNewReminders(), padrao.allowsContentModifications {
+        return padrao
+    }
+    guard let primeira = graváveis.first else {
+        morrer("não há nenhuma lista de lembretes onde eu possa escrever", codigo: "sem_lista")
+    }
+    return primeira
+}
+
+func descreverLembrete(_ r: EKReminder) -> [String: Any] {
+    var d: [String: Any] = [
+        "id": r.calendarItemIdentifier,
+        "titulo": r.title ?? "(sem título)",
+        "lista": r.calendar?.title ?? "",
+        "concluido": r.isCompleted,
+    ]
+    if let c = r.dueDateComponents, let data = Calendar.current.date(from: c) {
+        d["quando"] = escrever(data)
+        // Sem hora o app Lembretes não notifica, só mostra o dia. Dizer isto de
+        // volta evita ela prometer um aviso que não vai soar.
+        d["tem_hora"] = c.hour != nil
+    }
+    if let n = r.notes, !n.isEmpty { d["notas"] = n }
+    return d
+}
+
 func calendarioDeEscrita(_ nome: String?) -> EKCalendar {
     let graváveis = store.calendars(for: .event).filter { $0.allowsContentModifications }
     if let nome = nome, !nome.isEmpty {
@@ -179,6 +269,51 @@ func descrever(_ e: EKEvent) -> [String: Any] {
     if let l = e.location, !l.isEmpty { d["local"] = l }
     if let n = e.notes, !n.isEmpty { d["notas"] = n }
     return d
+}
+
+/// Cria um lembrete no app Lembretes e CONFERE que ficou lá.
+///
+/// Usada por duas vias: pela ação "lembrete" e, de carona, pelo "criar" do
+/// evento — porque o pedido dele foi que tudo o que entra na agenda apareça
+/// também nos Lembretes, no Mac e no iPhone.
+func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
+                   lista: String?, alarmeMinutos: Double?) -> [String: Any] {
+    garantirPermissaoLembretes()
+
+    let r = EKReminder(eventStore: store)
+    r.title = titulo
+    r.calendar = listaDeLembretes(lista)
+    if let n = notas, !n.isEmpty { r.notes = n }
+
+    if let quando = quando {
+        // O app Lembretes guarda vencimento em DateComponents, não em Date. E
+        // sem a hora ele não notifica: mostra o item no dia e fica calado. Por
+        // isso a hora entra quando existe, e `tem_hora` volta na resposta para
+        // ela não prometer um aviso que não vai soar.
+        var campos: Set<Calendar.Component> = [.year, .month, .day]
+        if comHora { campos.formUnion([.hour, .minute]) }
+        r.dueDateComponents = Calendar.current.dateComponents(campos, from: quando)
+
+        // Vencimento com hora já notifica, mas um alarme explícito é o que faz
+        // o aviso chegar também no iPhone de forma confiável.
+        if comHora {
+            let desconto = (alarmeMinutos ?? 0) * 60
+            r.addAlarm(EKAlarm(absoluteDate: quando.addingTimeInterval(-abs(desconto))))
+        }
+    }
+
+    do {
+        try store.save(r, commit: true)
+    } catch {
+        morrer("os Lembretes recusaram o item: \(error.localizedDescription)")
+    }
+
+    // Mesma desconfiança do evento: `save` sem erro não é prova.
+    guard let gravado = store.calendarItem(withIdentifier: r.calendarItemIdentifier) as? EKReminder
+    else {
+        morrer("o lembrete foi aceito mas não apareceu no app Lembretes", codigo: "nao_confirmado")
+    }
+    return descreverLembrete(gravado)
 }
 
 // ---------------------------------------------------------------------------
@@ -254,7 +389,37 @@ case "criar":
     guard let id = evento.eventIdentifier, let gravado = store.event(withIdentifier: id) else {
         morrer("o evento foi aceito mas não apareceu no Calendário", codigo: "nao_confirmado")
     }
-    imprimir(["criado": true, "evento": descrever(gravado)])
+    // ESPELHO NOS LEMBRETES. O pedido dele, em 01/11: "tudo aquilo que foi
+    // colocado da minha agenda queria que fosse também adicionado no meu
+    // aplicativo Lembretes". O evento já aparece no iPhone pelo iCloud; o
+    // lembrete é o que dá a notificação e a caixinha de concluído.
+    //
+    // Falhar aqui NÃO desfaz o evento: ele está gravado e conferido, e perder
+    // o compromisso por causa do espelho seria trocar um problema por um pior.
+    // O que se faz é contar o que aconteceu — `lembrete` traz o item, ou
+    // `lembrete_erro` traz o motivo, e ela diz isso a ele em uma frase.
+    var saida: [String: Any] = ["criado": true, "evento": descrever(gravado)]
+    if !tem("sem-lembrete") {
+        let estado = EKEventStore.authorizationStatus(for: .reminder)
+        let negado = estado == .denied || estado == .restricted
+        if negado {
+            saida["lembrete_erro"] = "o acesso aos Lembretes está negado "
+                + "(Ajustes do Sistema › Privacidade e Segurança › Lembretes)"
+        } else {
+            saida["lembrete"] = criarLembrete(
+                titulo: titulo,
+                quando: inicio,
+                // Evento de dia inteiro não tem hora para avisar, e lembrete
+                // sem hora não notifica. Então para o dia inteiro a hora do
+                // lembrete é a do início do evento (9h, pela criação dele).
+                comHora: !diaInteiro,
+                notas: opcao("notas"),
+                lista: opcao("lista"),
+                alarmeMinutos: opcao("alarme").flatMap(Double.init)
+            )
+        }
+    }
+    imprimir(saida)
 
 case "listar":
     garantirPermissao()
@@ -293,6 +458,69 @@ case "apagar":
                codigo: "nao_confirmado")
     }
     imprimir(["apagado": true, "evento": resumo])
+
+case "lembrete":
+    guard let titulo = opcao("titulo"), !titulo.trimmingCharacters(in: .whitespaces).isEmpty else {
+        morrer("falta --titulo")
+    }
+    var quandoLembrete: Date? = nil
+    var comHora = false
+    if let texto = opcao("quando") {
+        guard let d = lerData(texto) else {
+            morrer("não entendi a data \"\(texto)\"; use 2026-11-21T09:00")
+        }
+        quandoLembrete = d
+        // "2026-11-21" sem hora é dia inteiro; com "T09:00" tem hora.
+        comHora = texto.contains("T") || texto.contains(":")
+    }
+    imprimir([
+        "criado": true,
+        "lembrete": criarLembrete(
+            titulo: titulo, quando: quandoLembrete, comHora: comHora,
+            notas: opcao("notas"), lista: opcao("lista"),
+            alarmeMinutos: opcao("alarme").flatMap(Double.init)
+        ),
+    ])
+
+case "lembretes":
+    garantirPermissaoLembretes()
+    let listas = opcao("lista").map { [listaDeLembretes($0)] }
+        ?? store.calendars(for: .reminder)
+    let predicado = store.predicateForReminders(in: listas)
+    // fetchReminders é assíncrono; o semáforo é o mesmo motivo da permissão.
+    let espera = DispatchSemaphore(value: 0)
+    var achados: [EKReminder] = []
+    store.fetchReminders(matching: predicado) { r in
+        achados = r ?? []
+        espera.signal()
+    }
+    if espera.wait(timeout: .now() + 30) == .timedOut {
+        morrer("os Lembretes não responderam a tempo", codigo: "sem_resposta")
+    }
+    let pendentes = achados.filter { !$0.isCompleted }.sorted {
+        let a = $0.dueDateComponents.flatMap(Calendar.current.date(from:)) ?? .distantFuture
+        let b = $1.dueDateComponents.flatMap(Calendar.current.date(from:)) ?? .distantFuture
+        return a < b
+    }
+    imprimir([
+        "total": pendentes.count,
+        "lembretes": pendentes.prefix(100).map(descreverLembrete),
+    ])
+
+case "listas":
+    garantirPermissaoLembretes()
+    let todas = store.calendars(for: .reminder)
+    let padraoLista = store.defaultCalendarForNewReminders()?.calendarIdentifier
+    imprimir([
+        "listas": todas.map { c in
+            [
+                "nome": c.title,
+                "gravavel": c.allowsContentModifications,
+                "padrao": c.calendarIdentifier == padraoLista,
+                "conta": c.source?.title ?? "",
+            ] as [String: Any]
+        }
+    ])
 
 default:
     morrer("ação desconhecida \"\(acao)\" (criar, listar, calendarios, apagar)")

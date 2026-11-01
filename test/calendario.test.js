@@ -238,6 +238,76 @@ const chamadas = () =>
     assert.match(prompt, esperado, `o prompt precisa dizer: ${regra}`);
   }
 
+  // ---------------- 10. o app LEMBRETES do macOS ---------------------------
+  // Pedido dele em 01/11: "tudo aquilo que foi colocado da minha agenda queria
+  // que fosse também adicionado no meu aplicativo Lembretes... para que
+  // aparecesse no meu computador e no celular". O evento já ia para o iPhone
+  // pelo iCloud; o que faltava era a notificação e a caixinha de concluído.
+  process.env.EV_CAL_BIN = helperFalso({
+    criado: true,
+    lembrete: { id: "LM-1", titulo: "Agenda com o Felipe", quando: "2026-11-21T09:00:00-03:00", tem_hora: true },
+  });
+  delete require.cache[require.resolve("../calendario.js")];
+  const cal5 = require("../calendario.js");
+
+  const lem = await cal5.criarLembreteApp({
+    titulo: "Ligar para a tia",
+    quando: "2026-11-21T09:00",
+    alarmeMinutos: 30,
+  });
+  assert.strictEqual(lem.criado, true);
+  const chamadaLembrete = chamadas().at(-1);
+  assert.match(chamadaLembrete, /^lembrete /, "a ação do app Lembretes é 'lembrete'");
+  assert.match(chamadaLembrete, /--titulo Ligar para a tia/);
+  assert.match(chamadaLembrete, /--quando 2026-11-21T09:00/);
+  assert.match(chamadaLembrete, /--alarme 30/);
+
+  const semTitulo = await cal5.criarLembreteApp({}).then(() => null, (e) => e);
+  assert.ok(semTitulo instanceof Error, "lembrete sem título tem de ser recusado");
+
+  // O EVENTO espelha por padrão, e o espelho se desliga por pedido.
+  await cal5.criar({ titulo: "Reunião", inicio: "2026-11-21T09:00" });
+  assert.doesNotMatch(chamadas().at(-1), /--sem-lembrete/, "por padrão o evento espelha");
+  await cal5.criar({ titulo: "Reunião", inicio: "2026-11-21T09:00", semLembrete: true });
+  assert.match(chamadas().at(-1), /--sem-lembrete/, "e o espelho tem de poder ser desligado");
+
+  // A ferramenta existe e o erro vira resposta, não exceção.
+  assert.ok(nomes.includes("criar_lembrete_app"), "falta a ferramenta do app Lembretes");
+
+  // ---- a permissão dos Lembretes é OUTRA, e isso é fácil de errar ----
+  // O EventKit serve calendário e lembretes pela mesma classe, mas são dois
+  // interruptores nos Ajustes, duas chaves no plist e dois pedidos no macOS 14+.
+  // Sem a chave do plist o sistema MATA o processo em vez de pedir permissão.
+  for (const arquivo of ["build/Info.plist", "native/cal-info.plist"]) {
+    const texto = fs.readFileSync(path.join(raiz, arquivo), "utf8");
+    assert.match(
+      texto,
+      /NSRemindersFullAccessUsageDescription/,
+      `${arquivo}: sem esta chave o macOS mata o processo ao pedir acesso aos Lembretes`
+    );
+  }
+  const swiftLem = fs.readFileSync(path.join(raiz, "native/ev-cal.swift"), "utf8");
+  assert.match(swiftLem, /requestFullAccessToReminders/, "falta o pedido de acesso aos Lembretes");
+  assert.match(
+    swiftLem,
+    /defaultCalendarForNewReminders\(\)/,
+    "defaultCalendarForNewReminders é MÉTODO, não propriedade — sem os parênteses não compila"
+  );
+  // O mesmo cuidado do evento: ler de volta antes de dizer que criou.
+  assert.ok(
+    swiftLem.indexOf("calendarItem(withIdentifier:") > swiftLem.indexOf("try store.save(r,"),
+    "confira que o lembrete ficou lá ANTES de dizer que ficou"
+  );
+  // E falhar o espelho não pode desfazer o compromisso.
+  assert.match(swiftLem, /lembrete_erro/, "o espelho que falha precisa contar o motivo");
+
+  // O prompt tem de impedir a chamada dupla.
+  assert.match(
+    prompt,
+    /criar_evento já cria SOZINHO o lembrete no app Lembretes/,
+    "senão ela chama criar_lembrete_app depois do evento e cria dois"
+  );
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");
@@ -245,4 +315,6 @@ const chamadas = () =>
   console.log("   evento ≠ lembrete → dito no prompt, com empate caindo para o evento");
   console.log("   apagar         →", chamadaApagar, "· confere a remoção antes de responder");
   console.log("   meio pedido    → prompt exige dizer qual parte ficou de fora");
+  console.log("   app Lembretes  →", chamadaLembrete.slice(0, 64) + "…");
+  console.log("   espelho        → evento cria o lembrete sozinho; --sem-lembrete desliga");
 })();

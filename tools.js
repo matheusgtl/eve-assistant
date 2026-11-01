@@ -401,6 +401,22 @@ const toolDefinitions = [
     },
   },
   {
+    // O lembrete do APP Lembretes, que é outra coisa do lembrete interno dela
+    // (create_reminder). A distinção fica no prompt para não custar duas vezes.
+    name: "criar_lembrete_app",
+    description: "Lembrete no app Lembretes do Mac: notifica e aparece no iPhone.",
+    input_schema: {
+      type: "object",
+      properties: {
+        titulo: { type: "string" },
+        quando: { type: "string", description: "ISO local. Sem hora não notifica." },
+        lista: { type: "string" },
+        alarme_minutos: { type: "integer" },
+      },
+      required: ["titulo"],
+    },
+  },
+  {
     // Só por id, nunca por título ou data. O id vem de listar_eventos, então
     // para apagar ela é obrigada a olhar a lista primeiro — e é exatamente
     // esse passo que a impede de apagar o evento errado por causa de um
@@ -959,6 +975,17 @@ const executors = {
     if (!ctx.calendario) return { error: "o Calendário não está disponível agora" };
     try {
       return await ctx.calendario.listar({ de, ate });
+    } catch (err) {
+      return { error: err.message, codigo: err.codigo || undefined };
+    }
+  },
+
+  async criar_lembrete_app({ titulo, quando, lista, alarme_minutos }) {
+    if (!ctx.calendario) return { error: "os Lembretes não estão disponíveis agora" };
+    try {
+      return await ctx.calendario.criarLembreteApp({
+        titulo, quando, lista, alarmeMinutos: alarme_minutos,
+      });
     } catch (err) {
       return { error: err.message, codigo: err.codigo || undefined };
     }

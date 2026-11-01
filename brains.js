@@ -94,6 +94,14 @@ function montarSystemPrompt({
     // "Feito". Uma parte cumprida de duas, anunciada como se fossem as duas.
     // Depois gastou 13 chamadas de run_command tentando apagar pelo terminal,
     // porque a ferramenta de apagar não existia ainda. Ela existe agora.
+    // 01/11, pedido dele: "tudo aquilo que foi colocado da minha agenda queria
+    // que fosse também adicionado no meu aplicativo Lembretes". O espelho é
+    // feito no helper, em código — então aqui é só para ela não tentar fazer de
+    // novo nem prometer o que já está feito.
+    "- criar_evento já cria SOZINHO o lembrete no app Lembretes: não chame criar_lembrete_app " +
+      "depois de criar evento. Se vier lembrete_erro na resposta, diga a ele em uma frase. " +
+      "criar_lembrete_app é para lembrete SEM compromisso (\"me lembra de ligar para a tia\"). " +
+      "Sem hora o app não notifica, só mostra no dia.",
     "- Para TIRAR algo do calendário: listar_eventos no dia, pegue o id do evento certo, " +
       "apagar_evento com esse id. Nunca diga que tirou sem ter recebido apagado: true. " +
       "Nada de terminal para isso — run_command não mexe no Calendário.",
@@ -313,7 +321,12 @@ const TETO_POR_PROVEDOR = {
   // com a regra do PDF: o fixo subiu de 3.138 para 3.189 tokens e o teste de
   // orçamento acusou na hora, com o número e o que fazer. É o único jeito
   // honesto: o histórico é o que sobra do orçamento, não uma escolha.
-  groq: 3_200,
+  // Desce a cada ferramenta ou regra nova, porque é o que SOBRA do minuto do
+  // Groq depois do custo fixo. Em 01/11 o custo fixo chegou a 3.351 tokens
+  // (28 ferramentas + o prompt), e o que resta do orçamento de dois pedidos
+  // por minuto é isto. Na prática o Groq virou socorro de última hora, sem
+  // memória da conversa — e é por isso que ele é o penúltimo da corrente.
+  groq: 2_500,
 };
 const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
 

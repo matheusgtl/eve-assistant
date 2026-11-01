@@ -10,6 +10,10 @@
   <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
   <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+  <key>NSRemindersUsageDescription</key>
+  <string>A E.V.E põe os seus compromissos também no app Lembretes, para avisarem no Mac e no iPhone.</string>
+  <key>NSRemindersFullAccessUsageDescription</key>
+  <string>A E.V.E põe os seus compromissos também no app Lembretes, para avisarem no Mac e no iPhone.</string>
   <key>NSAppleEventsUsageDescription</key>
   <string>A E.V.E controla outros aplicativos quando você pede — abrir, tocar música, mandar mensagem, mover arquivo para o Lixo.</string>
   <key>NSDesktopFolderUsageDescription</key>

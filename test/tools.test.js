@@ -67,7 +67,11 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // Dois tetos, porque eles pegam coisas diferentes: o total é o que a conta
   // gratuita paga por pergunta; a média por ferramenta é o que pega descrição
   // engordando sem que o total acuse, quando ferramentas novas entram.
-  assert.ok(tokens < 2150, `as ferramentas somam ~${tokens} tokens (teto: 2150)`);
+  // 01/11: 2.250 para caber o criar_lembrete_app (o app Lembretes do macOS,
+  // que é o que notifica no iPhone). 28 ferramentas somam 2.213 tokens, ou
+  // 79,0 por ferramenta — a MÉDIA caiu de novo, que é a prova de que o teto
+  // subiu por capacidade e não por prosa. O teto da média é que guarda isso.
+  assert.ok(tokens < 2250, `as ferramentas somam ~${tokens} tokens (teto: 2250)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
   // ------------------- 1c. pesquisar não pode abrir aba no navegador

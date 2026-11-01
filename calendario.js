@@ -63,7 +63,7 @@ function rodar(args) {
 }
 
 /// Cria um evento. `inicio`/`fim` em ISO local ("2026-05-02T09:00").
-function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, calendario } = {}) {
+function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, calendario, semLembrete } = {}) {
   if (!titulo) return Promise.reject(new Error("o evento precisa de um título"));
   if (!inicio) return Promise.reject(new Error("o evento precisa de uma data de início"));
   const args = ["criar", "--titulo", String(titulo), "--inicio", String(inicio)];
@@ -75,6 +75,10 @@ function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, c
     args.push("--alarme", String(Number(alarmeMinutos)));
   }
   if (calendario) args.push("--calendario", String(calendario));
+  // Por padrão o evento VIRA TAMBÉM um lembrete no app Lembretes — foi o que
+  // ele pediu. `semLembrete` existe para o caso de ele não querer o espelho de
+  // um compromisso específico.
+  if (semLembrete) args.push("--sem-lembrete");
   return rodar(args);
 }
 
@@ -86,7 +90,35 @@ function listar({ de, ate } = {}) {
 }
 
 const calendarios = () => rodar(["calendarios"]);
+
+/// Um lembrete no app LEMBRETES do macOS — não o lembrete interno dela.
+///
+/// A diferença, outra vez, porque ela já confundiu duas vezes: o lembrete
+/// interno (lembretes.js) mora num JSON e só vale com a E.V.E aberta. Este
+/// aqui é um item do app Lembretes: aparece no Mac, no iPhone, notifica e tem
+/// caixinha de concluído. `quando` sem hora ("2026-11-21") não notifica — o
+/// app só mostra o item no dia — então a resposta devolve `tem_hora` para ela
+/// não prometer um aviso que não vai soar.
+function criarLembreteApp({ titulo, quando, notas, lista, alarmeMinutos } = {}) {
+  if (!titulo) return Promise.reject(new Error("o lembrete precisa de um título"));
+  const args = ["lembrete", "--titulo", String(titulo)];
+  if (quando) args.push("--quando", String(quando));
+  if (notas) args.push("--notas", String(notas));
+  if (lista) args.push("--lista", String(lista));
+  if (alarmeMinutos != null && Number.isFinite(Number(alarmeMinutos))) {
+    args.push("--alarme", String(Number(alarmeMinutos)));
+  }
+  return rodar(args);
+}
+
+const listarLembretesApp = ({ lista } = {}) =>
+  rodar(lista ? ["lembretes", "--lista", String(lista)] : ["lembretes"]);
+
+const listasDeLembretes = () => rodar(["listas"]);
 const apagar = (id) =>
   id ? rodar(["apagar", "--id", String(id)]) : Promise.reject(new Error("falta o id do evento"));
 
-module.exports = { criar, listar, calendarios, apagar, caminhoDoHelper };
+module.exports = {
+  criar, listar, calendarios, apagar, caminhoDoHelper,
+  criarLembreteApp, listarLembretesApp, listasDeLembretes,
+};
