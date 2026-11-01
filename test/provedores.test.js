@@ -324,6 +324,11 @@ servidor.listen(0, async () => {
   );
   console.log("   retry-after curto   → espera no mesmo provedor, histórico fica");
   console.log("   ordem da reserva    → " + orcamento.reserva + " (groq saiu da frente)");
+  console.log(
+    "   prazo 1ª palavra    → nvidia " +
+      require("../brains.js").prazoPrimeiroByte("nvidia") / 1000 +
+      "s; os outros " + require("../brains.js").PRAZO_PRIMEIRO_BYTE / 1000 + "s"
+  );
   servidor.close();
 });
 
@@ -437,6 +442,25 @@ function conferirEsperaAntesDeTrocar() {
   });
   assert.ok(provedorEsgotado(e413), "413 tem de acionar a reserva, não virar erro na cara dele");
   assert.strictEqual(segundosDeEspera(null, e413.message), null, "e não há o que esperar num 413");
+
+  // ---- o prazo da primeira palavra é por provedor ----
+  // A NVIDIA expirou em DUAS sessões seguidas, e sempre em 25 segundos
+  // exatos — 23:43:48→23:44:13 e 23:56:53→23:57:18. Vinha do prazo da
+  // primeira palavra, não dos 15s da checagem de modelos.
+  const { prazoPrimeiroByte, PRAZO_PRIMEIRO_BYTE } = require("../brains.js");
+  assert.ok(
+    prazoPrimeiroByte("nvidia") > PRAZO_PRIMEIRO_BYTE,
+    "a NVIDIA precisa de mais prazo: a mediana dela é 664 ms, então passar de 25s é fila " +
+      "ou partida a frio do endpoint gratuito, não lentidão"
+  );
+  assert.strictEqual(prazoPrimeiroByte("gemini"), PRAZO_PRIMEIRO_BYTE, "o resto fica no padrão");
+  assert.strictEqual(prazoPrimeiroByte("groq"), PRAZO_PRIMEIRO_BYTE);
+  // Esperar é silêncio: ela não fala nada enquanto espera. Um prazo largo para
+  // todos transformaria qualquer provedor lotado em um minuto de nada.
+  assert.ok(
+    prazoPrimeiroByte("nvidia") <= 60_000,
+    "acima de um minuto o silêncio soa como travada; aí é melhor cair para a reserva"
+  );
 
   // E a corrente tem de ter a trava de uma espera por provedor.
   const fonte = require("node:fs").readFileSync(

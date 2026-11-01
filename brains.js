@@ -492,6 +492,25 @@ const PRAZO_PEDIDO = 45_000;      // pedido comum, do começo ao fim
 const PRAZO_PRIMEIRO_BYTE = 25_000; // streaming: tempo até o modelo começar
 const PRAZO_SEM_DADOS = 20_000;     // streaming: silêncio no meio da resposta
 
+/// Prazo para a PRIMEIRA palavra, por provedor.
+///
+/// A NVIDIA expirou nas duas últimas sessões antes de dizer qualquer coisa, e
+/// o número não é a toa: medida em 27/10 com o prompt e as ferramentas reais, a
+/// mediana da primeira palavra do nemotron-lightning é 664 ms. Ou seja, quando
+/// ele passa de 25 segundos não é lentidão, é fila ou partida a frio do
+/// endpoint gratuito — e aí 25 segundos é curto demais para o caso raro e
+/// longo demais para o caso comum.
+///
+/// O custo de aumentar é silêncio: enquanto ela espera, não fala nada. Por isso
+/// isto é por PROVEDOR e não para todos — 45 segundos dá margem para a partida
+/// a frio da NVIDIA sem transformar um Gemini lotado em um minuto de silêncio.
+const PRAZO_PRIMEIRO_BYTE_POR_PROVEDOR = {
+  nvidia: 45_000,
+};
+
+const prazoPrimeiroByte = (provedor) =>
+  PRAZO_PRIMEIRO_BYTE_POR_PROVEDOR[provedor] ?? PRAZO_PRIMEIRO_BYTE;
+
 /// Abortador com prazo que pode ser renovado — o streaming precisa reiniciar a
 /// contagem a cada pedaço que chega.
 function comPrazo(ms, sinalExterno) {
@@ -1452,7 +1471,7 @@ class OpenAIBrain {
   /// Devolve { texto, chamadas } — as chamadas de ferramenta já remontadas.
   async gerar(corpo, onFrase, onDebug) {
     const sinal = this.abortador?.signal;
-    const prazo = comPrazo(PRAZO_PRIMEIRO_BYTE, sinal);
+    const prazo = comPrazo(prazoPrimeiroByte(this.provider), sinal);
     try {
       const res = await fetch(`${this.def.base()}/chat/completions`, {
         method: "POST",
@@ -1619,7 +1638,13 @@ class ClaudeBrain {
   constructor({ apiKey, model, prompt }) {
     const Anthropic = require("@anthropic-ai/sdk");
     this.client = new Anthropic({ apiKey });
-    this.model = model || "claude-opus-5";
+    // claude-opus-5-5 é o Opus atual: mesma família, mais barato que o
+    // claude-opus-5 ($4/$20 por milhão de tokens contra $5/$25) e compatível
+    // com o que este caminho já manda — thinking adaptativo, effort explícito
+    // (o padrão dele é "medium", que é o que pedimos), tool_choice não forçado
+    // e sem prefill. As três mudanças que quebram código do Opus 5 não nos
+    // tocam, então a troca é só preço para baixo.
+    this.model = model || "claude-opus-5-5";
     this.messages = [];
     this.prompt = prompt || (() => SYSTEM_PROMPT);
   }
@@ -1889,6 +1914,9 @@ module.exports = {
   ESPERA_MAXIMA,
   segundosDeEspera,
   provedorEsgotado,
+  PRAZO_PRIMEIRO_BYTE,
+  PRAZO_PRIMEIRO_BYTE_POR_PROVEDOR,
+  prazoPrimeiroByte,
   tetoDe,
   modeloCombina,
   rankOpenAI,
