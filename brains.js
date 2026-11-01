@@ -101,6 +101,13 @@ function montarSystemPrompt({
       "foram feitas. Se uma falhou ou você não soube fazer, diga qual parte ficou de fora, " +
       "com essas palavras. \"Feito\" por meio pedido é pior do que dizer que não conseguiu: " +
       "ele só descobre quando abre o calendário e o compromisso velho ainda está lá.",
+    // 31/10, 23:57: read_file num PDF de 53 KB. Lido como texto, virou 51 mil
+    // caracteres de lixo binário e o pedido saiu com 48.959 tokens — o Groq
+    // respondeu 413. O read_file agora recusa e aponta o ler_pdf, mas dizer
+    // aqui evita a chamada perdida antes dela acontecer.
+    "- PDF é ler_pdf, nunca read_file: o texto de um PDF não sai como texto cru. " +
+      "read_file é para arquivo de texto (código, .md, .txt, .json). Imagem, zip, .docx " +
+      "e programa não se leem com read_file nenhum.",
     "- Ao usar ferramentas, não narre o que vai fazer antes; faça e diga o resultado.",
     "",
     "VOCÊ TEM AUTORIZAÇÃO PERMANENTE PARA AGIR",
@@ -301,7 +308,12 @@ function tetoDoTpm(provedor, fixoEmTokens) {
 }
 
 const TETO_POR_PROVEDOR = {
-  groq: 3_400, // = tetoDoTpm("groq", ~3.140). Ver a conta acima.
+  // = tetoDoTpm("groq", custo fixo). Ver a conta acima. Este número DESCE
+  // quando o prompt ou as ferramentas crescem — foi o que acabou de acontecer
+  // com a regra do PDF: o fixo subiu de 3.138 para 3.189 tokens e o teste de
+  // orçamento acusou na hora, com o número e o que fazer. É o único jeito
+  // honesto: o histórico é o que sobra do orçamento, não uma escolha.
+  groq: 3_200,
 };
 const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
 
@@ -1264,6 +1276,12 @@ function erroOpenAI(status, data, nome, headers) {
     err.esperarSegundos = segundosDeEspera(headers, msg);
   }
   if (status === 401 || status === 403) err.chaveRuim = true;
+  // 413: a mensagem não CABE neste provedor. Não é limite por tempo, então
+  // esperar não resolve — mas outro provedor resolve, porque a janela dele é
+  // outra (o nemotron da NVIDIA passa de 100 mil tokens, o Groq dá 8 mil).
+  // E a troca descarta o histórico, o que por si já encolhe a mensagem.
+  // Antes isto subia como erro cru para ele: "erro da API: 413".
+  if (status === 413) err.pedidoGrande = true;
   return err;
 }
 
@@ -1287,6 +1305,7 @@ function ferramentaNaoSuportada(err) {
 function provedorEsgotado(err) {
   return (
     err?.limiteBatido === true ||
+    err?.pedidoGrande === true ||
     err?.chaveRuim === true ||
     err?.status === 402 ||
     err?.status === 404 ||
@@ -1869,6 +1888,7 @@ module.exports = {
   tetoDoTpm,
   ESPERA_MAXIMA,
   segundosDeEspera,
+  provedorEsgotado,
   tetoDe,
   modeloCombina,
   rankOpenAI,

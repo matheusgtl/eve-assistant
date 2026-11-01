@@ -426,6 +426,18 @@ function conferirEsperaAntesDeTrocar() {
     "90s tem de ficar ACIMA do teto, senão ela fica muda esperando"
   );
 
+  // 413 não é limite por tempo: é "a mensagem não cabe aqui". Esperar não
+  // resolve, trocar resolve — a janela do outro provedor é outra, e a troca
+  // descarta o histórico, o que por si já encolhe a mensagem. Antes isto subia
+  // cru para ele: "erro da API: 413".
+  const { provedorEsgotado } = require("../brains.js");
+  const e413 = Object.assign(new Error("Request too large ... Limit 8000, Requested 48959"), {
+    status: 413,
+    pedidoGrande: true,
+  });
+  assert.ok(provedorEsgotado(e413), "413 tem de acionar a reserva, não virar erro na cara dele");
+  assert.strictEqual(segundosDeEspera(null, e413.message), null, "e não há o que esperar num 413");
+
   // E a corrente tem de ter a trava de uma espera por provedor.
   const fonte = require("node:fs").readFileSync(
     require("node:path").join(__dirname, "..", "brains.js"),

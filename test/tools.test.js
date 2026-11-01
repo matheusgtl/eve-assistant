@@ -283,12 +283,80 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   assert.strictEqual(pequeno.truncado, undefined, "nada a avisar quando cabe inteiro");
   assert.strictEqual(pequeno.aviso, undefined);
 
+  // =========================================================================
+  // read_file não pode mandar binário para o modelo
+  // =========================================================================
+  // 31/10, 23:57: ela chamou read_file no PDF do currículo (53 KB). Lido como
+  // UTF-8 virou 51.237 caracteres, 27,7% deles caracteres de substituição — e
+  // lixo binário tokeniza quase um token por caractere. O pedido saiu com
+  // 48.959 tokens e o Groq respondeu "413 Request too large: Limit 8000". O
+  // conteúdo era inútil de todo modo: o texto do PDF está comprimido dentro
+  // dos streams, e ela já tinha ler_pdf (PDFKit + OCR) para isso.
+  {
+    const pastaBin = fs.mkdtempSync(path.join(os.tmpdir(), "eve-bin-"));
+    const porFazer = (nome, bytes) => {
+      const alvoArq = path.join(pastaBin, nome);
+      fs.writeFileSync(alvoArq, bytes);
+      return alvoArq;
+    };
+
+    // PDF: recusado E com a ferramenta certa indicada pelo nome.
+    const pdfFalso = porFazer(
+      "curriculo.pdf",
+      Buffer.concat([Buffer.from("%PDF-1.7\n"), Buffer.alloc(4000, 0xcc)])
+    );
+    const rPdf = JSON.parse(await runTool("read_file", { filepath: pdfFalso }));
+    assert.ok(rPdf.error, "PDF tem de ser recusado por read_file");
+    assert.match(rPdf.error, /PDF/i);
+    assert.strictEqual(rPdf.use, "ler_pdf", "e tem de apontar a ferramenta certa");
+    assert.strictEqual(rPdf.content, undefined, "nada de conteúdo binário na resposta");
+
+    // Os outros binários: recusados, mesmo sem ferramenta alternativa.
+    for (const [nome, bytes, esperado] of [
+      ["foto.png", Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2]), /PNG/i],
+      ["foto.jpg", Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 1, 2]), /JPEG/i],
+      ["doc.docx", Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]), /compactado/i],
+      // Sem assinatura conhecida, decide pelo conteúdo: byte zero não é texto.
+      ["sem-nome.dat", Buffer.concat([Buffer.from("texto"), Buffer.alloc(50, 0)]), /binário/i],
+    ]) {
+      const r = JSON.parse(await runTool("read_file", { filepath: porFazer(nome, bytes) }));
+      assert.ok(r.error, `${nome} tinha de ser recusado`);
+      assert.match(r.error, esperado, `${nome}: a mensagem precisa dizer o que é`);
+      assert.ok(r.dica, `${nome}: tem de dizer a ela o que fazer em vez de insistir`);
+    }
+
+    // Texto de verdade continua passando, inteiro quando é pequeno.
+    const arqMd = porFazer("notas.md", Buffer.from("# título\n\nacentuação e emoji ✓\n"));
+    const rMd = JSON.parse(await runTool("read_file", { filepath: arqMd }));
+    assert.match(rMd.content, /acentuação e emoji ✓/, "UTF-8 multibyte não pode quebrar");
+    assert.ok(!rMd.truncado, "arquivo pequeno não é truncado");
+    assert.strictEqual(rMd.aviso, undefined, "e não leva aviso à toa");
+
+    // Arquivo grande: cortado no teto comum, com aviso para não repetir.
+    const arqGrande = porFazer("grande.txt", Buffer.from("linha de texto comum\n".repeat(20_000)));
+    const rG = JSON.parse(await runTool("read_file", { filepath: arqGrande }));
+    assert.ok(rG.content.length <= 24_000, `cortou em ${rG.content.length}; o teto é 24.000`);
+    assert.strictEqual(rG.truncado, true);
+    assert.match(rG.aviso, /não repita a chamada/i, "senão ela chama de novo esperando o resto");
+    // O teto antigo era 100.000 caracteres: 25 mil tokens num pedido só, três
+    // vezes o minuto inteiro do Groq.
+    assert.ok(rG.content.length < 100_000 / 4, "o teto de 100 mil caracteres não pode voltar");
+
+    // Pasta não é arquivo.
+    const rDir = JSON.parse(await runTool("read_file", { filepath: pastaBin }));
+    assert.match(rDir.error, /pasta/i);
+    assert.strictEqual(rDir.use, "list_directory");
+
+    fs.rmSync(pastaBin, { recursive: true, force: true });
+  }
+
   console.log("✓ ferramentas: travas de confirmação, arquivos, lembretes e erros");
   console.log("   ler_pdf 150k  → cortado em", grande.texto.length, "caracteres, com aviso");
   console.log("  ", nomes.length, "ferramentas declaradas");
   console.log("   rm -rf        → needs_confirmation, arquivo intacto");
   console.log("   send_message  → needs_confirmation sempre");
   console.log("   sobrescrever  → guarda .bak automático");
+  console.log("   read_file     → PDF vira ler_pdf; binário recusado; teto 24k, não 100k");
   console.log("   as", toolDefinitions.length, "definições ≈", tokens, "tokens por pedido",
     `(${porFerramenta.toFixed(0)}/ferramenta)`);
 })();

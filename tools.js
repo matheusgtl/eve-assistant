@@ -98,6 +98,47 @@ function pedirConfirmacao(oque) {
 // exame caber inteiro, e pequeno o bastante para sobrar conversa em volta.
 const TETO_TEXTO_FERRAMENTA = 24_000;
 
+/// Este arquivo é texto, ou são bytes que só PARECEM texto?
+///
+/// Por que isto existe: ela chamou read_file num PDF de 53 KB. Lido como
+/// UTF-8, o PDF virou 51.237 caracteres com 27,7% de caracteres de
+/// substituição — e lixo binário tokeniza quase um token por caractere, então
+/// o pedido saiu com 48.959 tokens e o Groq respondeu 413 ("Limit 8000,
+/// Requested 48959"). O conteúdo era inútil para ela de todo modo: o texto
+/// verdadeiro do PDF está comprimido dentro dos streams.
+///
+/// Ela já tinha a ferramenta certa (ler_pdf, com PDFKit e OCR), que resolve o
+/// mesmo arquivo em algumas centenas de tokens. Faltava read_file dizer não.
+const ASSINATURAS = [
+  { magica: "%PDF-", erro: "isso é um PDF; o texto dele não sai como texto cru", use: "ler_pdf" },
+  { magica: "\x89PNG", erro: "isso é uma imagem PNG" },
+  { magica: "\xff\xd8\xff", erro: "isso é uma imagem JPEG" },
+  { magica: "GIF8", erro: "isso é uma imagem GIF" },
+  // docx, xlsx e pptx são zip por dentro, e começam igual.
+  { magica: "PK\x03\x04", erro: "isso é um arquivo compactado (zip, docx, xlsx, pptx)" },
+  { magica: "\x7fELF", erro: "isso é um executável" },
+  { magica: "\xcf\xfa\xed\xfe", erro: "isso é um executável do macOS" },
+];
+
+function tipoBinario(buf) {
+  const inicio = buf.subarray(0, 8).toString("binary");
+  for (const a of ASSINATURAS) {
+    if (inicio.startsWith(a.magica)) return a;
+  }
+  // Sem assinatura conhecida: decide pelo conteúdo. Byte zero não acontece em
+  // texto; e muito byte de controle significa que o resto também é lixo.
+  const amostra = buf.subarray(0, 8_000);
+  if (amostra.includes(0)) return { erro: "isso é um arquivo binário, não texto" };
+  let controle = 0;
+  for (const b of amostra) {
+    if (b < 9 || (b > 13 && b < 32)) controle++;
+  }
+  if (amostra.length && controle / amostra.length > 0.1) {
+    return { erro: "isso é um arquivo binário, não texto" };
+  }
+  return null;
+}
+
 function cortarTextoLongo(texto, teto = TETO_TEXTO_FERRAMENTA) {
   const t = String(texto || "");
   if (t.length <= teto) return { texto: t, cortado: false };
@@ -539,11 +580,50 @@ const executors = {
   async read_file({ filepath }) {
     try {
       const full = resolvePath(filepath);
-      const conteudo = await fs.readFile(full, "utf8");
+      const info = await fs.stat(full);
+      if (info.isDirectory()) {
+        return { error: "isso é uma pasta, não um arquivo", use: "list_directory" };
+      }
+
+      // Ler só o começo. Antes isto era readFile do arquivo INTEIRO para
+      // depois cortar — um arquivo de 500 MB entrava todo na memória para
+      // sobreviverem 24 mil caracteres dele.
+      const limite = TETO_TEXTO_FERRAMENTA * 4; // folga para UTF-8 multibyte
+      const fh = await fs.open(full, "r");
+      let buf;
+      let lidos = 0;
+      try {
+        buf = Buffer.alloc(Math.min(info.size, limite));
+        if (buf.length) ({ bytesRead: lidos } = await fh.read(buf, 0, buf.length, 0));
+      } finally {
+        await fh.close();
+      }
+      const bytes = buf.subarray(0, lidos);
+
+      // Binário é recusado ANTES de virar texto. Mandar lixo para o modelo
+      // custa o orçamento inteiro do pedido e não ensina nada a ela.
+      const binario = tipoBinario(bytes);
+      if (binario) {
+        return {
+          error: `${binario.erro} (${info.size} bytes)`,
+          use: binario.use,
+          dica: binario.use
+            ? `Chame ${binario.use} neste mesmo caminho.`
+            : "Não insista em ler como texto; diga a ele que o arquivo não é de texto.",
+        };
+      }
+
+      const { texto, cortado } = cortarTextoLongo(bytes.toString("utf8"));
       return {
         filepath: full,
-        content: conteudo.slice(0, 100_000),
-        truncado: conteudo.length > 100_000,
+        content: texto,
+        bytes: info.size,
+        truncado: cortado || info.size > lidos || undefined,
+        aviso:
+          cortado || info.size > lidos
+            ? "O arquivo é maior do que isto; leu-se só o começo. Não repita a chamada " +
+              "esperando mais — use run_command com grep/sed se precisar de outro trecho."
+            : undefined,
       };
     } catch (err) {
       return { error: err.message };
