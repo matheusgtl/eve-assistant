@@ -1220,7 +1220,17 @@ const PROVEDORES = {
   openrouter: {
     nome: "OpenRouter",
     base: () => process.env.EV_OPENROUTER_API || "https://openrouter.ai/api/v1",
-    modelo: "meta-llama/llama-3.3-70b-instruct:free",
+    // O padrão anterior era "meta-llama/llama-3.3-70b-instruct:free", e ele
+    // MORREU: em 01/11 o OpenRouter responde 404 com "This model is
+    // unavailable for free. The paid version is available now". Um padrão
+    // gratuito é uma data de validade que ninguém anotou.
+    //
+    // Medido em 01/11 entre os 14 modelos gratuitos do OpenRouter que aceitam
+    // ferramenta: este foi o único que respondeu em todas as repetições E
+    // chamou a ferramenta todas as vezes (2/2). O cohere/north-mini-code:free
+    // chamou 1/2, o google/gemma-4-31b-it:free devolveu erro do provedor e o
+    // thinkingmachines/inkling-small:free só atende harness agêntico.
+    modelo: "nvidia/nemotron-3.5-lightning:free",
     chaveEm: "https://openrouter.ai/keys",
   },
 };

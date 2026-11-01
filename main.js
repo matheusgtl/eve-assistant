@@ -182,6 +182,15 @@ function saveConfig(cfg) {
 }
 
 /// A configuração que a interface pode ver — sem as chaves de API.
+// Todos os provedores no formato OpenAI que a corrente conhece. O OpenRouter e
+// o Cerebras estavam fora desta lista e sem campo na interface, embora o
+// ORDEM_RESERVA e o chaveDe já os conhecessem — então não havia onde pôr a
+// chave deles. Em 01/11 ele colou a do OpenRouter no campo do provedor
+// PRINCIPAL, porque era o único campo que aceitava, e sem querer trocou o
+// cérebro que estava funcionando. Não foi engano dele: era a interface que não
+// tinha o campo.
+const RESERVAS = ["groq", "nvidia", "mistral", "cerebras", "openrouter"];
+
 function configPublica() {
   const cfg = loadConfig();
   return {
@@ -205,14 +214,19 @@ function configPublica() {
     // Só o fato de existir: a chave em si nunca desce para a interface.
     // Quais provedores têm chave, para a tela poder oferecer a escolha de quem
     // pensa primeiro sem nunca ver as chaves em si.
-    disponiveis: ["gemini", "anthropic", "groq", "nvidia", "mistral"].filter((p) =>
-      p === "gemini" || p === "anthropic"
-        ? !!(cfg[`${p}Key`] || (cfg.provider === p && cfg.apiKey))
-        : !!cfg[`${p}Key`]
+    // Quem tem chave. A regra do `apiKey` vale para TODOS e não só para o
+    // Gemini e a Anthropic: quem está como principal pode ter a chave na
+    // genérica, e tratar isso como ausência fazia o provedor em uso aparecer
+    // como "sem chave" no seletor que escolhe justamente ele.
+    disponiveis: ["gemini", "anthropic", ...RESERVAS].filter(
+      (p) => !!(cfg[`${p}Key`] || (cfg.provider === p && cfg.apiKey))
     ),
-    temGroq: !!cfg.groqKey,
-    temNvidia: !!cfg.nvidiaKey,
-    temMistral: !!cfg.mistralKey,
+    // Um mapa em vez de temGroq/temNvidia/temMistral: provedor novo entrava em
+    // três lugares e era esquecido em pelo menos um — foi assim que o
+    // OpenRouter e o Cerebras ficaram sem campo na tela.
+    temChaves: Object.fromEntries(
+      RESERVAS.map((p) => [p, !!(cfg[`${p}Key`] || (cfg.provider === p && cfg.apiKey))])
+    ),
     elevenVelocidade: cfg.elevenVelocidade,
     provider: cfg.provider || null,
     model: cfg.model || null,
@@ -1499,7 +1513,6 @@ ipcMain.handle("ev:set-config", (_e, mudancas = {}) => {
 /// Campo vazio APAGA a reserva — é como se desfaz sem precisar de outro botão.
 // Provedores de reserva oferecidos na tela, nesta ordem. Acrescentar um aqui e
 // um campo no HTML é tudo — a corrente em brains.js já lida com qualquer um.
-const RESERVAS = ["groq", "nvidia", "mistral"];
 
 ipcMain.handle("ev:save-reserves", async (_e, chaves = {}) => {
   const cfg = loadConfig();

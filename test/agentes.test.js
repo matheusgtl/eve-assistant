@@ -86,13 +86,49 @@ fs.rmSync(arquivo, { force: true });
   d.registrar({ provedor: "groq", entrada: 500, saida: 50, limites: comCabecalhos });
   const medido = d.resumo(["groq"]).linhas[0];
   assert.strictEqual(medido.barra.origem, "medido", "com saldo informado, não se usa o teto daqui");
-  assert.strictEqual(medido.barra.teto, 1000);
-  assert.ok(Math.abs(medido.barra.fracao - 0.027) < 0.001, "27 de 1000 pedidos gastos");
-  assert.match(medido.barra.rotulo, /973/, "a barra diz quanto RESTA, não só quanto foi");
 
-  // A janela de TOKENS ali é por minuto. Usá-la como se fosse do dia pintaria
-  // 94% de barra vermelha com a cota do dia quase intocada.
-  assert.strictEqual(medido.barra.unidade, "pedidos");
+  // A BARRA MOSTRA O QUE APERTA, E DIZ QUAL JANELA É.
+  //
+  // Aqui restam 973 de 1.000 pedidos no DIA (2,7% gasto) e 487 de 8.000 tokens
+  // no MINUTO (94% gasto). A versão anterior preferia a janela do dia, com um
+  // argumento legítimo: 94% de vermelho assusta quando o limite se refaz em
+  // 7 segundos. Só que foi exatamente essa escolha que mentiu para ele em
+  // 31/10 — o painel mostrava folga do dia no instante em que a resposta
+  // morria por falta de tokens do minuto.
+  //
+  // A saída não é escolher um dos dois: é mostrar o que aperta E rotular a
+  // janela. "94% no minuto" manda esperar sete segundos; "94% hoje" manda
+  // parar. Sem o rótulo as duas frases eram a mesma barra, e por isso a
+  // versão anterior tinha de escolher.
+  assert.strictEqual(medido.barra.unidade, "tokens", "o minuto aperta mais que o dia aqui");
+  assert.strictEqual(medido.barra.janela, "minuto", "e a barra TEM de dizer qual janela é");
+  assert.strictEqual(medido.barra.teto, 8000);
+  assert.strictEqual(medido.barra.restante, 487, "quanto resta é número, não só texto");
+  assert.ok(Math.abs(medido.barra.fracao - 0.939) < 0.002, "7.513 de 8.000 tokens gastos");
+  assert.match(medido.barra.rotulo, /487/, "a barra diz quanto RESTA, não só quanto foi");
+  assert.match(medido.barra.rotulo, /no minuto/, "e o rótulo nomeia a janela");
+
+  // Com o minuto folgado, quem aperta volta a ser o dia — e o rótulo muda.
+  const folgado = new Agentes({});
+  folgado.registrar({
+    provedor: "groq",
+    entrada: 500,
+    saida: 50,
+    limites: lerLimites(
+      new Headers({
+        "x-ratelimit-limit-requests": "1000",
+        "x-ratelimit-remaining-requests": "120",
+        "x-ratelimit-reset-requests": "7h59m",
+        "x-ratelimit-limit-tokens": "8000",
+        "x-ratelimit-remaining-tokens": "7900",
+        "x-ratelimit-reset-tokens": "7.66s",
+      })
+    ),
+  });
+  const bf = folgado.resumo(["groq"]).linhas[0].barra;
+  assert.strictEqual(bf.unidade, "pedidos", "com o minuto folgado, o dia é quem aperta");
+  assert.strictEqual(bf.janela, "dia");
+  assert.match(bf.rotulo, /hoje/, "e aí o rótulo diz hoje");
 
   // Sem cabeçalho de reset não dá para saber a janela — e sem janela o número
   // não vira barra, porque barra de janela errada mente.
@@ -191,7 +227,7 @@ fs.rmSync(arquivo, { force: true });
 
   console.log("✓ uso dos agentes: saldo do provedor manda, teto nunca é inventado");
   console.log("   medido + estimado → marcado como estimado");
-  console.log("   cabeçalho do Groq → 973/1000 pedidos restantes");
+  console.log("   barra            → mostra o que APERTA e nomeia a janela (94% no minuto)");
   console.log("   janela            → regra de três no balde furado: 86,4s×1000 = 24h exatas");
   console.log("   sem teto nenhum   → barra de fatia do dia, dito com essas palavras");
   console.log("   reabrir o app     → mantém o dia; outro dia → zera");

@@ -444,7 +444,48 @@
      (verde→vermelho). Cor neutra de acento, para ninguém ler "metade do
      limite" onde está escrito "metade do trabalho do dia". */
   .agente .barra.relativa i.aceso { background: color-mix(in srgb, var(--ac) 70%, transparent); }
+  /* A barra e o selo de porcentagem lado a lado, como o medidor de contexto do
+     Claude Code: a barra dá a noção, o número dá o fato, e o selo nomeia a
+     JANELA — "94% no minuto" e "94% hoje" são conselhos opostos. */
+  .agente .faixaBarra { display: flex; align-items: center; gap: 7px; }
+  .agente .faixaBarra .barra { flex: 1; }
+  .agente .selo {
+    font-size: 9px; letter-spacing: .04em; color: var(--fraco);
+    white-space: nowrap; font-variant-numeric: tabular-nums;
+    /* Largura mínima para o número não dançar quando sai de 9% para 94%. */
+    min-width: 62px; text-align: right;
+  }
+  /* O selo acompanha a cor do nível: o número e a barra dizem a mesma coisa. */
+  .agente .selo.on-ok { color: var(--ok); }
+  .agente .selo.on-meio { color: var(--meio); }
+  .agente .selo.on-alto { color: var(--alto); }
   .agente .det { font-size: 9px; color: var(--fraco); letter-spacing: .04em; }
+
+  /* ------------------------------- lista de provedores nas configurações */
+  /* Uma linha por provedor, fechada. O campo de senha só aparece quando se
+     clica — oito campos de senha abertos ao mesmo tempo não é formulário, é
+     parede. A bolinha à esquerda diz o que importa de longe: tem chave ou não. */
+  .provedores { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
+  .prov { border: 1px solid var(--linha); border-radius: 6px; overflow: hidden; }
+  .prov > .cabeca {
+    display: flex; align-items: center; gap: 9px; width: 100%;
+    padding: 9px 11px; background: none; border: 0; cursor: pointer;
+    font: inherit; color: var(--texto); text-align: left;
+  }
+  .prov > .cabeca:hover { background: color-mix(in srgb, var(--texto) 5%, transparent); }
+  .prov .ponto {
+    width: 7px; height: 7px; border-radius: 50%; flex: none;
+    border: 1px solid var(--fraco);
+  }
+  .prov.tem .ponto { background: var(--ok); border-color: var(--ok); }
+  .prov .quem { letter-spacing: .04em; }
+  .prov .limite { margin-left: auto; font-size: 10px; color: var(--fraco); text-align: right; }
+  .prov .seta { font-size: 9px; color: var(--fraco); flex: none; }
+  .prov.aberto .seta { transform: rotate(90deg); }
+  .prov .corpo { display: none; padding: 0 11px 11px; }
+  .prov.aberto .corpo { display: block; }
+  .prov .corpo input { width: 100%; }
+  .prov .corpo .ajuda { margin-top: 6px; }
   .campo > label {
     display: block; font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
     color: var(--fraco); margin-bottom: 5px;
@@ -799,23 +840,14 @@
         cada provedor guarda a conversa no formato dele, e eu prefiro avisar a inventar.
       </div>
 
-      <div class="campo">
-        <label>groq — o mais rápido (bom para voz)</label>
-        <input type="password" id="cfgGroq" placeholder="gsk_…" spellcheck="false" />
-        <div class="ajuda">~200 mil tokens/dia · <a data-url="https://console.groq.com/keys">console.groq.com › Keys</a></div>
-      </div>
-
-      <div class="campo">
-        <label>nvidia nim — sem teto diário publicado</label>
-        <input type="password" id="cfgNvidia" placeholder="nvapi-…" spellcheck="false" />
-        <div class="ajuda">~40 pedidos/min, conta de desenvolvedor · <a data-url="https://build.nvidia.com">build.nvidia.com</a></div>
-      </div>
-
-      <div class="campo">
-        <label>mistral — teto alto, se a sua conta liberar</label>
-        <input type="password" id="cfgMistral" placeholder="chave do Mistral" spellcheck="false" />
-        <div class="ajuda">o "Free mode" existe, mas alguns consoles pedem plano — confira em Limits · <a data-url="https://console.mistral.ai/api-keys">console.mistral.ai › API Keys</a></div>
-      </div>
+      <!-- A lista é construída pelo interface.js a partir de UMA tabela. Antes
+           eram oito blocos escritos à mão aqui, cada um com rótulo, campo e
+           ajuda sempre abertos: a tela de configuração virava uma parede de
+           campos de senha, e provedor novo precisava ser lembrado em três
+           lugares diferentes — foi assim que o OpenRouter e o Cerebras ficaram
+           sem campo nenhum. Agora cada linha mostra só nome, situação e o
+           limite; a chave aparece quando se clica nela. -->
+      <div class="provedores" id="listaProvedores"></div>
 
       <button class="secundario" id="btnSalvarReservas">salvar reservas</button>
       <div class="ajuda" id="ajudaReservas"></div>
@@ -825,39 +857,10 @@
 
       <div class="campo">
         <label>pesquisa na web</label>
-        <div class="ajuda" id="buscadoresAtivos" style="margin-bottom:6px"></div>
-        <div class="ajuda" style="margin-bottom:10px">Campo em branco não mexe no que já está salvo. Para remover uma chave, escreva <b>-</b> e salve.</div>
+        <div class="ajuda" id="buscadoresAtivos" style="margin-bottom:8px"></div>
       </div>
 
-      <div class="campo">
-        <label>tavily — feito para IA, grátis sem cartão</label>
-        <input type="password" id="cfgTavily" placeholder="tvly-…" spellcheck="false" />
-        <div class="ajuda">1.000 buscas/mês · <a data-url="https://app.tavily.com">app.tavily.com</a></div>
-      </div>
-
-      <div class="campo">
-        <label>serper — resultados do Google</label>
-        <input type="password" id="cfgSerper" placeholder="chave do Serper" spellcheck="false" />
-        <div class="ajuda">2.500 buscas grátis ao criar a conta, sem cartão · <a data-url="https://serper.dev">serper.dev</a></div>
-      </div>
-
-      <div class="campo">
-        <label>brave search — pede cartão</label>
-        <input type="password" id="cfgBrave" placeholder="chave do Brave" spellcheck="false" />
-        <div class="ajuda">US$ 5 de crédito por mês (~1.000 buscas) · <a data-url="https://brave.com/search/api/">brave.com/search/api</a></div>
-      </div>
-
-      <div class="campo">
-        <label>langsearch — plano gratuito por tokens</label>
-        <input type="password" id="cfgLangsearch" placeholder="chave do LangSearch" spellcheck="false" />
-        <div class="ajuda"><a data-url="https://langsearch.com">langsearch.com</a></div>
-      </div>
-
-      <div class="campo">
-        <label>searxng próprio — endereço, não chave</label>
-        <input type="text" id="cfgSearx" placeholder="https://searx.minha-maquina" spellcheck="false" />
-        <div class="ajuda">As instâncias públicas bloqueiam robô; uma sua funciona e não custa chave.</div>
-      </div>
+      <div class="provedores" id="listaBuscadores"></div>
 
       <button class="secundario" id="btnSalvarBusca">salvar buscadores</button>
       <div class="ajuda" id="ajudaBusca"></div>

@@ -420,6 +420,64 @@ assert.match(html, /<script src="interface\.js">/);
 }
 
 
+// ===========================================================================
+// 9. Nenhum provedor da corrente pode ficar sem campo na tela
+// ===========================================================================
+// Esta é a regressão que começou tudo: ORDEM_RESERVA e chaveDe conheciam o
+// OpenRouter e o Cerebras, mas RESERVAS (o handler) e o HTML não — então não
+// havia onde pôr a chave deles. Ele colou a do OpenRouter no campo do provedor
+// PRINCIPAL, porque era o único que aceitava, e trocou sem querer o cérebro
+// que vinha fazendo 36 de 36 pedidos. Não foi engano dele: era a tela.
+{
+  const brains = require("../brains.js");
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+  const inter = fs.readFileSync(path.join(__dirname, "..", "renderer", "interface.js"), "utf8");
+  const html = fs.readFileSync(path.join(__dirname, "..", "renderer", "index.html"), "utf8");
+
+  const lista = (fonte, nome) => {
+    const m = fonte.match(new RegExp(`const ${nome} = \\[([\\s\\S]*?)\\];`));
+    assert.ok(m, `não achei ${nome}`);
+    return [...m[1].matchAll(/(?:id: )?"([a-z]+)"/g)].map((x) => x[1]);
+  };
+
+  // Os provedores no formato OpenAI que a corrente sabe socorrer.
+  const naCorrente = brains.ORDEM_RESERVA.filter(
+    (p) => p !== "gemini" && p !== "anthropic"
+  );
+  const noHandler = lista(main, "RESERVAS");
+  const naTela = lista(inter, "RESERVAS");
+
+  for (const p of naCorrente) {
+    assert.ok(noHandler.includes(p), `${p} está na corrente mas fora do RESERVAS do main.js`);
+    assert.ok(naTela.includes(p), `${p} está na corrente mas não tem linha na tela`);
+  }
+  assert.ok(naCorrente.includes("openrouter") && naCorrente.includes("cerebras"),
+    "os dois que faltavam têm de continuar cobertos por este teste");
+
+  // E o mapa que a tela lê tem de ser derivado do RESERVAS, não escrito à mão.
+  assert.match(
+    main,
+    /temChaves: Object\.fromEntries\(\s*RESERVAS\.map/,
+    "temChaves tem de sair do RESERVAS; escrito à mão, provedor novo é esquecido"
+  );
+  // Âncora de início de linha: o comentário que EXPLICA a troca contém
+  // "temMistral:" no meio da frase, e casar com ele seria falso positivo.
+  assert.doesNotMatch(main, /^\s*tem(Groq|Nvidia|Mistral):/m,
+    "as flags por provedor voltaram: é o padrão que deixou dois provedores de fora");
+
+  // A lista é construída por dados: nenhum campo de chave escrito no HTML.
+  assert.doesNotMatch(html, /id="cfg(Groq|Nvidia|Mistral|Tavily|Serper|Brave|Langsearch|Searx)"/,
+    "campo de chave escrito à mão no HTML: a tela volta a ser uma parede de campos");
+  for (const id of ["listaProvedores", "listaBuscadores"]) {
+    assert.ok(html.includes(`id="${id}"`), `falta o contêiner ${id} no HTML`);
+  }
+  assert.match(inter, /function montarListaProvedores/, "falta o construtor da lista");
+  // Fechada por padrão: o campo aparece no clique.
+  assert.match(inter, /aria-expanded/, "a linha precisa dizer se está aberta");
+  assert.match(html, /\.prov \.corpo \{ display: none;/, "o corpo começa fechado");
+}
+
+
 console.log("✓ ponte interface ↔ preload ↔ main: canais, eventos, métodos e ids conferem");
 console.log("  canais de ida:", invocados.size, "· eventos de volta:", enviados.size);
 console.log("  métodos expostos:", expostos.size, "· ids ligados:", idsUsados.size);

@@ -1183,21 +1183,41 @@ function curto(n) {
 
 /// O texto curto embaixo da barra. O "≈" segue a convenção do painel: número
 /// que é conta nossa, não medida do provedor.
+/// Como se diz a janela de um limite em português corrido.
+const JANELA_TEXTO = { minuto: "no minuto", hora: "na hora", dia: "hoje" };
+const janelaDeTexto = (b) => JANELA_TEXTO[b.janela] || "hoje";
+
+/// A linha curta embaixo da barra: quanto RESTA, e de que janela.
+///
+/// Antes isto dizia "hoje" em tudo. Virou mentira quando a barra passou a
+/// poder mostrar a janela do minuto — e as duas frases são conselhos opostos:
+/// "487 tk restam no minuto" manda esperar sete segundos, "487 tk restam hoje"
+/// manda parar de perguntar.
 function resumoDaBarra(b) {
   const pct = Math.round((b.fracao || 0) * 100);
+  const quando = janelaDeTexto(b);
   // Contagem de pedidos vai inteira: os tetos de pedidos por dia são pequenos
   // (50 a 14 mil), e "1,0 mil" é pior de ler que "1000" nessa escala.
   if (b.origem === "medido") {
     return b.unidade === "pedidos"
-      ? `${b.teto - b.usado} de ${b.teto} pedidos hoje`
-      : `${curto(b.teto - b.usado)} tk restam hoje`;
+      ? `${b.restante} de ${b.teto} pedidos ${quando}`
+      : `${curto(b.restante)} de ${curto(b.teto)} tk ${quando}`;
   }
   if (b.origem === "publicado") {
     return b.unidade === "pedidos"
-      ? `${b.usado} de ${b.teto} pedidos hoje`
-      : `≈ ${pct}% de ${curto(b.teto)} tk`;
+      ? `${b.usado} de ${b.teto} pedidos ${quando}`
+      : `≈ ${pct}% de ${curto(b.teto)} tk ${quando}`;
   }
   return `${pct}% do uso de hoje`;
+}
+
+/// O selo ao lado da barra: a porcentagem e a janela, como no medidor de
+/// contexto do Claude Code. Era só title antes — e número que só aparece no
+/// hover não serve para avisar ninguém.
+function seloDaBarra(b) {
+  const pct = Math.round((b.fracao || 0) * 100);
+  if (b.origem === "relativo") return `${pct}% do dia`;
+  return `${pct}% ${janelaDeTexto(b)}`;
 }
 
 /// A frase inteira, no title. Aqui cabe explicar de onde vem o número — e de
@@ -1274,7 +1294,16 @@ function mostrarAgentes(dados) {
         if (i < acesos) b.className = "aceso on-" + faixa;
         barra.appendChild(b);
       }
-      bloco.appendChild(barra);
+      // A barra e o selo na mesma linha: "████░░░░  94% no minuto".
+      const faixaBarra = document.createElement("div");
+      faixaBarra.className = "faixaBarra";
+      faixaBarra.appendChild(barra);
+      const selo = document.createElement("span");
+      selo.className = "selo on-" + faixa;
+      selo.textContent = seloDaBarra(l.barra);
+      selo.title = legendaDaBarra(l);
+      faixaBarra.appendChild(selo);
+      bloco.appendChild(faixaBarra);
     }
 
     const det = document.createElement("div");
@@ -1319,11 +1348,24 @@ document.getElementById("btnSalvarChave").addEventListener("click", () => salvar
 // tela. O texto de ajuda é que diz quais estão ativas.
 const ajudaReservasEl = document.getElementById("ajudaReservas");
 
-// Um provedor novo entra aqui e no HTML; o resto do caminho já é genérico.
+// UMA tabela, e a tela sai dela. Provedor novo entra só aqui — antes entrava
+// aqui, no HTML e no configPublica, e era esquecido em pelo menos um dos três.
 const RESERVAS = [
-  { id: "groq", campo: "cfgGroq", tem: "temGroq", vazio: "gsk_…" },
-  { id: "nvidia", campo: "cfgNvidia", tem: "temNvidia", vazio: "nvapi-…" },
-  { id: "mistral", campo: "cfgMistral", tem: "temMistral", vazio: "chave do Mistral" },
+  { id: "groq", vazio: "gsk_…", limite: "~200 mil tk/dia",
+    ajuda: "O mais rápido que existe, mas são 8.000 tokens POR MINUTO: com 27 ferramentas cabem uns 2 pedidos nesse minuto.",
+    url: "https://console.groq.com/keys", onde: "console.groq.com › Keys" },
+  { id: "nvidia", vazio: "nvapi-…", limite: "sem teto publicado",
+    ajuda: "Conta de desenvolvedor, sem cartão. Medido em 01/11: 303 ms até a primeira palavra, e chamou a ferramenta em 3 de 3.",
+    url: "https://build.nvidia.com", onde: "build.nvidia.com" },
+  { id: "mistral", vazio: "chave do Mistral", limite: "varia por conta",
+    ajuda: 'O "Free mode" existe, mas alguns consoles pedem plano — confira em Limits.',
+    url: "https://console.mistral.ai/api-keys", onde: "console.mistral.ai › API Keys" },
+  { id: "cerebras", vazio: "chave do Cerebras", limite: "pede cartão",
+    ajuda: "Em 01/11 passou a exigir método de pagamento para criar a chave. Fica na lista porque a corrente sabe usá-lo se um dia você tiver.",
+    url: "https://cloud.cerebras.ai", onde: "cloud.cerebras.ai" },
+  { id: "openrouter", vazio: "sk-or-…", limite: "50 pedidos/dia",
+    ajuda: "Uma chave, 416 modelos, 14 deles gratuitos com ferramenta. Medido em 01/11: ~4,7 s até a primeira palavra, contra 0,3 s da NVIDIA direta — serve de reserva, não de principal.",
+    url: "https://openrouter.ai/keys", onde: "openrouter.ai/keys" },
 ];
 
 // Buscadores: mesma mecânica das reservas, com uma diferença — aqui a chave é
@@ -1331,16 +1373,123 @@ const RESERVAS = [
 // corrente desce calada para a Wikipédia, e foi exatamente assim que um dia
 // inteiro de perguntas atuais virou resposta de enciclopédia.
 const BUSCADORES_UI = [
-  { id: "tavilyKey", campo: "cfgTavily" },
-  { id: "serperKey", campo: "cfgSerper" },
-  { id: "braveKey", campo: "cfgBrave" },
-  { id: "langsearchKey", campo: "cfgLangsearch" },
-  { id: "searxUrl", campo: "cfgSearx" },
+  { id: "tavilyKey", nome: "tavily", vazio: "tvly-…", limite: "1.000 buscas/mês",
+    ajuda: "Feito para IA, grátis sem cartão.", url: "https://app.tavily.com", onde: "app.tavily.com" },
+  { id: "serperKey", nome: "serper", vazio: "chave do Serper", limite: "2.500 grátis",
+    ajuda: "Resultados do Google. O crédito vem ao criar a conta, sem cartão.",
+    url: "https://serper.dev", onde: "serper.dev" },
+  { id: "braveKey", nome: "brave search", vazio: "chave do Brave", limite: "pede cartão",
+    ajuda: "US$ 5 de crédito por mês, cerca de 1.000 buscas.",
+    url: "https://brave.com/search/api/", onde: "brave.com/search/api" },
+  { id: "langsearchKey", nome: "langsearch", vazio: "chave do LangSearch", limite: "plano por tokens",
+    ajuda: "", url: "https://langsearch.com", onde: "langsearch.com" },
+  { id: "searxUrl", nome: "searxng próprio", vazio: "https://searx.minha-maquina",
+    limite: "endereço, não chave", tipo: "text",
+    ajuda: "As instâncias públicas bloqueiam robô; uma sua funciona e não custa chave." },
 ];
+
+/// Monta uma lista de provedores fechada, com o campo escondido até o clique.
+/// `temChave` recebe o id e diz se já existe chave guardada.
+function montarListaProvedores(elId, itens, temChave) {
+  const alvo = document.getElementById(elId);
+  if (!alvo) return;
+  alvo.innerHTML = "";
+
+  for (const it of itens) {
+    const tem = !!temChave(it.id);
+    const linha = document.createElement("div");
+    linha.className = "prov" + (tem ? " tem" : "");
+
+    const cabeca = document.createElement("button");
+    cabeca.type = "button";
+    cabeca.className = "cabeca";
+    cabeca.setAttribute("aria-expanded", "false");
+
+    const ponto = document.createElement("span");
+    ponto.className = "ponto";
+    // O título do ponto é o que um leitor de tela anuncia, então ele diz a
+    // situação por extenso em vez de depender da cor.
+    ponto.title = tem ? "chave guardada" : "sem chave";
+    cabeca.appendChild(ponto);
+
+    const quem = document.createElement("span");
+    quem.className = "quem";
+    quem.textContent = it.nome || it.id;
+    cabeca.appendChild(quem);
+
+    const limite = document.createElement("span");
+    limite.className = "limite";
+    limite.textContent = tem ? "guardada · " + (it.limite || "") : it.limite || "sem chave";
+    cabeca.appendChild(limite);
+
+    const seta = document.createElement("span");
+    seta.className = "seta";
+    seta.textContent = "▸";
+    cabeca.appendChild(seta);
+    linha.appendChild(cabeca);
+
+    const corpo = document.createElement("div");
+    corpo.className = "corpo";
+
+    const campo = document.createElement("input");
+    campo.type = it.tipo || "password";
+    campo.id = "cfg_" + it.id;
+    campo.spellcheck = false;
+    campo.placeholder = tem ? "já guardada — cole outra para trocar" : it.vazio || "";
+    corpo.appendChild(campo);
+
+    if (it.ajuda || it.url) {
+      const ajuda = document.createElement("div");
+      ajuda.className = "ajuda";
+      if (it.ajuda) ajuda.appendChild(document.createTextNode(it.ajuda + " "));
+      if (it.url) {
+        const a = document.createElement("a");
+        a.dataset.url = it.url;
+        a.textContent = it.onde || it.url;
+        ajuda.appendChild(a);
+      }
+      corpo.appendChild(ajuda);
+    }
+    linha.appendChild(corpo);
+
+    cabeca.addEventListener("click", () => {
+      const abrindo = !linha.classList.contains("aberto");
+      linha.classList.toggle("aberto", abrindo);
+      cabeca.setAttribute("aria-expanded", String(abrindo));
+      if (abrindo) campo.focus();
+    });
+
+    alvo.appendChild(linha);
+  }
+}
+
+/// O campo de um item da lista. Devolve "" quando a linha nunca foi aberta —
+/// e "" significa "não mexi", que é a convenção dos dois handlers de salvar.
+function valorDoCampo(id) {
+  return document.getElementById("cfg_" + id)?.value.trim() || "";
+}
+
+function limparCampos(itens) {
+  for (const it of itens) {
+    const el = document.getElementById("cfg_" + it.id);
+    if (el) el.value = "";
+  }
+}
+
+function pintarProvedores() {
+  const tem = configAtual?.temChaves || {};
+  montarListaProvedores("listaProvedores", RESERVAS, (id) => tem[id]);
+  const busca = configAtual?.buscadores || [];
+  montarListaProvedores("listaBuscadores", BUSCADORES_UI, (id) =>
+    busca.includes(id.replace(/Key$|Url$/, ""))
+  );
+}
+
 const ajudaBuscaEl = document.getElementById("ajudaBusca");
 const buscadoresAtivosEl = document.getElementById("buscadoresAtivos");
 
 function mostrarBuscadores() {
+  pintarProvedores(); // a bolinha de cada buscador vem de configAtual.buscadores
   if (!buscadoresAtivosEl) return;
   const ativos = configAtual?.buscadores || [];
   const comChave = ativos.filter((b) => b !== "duckduckgo" && b !== "wikipedia");
@@ -1351,12 +1500,12 @@ function mostrarBuscadores() {
 
 document.getElementById("btnSalvarBusca")?.addEventListener("click", async () => {
   const chaves = {};
-  for (const b of BUSCADORES_UI) chaves[b.id] = document.getElementById(b.campo).value.trim();
+  for (const b of BUSCADORES_UI) chaves[b.id] = valorDoCampo(b.id);
   ajudaBuscaEl.textContent = "testando com uma busca de verdade…";
 
   const r = await window.ev.saveSearch(chaves);
   if (r?.ok) {
-    for (const b of BUSCADORES_UI) document.getElementById(b.campo).value = "";
+    limparCampos(BUSCADORES_UI);
     ajudaBuscaEl.textContent = r.relato?.length ? r.relato.join(" · ") : "nada mudou.";
     configAtual = { ...configAtual, ...(await window.ev.getConfig()) };
     mostrarBuscadores();
@@ -1368,12 +1517,12 @@ document.getElementById("btnSalvarBusca")?.addEventListener("click", async () =>
 
 document.getElementById("btnSalvarReservas").addEventListener("click", async () => {
   const chaves = {};
-  for (const r of RESERVAS) chaves[r.id] = document.getElementById(r.campo).value.trim();
+  for (const r of RESERVAS) chaves[r.id] = valorDoCampo(r.id);
   ajudaReservasEl.textContent = "verificando…";
 
   const r = await window.ev.saveReserves(chaves);
   if (r?.ok) {
-    for (const def of RESERVAS) document.getElementById(def.campo).value = "";
+    limparCampos(RESERVAS);
     ajudaReservasEl.textContent = r.relato?.length ? r.relato.join(" · ") : "nada mudou.";
     configAtual = { ...configAtual, ...(await window.ev.getConfig()) };
     mostrarReservas();
@@ -1413,17 +1562,14 @@ function mostrarPrincipal() {
   principalEl.disabled = disponiveis.length < 2;
 }
 
-/// A chave nunca volta para a tela: o placeholder é que diz se existe uma salva.
+/// A chave nunca volta para a tela. A lista mostra a situação de cada
+/// provedor; aqui fica só a frase de resumo embaixo do botão.
 function mostrarReservas() {
-  const ativas = [];
-  for (const def of RESERVAS) {
-    const salva = !!configAtual[def.tem];
-    if (salva) ativas.push(def.id);
-    const el = document.getElementById(def.campo);
-    if (el) el.placeholder = salva ? `${def.vazio} (uma chave já está salva)` : def.vazio;
-  }
+  pintarProvedores();
+  const tem = configAtual?.temChaves || {};
+  const ativas = RESERVAS.filter((d) => tem[d.id]).map((d) => d.id);
   if (ativas.length && ajudaReservasEl && !ajudaReservasEl.textContent) {
-    ajudaReservasEl.textContent = `reservas ativas: ${ativas.join(", ")}.`;
+    ajudaReservasEl.textContent = `reservas com chave: ${ativas.join(", ")}.`;
   }
 }
 

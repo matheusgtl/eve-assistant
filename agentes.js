@@ -262,67 +262,83 @@ class Agentes {
   /// as três não.
   barraDe(p, tokens, maiorDoDia) {
     const cota = p.cota;
+    const candidatos = [];
 
-    // 1. O provedor informou o saldo de uma janela diária: é o número real.
-    if (cota?.janelaPedidos === "dia" && cota.pedidosLimite > 0 && cota.pedidosRestantes != null) {
-      const usados = cota.pedidosLimite - cota.pedidosRestantes;
-      return {
-        fracao: Math.min(1, Math.max(0, usados / cota.pedidosLimite)),
+    // Todas as janelas entram como candidata, e no fim ganha A QUE APERTA
+    // MAIS. Antes só a janela de DIA era lida, e por isso o aperto que de fato
+    // interrompia ele era o único invisível: o Groq gratuito dá 8.000 tokens
+    // por MINUTO, e em 31/10 o painel mostrava 5% do teto diário enquanto
+    // restavam 208 tokens do minuto. A barra dizia folga no instante em que a
+    // resposta ia morrer.
+    const JANELAS = { minuto: "no minuto", hora: "na hora", dia: "hoje" };
+
+    for (const [unidade, limite, restantes, janela] of [
+      ["pedidos", cota?.pedidosLimite, cota?.pedidosRestantes, cota?.janelaPedidos],
+      ["tokens", cota?.tokensLimite, cota?.tokensRestantes, cota?.janelaTokens],
+    ]) {
+      if (!(limite > 0) || restantes == null || !janela) continue;
+      const usados = Math.max(0, limite - restantes);
+      candidatos.push({
+        fracao: Math.min(1, usados / limite),
         origem: "medido",
-        unidade: "pedidos",
+        unidade,
+        janela,
         usado: usados,
-        teto: cota.pedidosLimite,
-        rotulo: `${Math.round(cota.pedidosRestantes)} de ${cota.pedidosLimite} pedidos restam hoje`,
-      };
-    }
-    if (cota?.janelaTokens === "dia" && cota.tokensLimite > 0 && cota.tokensRestantes != null) {
-      const usados = cota.tokensLimite - cota.tokensRestantes;
-      return {
-        fracao: Math.min(1, Math.max(0, usados / cota.tokensLimite)),
-        origem: "medido",
-        unidade: "tokens",
-        usado: usados,
-        teto: cota.tokensLimite,
-        rotulo: `${Math.round(cota.tokensRestantes)} tokens restam hoje`,
-      };
+        restante: Math.round(restantes),
+        teto: limite,
+        rotulo: `${Math.round(restantes)} de ${limite} ${unidade} restam ${JANELAS[janela] || janela}`,
+      });
     }
 
-    // 2. Teto publicado. O que aperta primeiro é o que a barra mostra: no Groq
-    //    são 1.000 pedidos e 200 mil tokens por dia, e qual dos dois chega
-    //    antes depende da conversa — barra do outro daria falsa folga.
+    // Teto publicado. O que aperta primeiro é o que vale: no Groq são 1.000
+    // pedidos e 200 mil tokens por dia, e qual chega antes depende da conversa.
     const pub = LIMITES[p.provedorNome];
     if (pub) {
-      const candidatos = [];
       if (pub.pedidosDia) {
         candidatos.push({
-          fracao: p.pedidos / pub.pedidosDia,
+          fracao: Math.min(1, p.pedidos / pub.pedidosDia),
+          origem: "publicado",
           unidade: "pedidos",
+          janela: "dia",
           usado: p.pedidos,
+          restante: Math.max(0, pub.pedidosDia - p.pedidos),
           teto: pub.pedidosDia,
+          fonte: pub.fonte,
           rotulo: `${p.pedidos} de ${pub.pedidosDia} pedidos do dia`,
         });
       }
       if (pub.tokensDia) {
         candidatos.push({
-          fracao: tokens / pub.tokensDia,
+          fracao: Math.min(1, tokens / pub.tokensDia),
+          origem: "publicado",
           unidade: "tokens",
+          janela: "dia",
           usado: tokens,
+          restante: Math.max(0, pub.tokensDia - tokens),
           teto: pub.tokensDia,
+          fonte: pub.fonte,
           rotulo: `${Math.round((tokens / pub.tokensDia) * 100)}% dos tokens do dia`,
         });
       }
-      const pior = candidatos.sort((a, b) => b.fracao - a.fracao)[0];
-      if (pior) return { ...pior, fracao: Math.min(1, pior.fracao), origem: "publicado", fonte: pub.fonte };
     }
 
-    // 3. Nada publicado e nada informado: a fatia do dia. É uma verdade menor,
-    //    mas é verdade — e mostra quem está carregando a conversa.
+    if (candidatos.length) {
+      // Empate em fração: ganha o MEDIDO, que é o número que o provedor mandou.
+      const peso = { medido: 0, publicado: 1, relativo: 2 };
+      candidatos.sort((a, b) => b.fracao - a.fracao || peso[a.origem] - peso[b.origem]);
+      return candidatos[0];
+    }
+
+    // Nada publicado e nada informado: a fatia do dia. É uma verdade menor,
+    // mas é verdade — e mostra quem está carregando a conversa.
     if (tokens > 0 && maiorDoDia > 0) {
       return {
         fracao: Math.min(1, tokens / maiorDoDia),
         origem: "relativo",
         unidade: "tokens",
+        janela: null,
         usado: tokens,
+        restante: null,
         teto: null,
         rotulo: "sem teto publicado; barra = fatia do dia",
       };
