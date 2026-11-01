@@ -1068,7 +1068,7 @@ class GeminiBrain {
 
       const answers = [];
       for (const call of calls) {
-        onTool(call.name);
+        onTool(call.name, call.args || {});
         const output = await rodar(call.name, call.args || {});
         let parsed;
         try {
@@ -1478,13 +1478,13 @@ class OpenAIBrain {
       if (!chamadas.length) return;
 
       for (const chamada of chamadas) {
-        onTool(chamada.name);
         let args = {};
         try {
           args = chamada.args ? JSON.parse(chamada.args) : {};
         } catch {
           onDebug?.(`argumentos inválidos em ${chamada.name}: ${chamada.args}`);
         }
+        onTool(chamada.name, args);
         const saida = await rodar(chamada.name, args);
         this.messages.push({ role: "tool", tool_call_id: chamada.id, content: saida });
       }
@@ -1562,7 +1562,7 @@ class ClaudeBrain {
 
       const results = [];
       for (const call of response.content.filter((b) => b.type === "tool_use")) {
-        onTool(call.name);
+        onTool(call.name, call.input);
         const output = await rodar(call.name, call.input);
         results.push({ type: "tool_result", tool_use_id: call.id, content: output });
       }

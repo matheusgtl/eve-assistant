@@ -902,6 +902,47 @@ function initBrain() {
   return !!brain;
 }
 
+/// Resumo de UMA LINHA dos argumentos de uma ferramenta, para o log.
+///
+/// Por que isto existe: ela gastou 17 chamadas de run_command tentando apagar
+/// um evento do Calendário pelo terminal, e o log guardava só o nome da
+/// ferramenta. Dava para ver que ela agiu 17 vezes e não dava para saber o
+/// QUE ela rodou — justamente a pergunta que importa quando o que está em
+/// jogo é a máquina dele.
+///
+/// Duas regras de contenção:
+///   • campo com cara de segredo nunca é escrito, nem truncado. Hoje nenhuma
+///     ferramenta recebe chave, mas o log é permanente e ferramenta nova
+///     aparece toda semana;
+///   • valor longo (conteúdo de arquivo, texto de memória) entra como tamanho,
+///     não como texto. O log serve para reconstruir a INTENÇÃO; despejar um
+///     arquivo dentro dele só faz o próximo diagnóstico ser mais difícil.
+const CAMPO_SECRETO = /key|token|senha|password|secret|chave|authorization/i;
+const TETO_VALOR = 120;
+
+function resumirArgs(args) {
+  if (!args || typeof args !== "object") return "";
+  const partes = [];
+  for (const [campo, valor] of Object.entries(args)) {
+    if (CAMPO_SECRETO.test(campo)) {
+      partes.push(`${campo}=<oculto>`);
+      continue;
+    }
+    if (valor == null) continue;
+    if (typeof valor === "object") {
+      partes.push(`${campo}=<${Array.isArray(valor) ? `${valor.length} itens` : "objeto"}>`);
+      continue;
+    }
+    const texto = String(valor);
+    partes.push(
+      texto.length > TETO_VALOR
+        ? `${campo}=<${texto.length} caracteres>`
+        : `${campo}=${JSON.stringify(texto)}`
+    );
+  }
+  return partes.length ? `· ${partes.join(" ")}` : "";
+}
+
 async function ask(userText, canal = "texto") {
   if (!userText) return;
   if (!brain) {
@@ -950,8 +991,8 @@ async function ask(userText, canal = "texto") {
       // O log não registrava ferramenta nenhuma, e por isso não dava para
       // saber, lendo depois, se ela tinha AGIDO ou só conversado. Era o buraco
       // de diagnóstico mais caro que este app tinha.
-      onTool: (nome) => {
-        log("ferramenta:", nome);
+      onTool: (nome, args) => {
+        log("ferramenta:", nome, resumirArgs(args));
         send("ev:tool", { name: nome });
         setEstado("thinking", nome);
       },

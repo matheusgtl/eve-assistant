@@ -317,6 +317,65 @@ assert.ok(
 assert.match(html, /<script src="esfera\.js">/);
 assert.match(html, /<script src="interface\.js">/);
 
+// ===========================================================================
+// 7. O log tem de dizer O QUE ela rodou, sem vazar segredo
+// ===========================================================================
+// 31/10: 17 chamadas de run_command tentando apagar um evento do Calendário
+// pelo terminal, e o log guardava só "ferramenta: run_command". Dava para ver
+// que ela agiu 17 vezes e não dava para saber o quê — a única pergunta que
+// importa quando o que está em jogo é a máquina dele.
+{
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  assert.match(
+    main,
+    /onTool:\s*\(nome,\s*args\)\s*=>/,
+    "onTool precisa receber os argumentos, senão não há o que registrar"
+  );
+  assert.match(
+    main,
+    /log\("ferramenta:",\s*nome,\s*resumirArgs\(args\)\)/,
+    "e o log precisa escrever o resumo dos argumentos"
+  );
+
+  // Os três provedores chamam onTool. Se um ficar para trás, o log fica cego
+  // justamente no provedor que ele usa (hoje, NVIDIA no formato OpenAI).
+  const brains = fs.readFileSync(path.join(__dirname, "..", "brains.js"), "utf8");
+  const comArgs = [...brains.matchAll(/onTool\([^)]*,\s*[^)]+\)/g)].length;
+  assert.strictEqual(comArgs, 3, `os 3 provedores têm de passar args (achei ${comArgs})`);
+  assert.doesNotMatch(
+    brains,
+    /onTool\((?:call|chamada)\.name\)/,
+    "sobrou um onTool sem argumentos: esse provedor vai registrar log cego"
+  );
+
+  // E o comportamento da função, rodando de verdade.
+  const resumirArgs = new Function(
+    `${main.match(/const CAMPO_SECRETO[\s\S]*?\n}\n/)[0]}; return resumirArgs;`
+  )();
+
+  // Comando curto aparece inteiro: é o que faltava no log.
+  assert.match(resumirArgs({ command: "osascript -e 'tell app \"Calendar\"'" }), /osascript/);
+
+  // Campo com cara de segredo nunca é escrito — nem truncado.
+  for (const campo of ["apiKey", "token", "senha", "password", "elevenKey", "authorization"]) {
+    const saida = resumirArgs({ [campo]: "nvapi-valor-secreto-de-verdade" });
+    assert.match(saida, /<oculto>/, `${campo} tinha de ser ocultado`);
+    assert.doesNotMatch(saida, /nvapi|secreto/, `${campo} VAZOU para o log`);
+  }
+
+  // Valor longo entra como tamanho: despejar um arquivo no log atrapalha o
+  // próximo diagnóstico em vez de ajudar.
+  const longo = resumirArgs({ content: "x".repeat(5000) });
+  assert.match(longo, /content=<5000 caracteres>/);
+  assert.ok(longo.length < 60, "valor longo não pode ir inteiro para o log");
+
+  // Sem argumentos, sem ruído.
+  assert.strictEqual(resumirArgs(undefined), "");
+  assert.strictEqual(resumirArgs({}), "");
+}
+
+
 console.log("✓ ponte interface ↔ preload ↔ main: canais, eventos, métodos e ids conferem");
 console.log("  canais de ida:", invocados.size, "· eventos de volta:", enviados.size);
 console.log("  métodos expostos:", expostos.size, "· ids ligados:", idsUsados.size);
