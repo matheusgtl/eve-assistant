@@ -376,6 +376,50 @@ assert.match(html, /<script src="interface\.js">/);
 }
 
 
+// ===========================================================================
+// 8. Chave de reserva colada no campo do principal
+// ===========================================================================
+// 01/11: ele pegou chaves do Mistral e do OpenRouter para somar à reserva.
+// A do Mistral foi no campo certo; a do OpenRouter foi no campo do provedor
+// PRINCIPAL, que é o que aquele campo faz — e o OpenRouter substituiu a
+// NVIDIA, que vinha fazendo 36 de 36 pedidos sem erro. Dois defeitos:
+//
+//   1. `openrouterKey` ficou VAZIA. A chave foi só para a genérica `apiKey`,
+//      então valia apenas enquanto o OpenRouter fosse o principal; voltar para
+//      a NVIDIA tiraria o OpenRouter da corrente em silêncio.
+//   2. Os dois campos logavam a MESMA frase ("chave do X validada; N
+//      modelos"), e por isso o log não mostrava qual caminho tinha rodado.
+{
+  const main = fs.readFileSync(path.join(__dirname, "..", "main.js"), "utf8");
+
+  // A chave tem de ir para o campo do provedor, não só para a genérica.
+  assert.match(
+    main,
+    /cfg\[`\$\{provider\}Key`\] = chave;/,
+    "a chave do principal tem de ser gravada também no campo do provedor dela, " +
+      "senão ela desaparece da corrente quando o principal mudar"
+  );
+
+  // E as duas frases de log precisam ser distinguíveis.
+  assert.match(main, /chave PRINCIPAL do \$\{provider\} validada/, "falta marcar PRINCIPAL");
+  assert.match(main, /chave de RESERVA do \$\{provedor\} validada/, "falta marcar RESERVA");
+  const iguais = [...main.matchAll(/chave do \$\{prov\w*\} validada/g)].length;
+  assert.strictEqual(iguais, 0, "sobrou uma frase ambígua: o log volta a esconder qual campo rodou");
+
+  // Trocar o principal não pode ser mudo.
+  assert.match(
+    main,
+    /anterior && anterior !== provider/,
+    "a troca de provedor principal tem de ser detectada"
+  );
+  assert.match(
+    main,
+    /o campo é "Reservas" nos ajustes/,
+    "e o aviso tem de dizer onde era o campo certo"
+  );
+}
+
+
 console.log("✓ ponte interface ↔ preload ↔ main: canais, eventos, métodos e ids conferem");
 console.log("  canais de ida:", invocados.size, "· eventos de volta:", enviados.size);
 console.log("  métodos expostos:", expostos.size, "· ids ligados:", idsUsados.size);

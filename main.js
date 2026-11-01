@@ -1529,7 +1529,7 @@ ipcMain.handle("ev:save-reserves", async (_e, chaves = {}) => {
     }
     cfg[campo] = chave;
     relato.push(`${provedor}: ${teste.modelos.length} modelos`);
-    log(`chave do ${provedor} validada;`, teste.modelos.length, "modelos");
+    log(`chave de RESERVA do ${provedor} validada;`, teste.modelos.length, "modelos");
   }
 
   saveConfig(cfg);
@@ -1630,7 +1630,10 @@ ipcMain.handle("ev:save-key", async (_e, key) => {
       send("ev:error", { message: `Chave do ${provider} recusada: ${teste.error}` });
       return false;
     }
-    log(`chave do ${provider} validada;`, teste.modelos.length, "modelos");
+    // "principal" no texto: o ev:save-reserves loga a frase quase igual, e no
+    // log do dia 01/11 as duas eram indistinguíveis — foi o que escondeu que
+    // uma chave de reserva tinha trocado o provedor principal.
+    log(`chave PRINCIPAL do ${provider} validada;`, teste.modelos.length, "modelos");
   }
 
   // Chave do Google (ou de formato desconhecido): confirma com o próprio Google.
@@ -1659,18 +1662,35 @@ ipcMain.handle("ev:save-key", async (_e, key) => {
   // gravar o modelo recém-escolhido, senão apagaríamos justamente ele.
   if (cfg.provider && cfg.provider !== provider) delete cfg.model;
   if (modelo) cfg.model = modelo;
+  const anterior = cfg.provider;
   cfg.apiKey = chave;
   cfg.provider = provider;
-  // Guarda a chave do Gemini à parte: a pesquisa na web depende dela mesmo que
-  // amanhã o cérebro passe a ser outro provedor.
-  if (provider === "gemini") {
-    cfg.geminiKey = chave;
-    if (modelo) cfg.geminiModel = modelo;
-  }
+  // A chave vai TAMBÉM para o campo do provedor dela, e não só para a genérica.
+  //
+  // 01/11: ele colou a chave do OpenRouter aqui pensando que estava somando uma
+  // reserva. Ficou como principal — o que este campo faz — mas `openrouterKey`
+  // continuou vazia, então a chave só valia enquanto o OpenRouter FOSSE o
+  // principal. No dia em que ele voltasse para a NVIDIA, o OpenRouter sairia da
+  // corrente em silêncio, apesar de a chave estar ali no arquivo.
+  cfg[`${provider}Key`] = chave;
+  // O Gemini também precisa da dele à parte porque a pesquisa na web usa essa
+  // chave mesmo quando o cérebro é outro provedor.
+  if (provider === "gemini" && modelo) cfg.geminiModel = modelo;
   saveConfig(cfg);
 
   const ok = initBrain();
-  log("cérebro configurado:", provider, ok ? "ok" : "falhou");
+  log("cérebro PRINCIPAL configurado:", provider, ok ? "ok" : "falhou");
+  // Trocar o principal é uma mudança grande e era muda. Dizer em voz alta,
+  // porque quem cola uma chave de reserva no campo errado não tem como saber
+  // que acabou de trocar o cérebro que estava funcionando.
+  if (ok && anterior && anterior !== provider) {
+    send("ev:notice", {
+      message:
+        `Agora eu respondo pelo ${provider}; o ${anterior} virou reserva. ` +
+        `Se você queria só somar uma reserva, o campo é "Reservas" nos ajustes.`,
+    });
+    log(`principal trocado: ${anterior} → ${provider} (o ${anterior} continua na reserva)`);
+  }
   send("ev:setup", { needed: !ok });
   send("ev:config", configPublica());
 
