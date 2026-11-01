@@ -306,6 +306,8 @@ servidor.listen(0, async () => {
   conferirPodaDoHistorico();
   const tetos = conferirTetoPorProvedor();
   await conferirGuardaDeRepeticao();
+  const orcamento = conferirOrcamentoDoGroq();
+  conferirEsperaAntesDeTrocar();
   console.log("✓ provedores no formato OpenAI: ferramenta fatiada, histórico e corrente de reserva");
   console.log("   chamada em 6 pedaços → system_status({detalhado:true})");
   console.log("   groq 429            → respondeu pelo mistral, troca anunciada");
@@ -316,8 +318,123 @@ servidor.listen(0, async () => {
   console.log("   poda do histórico   → por tamanho, em grupos, começando por ele");
   console.log("   teto por provedor   → groq lembra", tetos.comGroq.length, "trocas de 10; nvidia lembra", tetos.comNvidia.length);
   console.log("   chamada repetida    → barrada na 3ª, com recado para sair do laço");
+  console.log(
+    "   orçamento do groq   → fixo " + orcamento.fixo + " tokens; teto " +
+      orcamento.teto + " caracteres; " + orcamento.pedidos + " pedidos/minuto"
+  );
+  console.log("   retry-after curto   → espera no mesmo provedor, histórico fica");
+  console.log("   ordem da reserva    → " + orcamento.reserva + " (groq saiu da frente)");
   servidor.close();
 });
+
+// ---------------------------------------------------------------------------
+// O orçamento do Groq: o teto de histórico é uma CONTA, não um palpite
+// ---------------------------------------------------------------------------
+// 31/10: "Rate limit reached ... tokens per minute (TPM): Limit 8000,
+// Used 3487, Requested 4595" — estourou por 82 tokens. O teto estava em 14.000
+// caracteres, o que dava 6.638 tokens num pedido só: 1,2 pedidos por minuto,
+// quando uma pergunta com ferramenta precisa de dois no mínimo.
+//
+// Este teste existe para o dia em que uma ferramenta nova empurrar o custo
+// fixo para cima. Ele não checa um número bonito; ele refaz a conta com o
+// prompt e as ferramentas DE VERDADE e exige que o teto continue coerente.
+function conferirOrcamentoDoGroq() {
+  const { montarSystemPrompt, TETO_POR_PROVEDOR, TPM_POR_PROVEDOR, PEDIDOS_POR_MINUTO, tetoDoTpm } =
+    require("../brains.js");
+  const { toolDefinitions } = require("../tools.js");
+
+  const emTokens = (texto) => Math.round(texto.length / 4);
+  const fixo = emTokens(montarSystemPrompt()) + emTokens(JSON.stringify(toolDefinitions));
+  const tpm = TPM_POR_PROVEDOR.groq;
+  assert.strictEqual(tpm, 8_000, "o 429 do Groq diz Limit 8000; se mudou, mude aqui");
+
+  const pedido = fixo + emTokens("x".repeat(TETO_POR_PROVEDOR.groq));
+  const pedidos = tpm / pedido;
+  assert.ok(
+    pedidos >= PEDIDOS_POR_MINUTO,
+    `no pior caso cabem ${pedidos.toFixed(1)} pedidos no minuto do Groq, e uma pergunta com ` +
+      `ferramenta precisa de ${PEDIDOS_POR_MINUTO}. Custo fixo: ${fixo} tokens. ` +
+      `Aperte TETO_POR_PROVEDOR.groq (hoje ${TETO_POR_PROVEDOR.groq}) ou corte ferramenta.`
+  );
+
+  // E o teto configurado não pode estar mais largo do que a conta permite.
+  assert.ok(
+    TETO_POR_PROVEDOR.groq <= tetoDoTpm("groq", fixo),
+    `o teto do groq (${TETO_POR_PROVEDOR.groq}) passou do que sobra do TPM ` +
+      `(${tetoDoTpm("groq", fixo)} caracteres)`
+  );
+
+  // Provedor sem TPM declarado não ganha teto apertado à toa.
+  assert.strictEqual(tetoDoTpm("nvidia", fixo), null, "nvidia não declara TPM: sem teto derivado");
+
+  // E o Groq não pode voltar a ser o PRIMEIRO da reserva. Com este custo fixo
+  // ele é o provedor mais propenso a recusar, e recusar depois de assumir é
+  // pior do que não assumir: a troca descarta o histórico, então ela perderia
+  // a conversa para cair num provedor que também ia falhar. Foi a cascata de
+  // 31/10 — nvidia expirou → groq 429 → gemini lotado → 504.
+  const { ORDEM_RESERVA } = require("../brains.js");
+  const ondeGroq = ORDEM_RESERVA.indexOf("groq");
+  const ondeGemini = ORDEM_RESERVA.indexOf("gemini");
+  assert.ok(ondeGroq > 0, "o groq não pode abrir a reserva: é o mais apertado de todos");
+  assert.ok(
+    ondeGemini >= 0 && ondeGemini < ondeGroq,
+    "o gemini tem de vir antes do groq: o trabalho da reserva é RESPONDER, e o " +
+      "gemini tem limite folgado e espera tratada"
+  );
+
+  return {
+    fixo,
+    teto: TETO_POR_PROVEDOR.groq,
+    pedidos: pedidos.toFixed(1),
+    reserva: ORDEM_RESERVA.slice(0, 3).join(" → "),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Esperar meio segundo é melhor do que trocar de provedor
+// ---------------------------------------------------------------------------
+// Trocar descarta o histórico: cada cérebro guarda a conversa no formato da
+// sua própria API. O Groq pediu 615 ms e ela trocou — pagou a conversa inteira
+// para economizar meio segundo.
+function conferirEsperaAntesDeTrocar() {
+  const { segundosDeEspera, ESPERA_MAXIMA } = require("../brains.js");
+  const cab = (v) => ({ get: (n) => (n === "retry-after" ? v : null) });
+
+  // O corpo do 429 do Groq, copiado do log do dia 31/10.
+  const real =
+    "Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01m5` " +
+    "service tier `on_demand` on tokens per minute (TPM): Limit 8000, Used 3487, " +
+    "Requested 4595. Please try again in 615ms.";
+  assert.strictEqual(segundosDeEspera(null, real), 0.615, "615ms tem de virar 0,615s");
+  assert.ok(0.615 <= ESPERA_MAXIMA, "uma espera dessas tem de caber no teto, senão troca à toa");
+
+  assert.strictEqual(segundosDeEspera(null, "please try again in 2.5s"), 2.5);
+  assert.strictEqual(segundosDeEspera(null, "try again in 1m30s"), 90, "minutos contam");
+
+  // O cabeçalho manda, quando existe: é o número oficial.
+  assert.strictEqual(segundosDeEspera(cab("3"), real), 3, "retry-after ganha do texto");
+  assert.strictEqual(segundosDeEspera(cab("0.4"), null), 0.4, "aceita fracionado");
+
+  // Sem indicação nenhuma → null, e aí a troca de provedor é o certo.
+  assert.strictEqual(segundosDeEspera(null, "quota exceeded"), null);
+  assert.strictEqual(segundosDeEspera(null, null), null);
+  assert.strictEqual(segundosDeEspera(cab("amanhã"), "sem número"), null, "lixo não vira espera");
+
+  // Espera longa não pode virar silêncio: acima do teto, troca.
+  assert.ok(
+    segundosDeEspera(null, "try again in 1m30s") > ESPERA_MAXIMA,
+    "90s tem de ficar ACIMA do teto, senão ela fica muda esperando"
+  );
+
+  // E a corrente tem de ter a trava de uma espera por provedor.
+  const fonte = require("node:fs").readFileSync(
+    require("node:path").join(__dirname, "..", "brains.js"),
+    "utf8"
+  );
+  assert.match(fonte, /jaEsperou\.has\(provedor\)/, "sem a trava, 429 em sequência vira laço");
+  assert.match(fonte, /jaEsperou\.add\(provedor\)/);
+  assert.match(fonte, /continue; \/\/ mesmo provedor, mesmo histórico/);
+}
 
 // ---------------------------------------------------------------------------
 // Poda do histórico: por TAMANHO, e sem separar chamada de ferramenta
@@ -414,19 +531,27 @@ function conferirPodaDoHistorico() {
 // ---------------------------------------------------------------------------
 // O teto do histórico é de QUEM responde — e não do Groq para todo mundo
 // ---------------------------------------------------------------------------
-// O teto de 14 mil caracteres nasceu do limite do Groq: 8.000 tokens POR
-// MINUTO no plano gratuito. Quando o principal virou a NVIDIA, o teto ficou
-// onde estava e passou a cortar conversa sem necessidade — a NVIDIA não manda
-// nenhum `x-ratelimit-*` e o limite dela é de pedidos, não de tokens.
+// O aperto nasceu do limite do Groq: 8.000 tokens POR MINUTO no plano
+// gratuito. Quando o principal virou a NVIDIA, o teto ficou onde estava e
+// passou a cortar conversa sem necessidade — a NVIDIA não manda nenhum
+// `x-ratelimit-*` e o limite dela é de pedidos, não de tokens.
 //
 // Foi isto que ele sentiu: "ela perde contexto agora".
+//
+// O número exato do teto do Groq NÃO é conferido aqui de propósito: ele é
+// derivado do TPM e do custo fixo do pedido, e quem guarda essa conta é o
+// conferirOrcamentoDoGroq. Repetir a constante nos dois lugares faria o teste
+// passar a exigir um número em vez da propriedade que importa.
 function conferirTetoPorProvedor() {
   const { podarHistorico, FORMATO_OPENAI, tetoDe, TETO_HISTORICO } = require("../brains.js");
 
-  assert.strictEqual(tetoDe("groq"), 14_000, "o aperto do Groq é real e continua valendo");
+  assert.ok(tetoDe("groq") < TETO_HISTORICO, "o aperto do Groq é real e continua valendo");
   assert.strictEqual(tetoDe("nvidia"), TETO_HISTORICO, "a NVIDIA não tem esse aperto");
   assert.strictEqual(tetoDe("gemini"), TETO_HISTORICO);
-  assert.ok(TETO_HISTORICO > 14_000 * 3, "e o teto solto precisa ser de fato maior");
+  assert.ok(
+    TETO_HISTORICO > tetoDe("groq") * 3,
+    "e o teto solto precisa ser de fato maior, senão apertar o Groq não distingue nada"
+  );
 
   // Uma conversa como a dele: dez trocas, uma pesquisa a cada três. Cada
   // resposta de busca são 5 resultados com trechos de 600 caracteres.

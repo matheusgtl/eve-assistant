@@ -257,9 +257,51 @@ function guardaDeRepeticao(executar = runTool) {
 //
 // Então o teto passa a ser de quem está respondendo. Só o Groq continua curto,
 // porque o limite dele é real.
+// Teto para esperar no mesmo provedor em vez de trocar. Acima disto a troca
+// ganha: ela é uma voz, e silêncio longo soa como travada — aí vale mais
+// responder sem o histórico do que responder tarde com ele.
+const ESPERA_MAXIMA = 5; // segundos
+
 const TETO_HISTORICO = 60_000; // caracteres (~15 mil tokens)
+// Limite de tokens por MINUTO de cada provedor, somando todos os pedidos.
+// Só entra aqui quem tem limite apertado o bastante para mudar a decisão.
+const TPM_POR_PROVEDOR = {
+  groq: 8_000, // plano gratuito; o próprio 429 dele diz "Limit 8000"
+};
+
+// Quantos pedidos de uma mesma pergunta precisam caber nesse minuto. Uma
+// pergunta com ferramenta não é um pedido: é um por rodada de ferramenta mais
+// o da resposta final. Dois é o mínimo para ela conseguir usar uma ferramenta
+// e depois falar sobre o resultado.
+const PEDIDOS_POR_MINUTO = 2;
+
+/// O teto de histórico do Groq não é um número escolhido a dedo: é o que sobra.
+///
+/// Cada pedido carrega, antes de qualquer conversa, o prompt de sistema e as
+/// 27 definições de ferramenta — hoje ~3.140 tokens. Com 8.000 tokens por
+/// minuto e dois pedidos por pergunta, sobram ~860 tokens para o histórico.
+///
+/// O valor anterior aqui era 14.000 caracteres, e era incoerente: 3.500 tokens
+/// de histórico mais o fixo dava 6.638 tokens em UM pedido, isto é 1,2 pedidos
+/// por minuto. Na prática o Groq respondia 429 na primeira rodada de
+/// ferramenta — foi o que aconteceu em 31/10, estourando por 82 tokens. Um
+/// teto apertado faz ela lembrar menos; o teto largo fazia ela não responder.
+/// E como estourar levava à TROCA de provedor, que descarta o histórico
+/// inteiro, o teto largo perdia mais memória do que o apertado.
+///
+/// O teste confere esta conta contra o prompt e as ferramentas de verdade, para
+/// o dia em que uma ferramenta nova empurrar o fixo para cima.
+const CARACTERES_POR_TOKEN = 4;
+
+function tetoDoTpm(provedor, fixoEmTokens) {
+  const tpm = TPM_POR_PROVEDOR[provedor];
+  if (!tpm) return null;
+  const sobra = tpm / PEDIDOS_POR_MINUTO - fixoEmTokens;
+  return Math.max(0, Math.floor(sobra * CARACTERES_POR_TOKEN));
+}
+
 const TETO_POR_PROVEDOR = {
-  groq: 14_000, // 8.000 tokens/minuto no plano gratuito — este é de verdade
+  groq: 3_400, // = tetoDoTpm("groq", ~3.140). Ver a conta acima.
 };
 const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
 
@@ -1177,14 +1219,50 @@ function conteudoOpenAI(texto, anexo) {
   return `[anexo "${anexo.nome}" não pode ser lido por este provedor; diga isso a ele]\n\n${texto}`;
 }
 
-function erroOpenAI(status, data, nome) {
+/// Quantos segundos o provedor pediu para esperar, se pediu.
+///
+/// O comentário que estava aqui dizia que nenhum provedor no formato OpenAI
+/// manda RetryInfo como o Google. Era falso, e custou contexto: o Groq diz
+/// "Please try again in 615ms" no corpo e manda `retry-after` no cabeçalho.
+/// Sem ler isso, 615 milissegundos viravam uma troca de provedor — e trocar
+/// de provedor JOGA O HISTÓRICO FORA, porque cada cérebro guarda a conversa
+/// no formato da sua própria API. Ela perdia a conversa para economizar meio
+/// segundo.
+function segundosDeEspera(headers, msg) {
+  const cab = headers?.get?.("retry-after");
+  if (cab) {
+    const n = parseFloat(cab);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  const texto = String(msg || "");
+  // "1m30s" vem ANTES da forma de unidade única, porque contém um "30s" que a
+  // outra regra leria sozinho — e perder o minuto é esperar 30s quando o
+  // provedor pediu 90, estourar de novo e trocar à toa.
+  const comMinuto = texto.match(/try again in\s*(\d+)m\s*([\d.]+)s\b/i);
+  if (comMinuto) {
+    const minutos = Number(comMinuto[1]);
+    const segundos = parseFloat(comMinuto[2]);
+    if (Number.isFinite(minutos) && Number.isFinite(segundos)) return minutos * 60 + segundos;
+  }
+  // "615ms", "2.5s", "90s".
+  const simples = texto.match(/try again in\s*([\d.]+)\s*(ms|s)\b/i);
+  if (!simples) return null;
+  const valor = parseFloat(simples[1]);
+  if (!Number.isFinite(valor)) return null;
+  return simples[2].toLowerCase() === "ms" ? valor / 1000 : valor;
+}
+
+function erroOpenAI(status, data, nome, headers) {
   const msg =
     data?.error?.message || data?.message || data?.detail || `${nome} devolveu ${status}`;
   const err = new Error(msg);
   err.status = status;
-  // 429 aqui é limite batido; nenhum desses provedores manda RetryInfo como o
-  // Google, então não há segundos para esperar — o que resolve é outro provedor.
-  if (status === 429) err.limiteBatido = true;
+  if (status === 429) {
+    err.limiteBatido = true;
+    // Pode ser null: o provedor que não diz quanto esperar continua caindo
+    // na troca de provedor, que é o que sempre foi.
+    err.esperarSegundos = segundosDeEspera(headers, msg);
+  }
   if (status === 401 || status === 403) err.chaveRuim = true;
   return err;
 }
@@ -1276,7 +1354,7 @@ async function checkOpenAI(provider, apiKey) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      const err = erroOpenAI(res.status, data, def.nome);
+      const err = erroOpenAI(res.status, data, def.nome, res.headers);
       return { ok: false, status: res.status, error: err.message };
     }
     const modelos = (data.data || []).map((m) => m.id).filter(Boolean);
@@ -1369,7 +1447,7 @@ class OpenAIBrain {
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        throw erroOpenAI(res.status, data, this.def.nome);
+        throw erroOpenAI(res.status, data, this.def.nome, res.headers);
       }
       if (!res.body) throw new Error("resposta sem corpo");
 
@@ -1578,7 +1656,23 @@ class ClaudeBrain {
 // ===========================================================================
 // Ordem de socorro. O Mistral vem por último de propósito: é o de teto mais
 // alto (~1 bi de tokens/mês), então é o que faz sentido guardar como rede.
-const ORDEM_RESERVA = ["groq", "gemini", "anthropic", "nvidia", "cerebras", "openrouter", "mistral"];
+/// Ordem da reserva. O Groq era o primeiro porque é a inferência mais rápida
+/// que existe, e numa voz a latência é o que se sente. Deixou de valer:
+///
+/// Com 27 ferramentas, cada pedido carrega ~3.140 tokens antes de qualquer
+/// conversa, e o plano gratuito do Groq dá 8.000 tokens POR MINUTO. São dois
+/// pedidos — e uma pergunta com ferramenta gasta isso só para começar. Então o
+/// primeiro da reserva era justamente o mais propenso a recusar, e recusar
+/// depois de assumir é pior do que não assumir: a troca de provedor descarta o
+/// histórico, então ela perdia a conversa para cair num provedor que também ia
+/// falhar. Foi a cascata de 31/10: nvidia expirou → groq 429 → gemini lotado
+/// → 504, com o histórico jogado fora duas vezes no caminho.
+///
+/// O Gemini assume a frente porque o trabalho da reserva é RESPONDER. Ele tem
+/// limite folgado, muitos modelos para tentar, e o código já sabe esperar os
+/// segundos que ele pede. Velocidade não vale nada quando a resposta é 429.
+/// O Groq continua na corrente, só não na frente dela.
+const ORDEM_RESERVA = ["gemini", "anthropic", "nvidia", "cerebras", "openrouter", "groq", "mistral"];
 
 /// Onde está a chave de cada provedor. A chave principal (`apiKey`) continua
 /// valendo para o provedor escolhido, para não quebrar quem já tinha o config
@@ -1646,6 +1740,9 @@ class CadeiaDeCerebros {
 
   async ask(userText, opcoes) {
     let ultimo = null;
+    // Uma espera por provedor, por pergunta. Sem esta trava, um provedor que
+    // responde 429 em sequência prenderia a resposta num laço de esperas.
+    const jaEsperou = new Set();
 
     while (this.atual < this.etapas.length) {
       let falou = false;
@@ -1661,6 +1758,28 @@ class CadeiaDeCerebros {
         ultimo = err;
         const temProximo = this.atual + 1 < this.etapas.length;
         if (falou || !provedorEsgotado(err) || !temProximo) throw err;
+
+        // ESPERAR ANTES DE TROCAR, quando o provedor disse quanto esperar e é
+        // pouco. Trocar de provedor descarta o histórico — cada cérebro guarda
+        // a conversa no formato da sua própria API — então trocar por causa de
+        // meio segundo é pagar a conversa inteira para economizar meio segundo.
+        // Foi o que aconteceu em 31/10: o Groq pediu 615 ms (limite de 8.000
+        // tokens por minuto, estourado por 82) e ela trocou de provedor.
+        const provedor = this.etapas[this.atual].provider;
+        const espera = err?.esperarSegundos;
+        if (
+          !jaEsperou.has(provedor) &&
+          Number.isFinite(espera) &&
+          espera > 0 &&
+          espera <= ESPERA_MAXIMA
+        ) {
+          jaEsperou.add(provedor);
+          opcoes.onDebug?.(
+            `${provedor} pediu ${espera}s; esperando em vez de trocar (o histórico fica)`
+          );
+          await new Promise((r) => setTimeout(r, Math.ceil(espera * 1000) + 150));
+          continue; // mesmo provedor, mesmo histórico
+        }
 
         const saiu = this.etapas[this.atual].provider;
         this.atual++;
@@ -1745,6 +1864,11 @@ module.exports = {
   FORMATO_CLAUDE,
   TETO_HISTORICO,
   TETO_POR_PROVEDOR,
+  TPM_POR_PROVEDOR,
+  PEDIDOS_POR_MINUTO,
+  tetoDoTpm,
+  ESPERA_MAXIMA,
+  segundosDeEspera,
   tetoDe,
   modeloCombina,
   rankOpenAI,
