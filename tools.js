@@ -447,6 +447,16 @@ const toolDefinitions = [
     },
   },
   {
+    name: "listar_lembretes_app",
+    description: "Lembretes pendentes do app Lembretes, com id. Use antes de apagar.",
+    input_schema: { type: "object", properties: { lista: { type: "string" } } },
+  },
+  {
+    name: "apagar_lembrete_app",
+    description: "Remove um lembrete do app Lembretes. O id vem de listar_lembretes_app.",
+    input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+  },
+  {
     // Só por id, nunca por título ou data. O id vem de listar_eventos, então
     // para apagar ela é obrigada a olhar a lista primeiro — e é exatamente
     // esse passo que a impede de apagar o evento errado por causa de um
@@ -1016,6 +1026,31 @@ const executors = {
       return await ctx.calendario.criarLembreteApp({
         titulo, quando, lista, alarmeMinutos: alarme_minutos,
       });
+    } catch (err) {
+      return { error: err.message, codigo: err.codigo || undefined };
+    }
+  },
+
+  async listar_lembretes_app({ lista }) {
+    if (!ctx.calendario) return { error: "os Lembretes não estão disponíveis agora" };
+    try {
+      return await ctx.calendario.listarLembretesApp({ lista });
+    } catch (err) {
+      return { error: err.message, codigo: err.codigo || undefined };
+    }
+  },
+
+  async apagar_lembrete_app({ id }) {
+    if (!ctx.calendario) return { error: "os Lembretes não estão disponíveis agora" };
+    if (!id) {
+      return { error: "apagar_lembrete_app precisa do id. Chame listar_lembretes_app primeiro." };
+    }
+    // A mesma trava do apagar_evento, e pelo mesmo motivo: id de lembrete
+    // INTERNO não serve aqui tampouco — o do app Lembretes é longo.
+    const errado = idDeLembreteInterno(id);
+    if (errado) return errado;
+    try {
+      return await ctx.calendario.apagarLembreteApp(id);
     } catch (err) {
       return { error: err.message, codigo: err.codigo || undefined };
     }

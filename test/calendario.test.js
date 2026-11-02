@@ -420,6 +420,46 @@ const chamadas = () =>
     "com hora marcada o alarme continua sendo na hora"
   );
 
+  // ---------------- 15. ela precisa poder LER e APAGAR os lembretes --------
+  // Até aqui ela criava lembrete no app Lembretes e não conseguia ler nem
+  // apagar: o helper tinha a ação de listar, mas nenhuma ferramenta a expunha,
+  // e apagar não existia. Na prática ela não podia desfazer o próprio
+  // trabalho — e foi exatamente o que precisou ser feito em 01/11, quando o
+  // espelho duplicou sete lembretes.
+  for (const t of ["listar_lembretes_app", "apagar_lembrete_app"]) {
+    assert.ok(nomes.includes(t), `falta a ferramenta ${t}`);
+  }
+  assert.match(
+    toolDefinitions.find((t) => t.name === "listar_lembretes_app").description,
+    /id/i,
+    "listar tem de avisar que devolve o id, senão apagar fica sem o que usar"
+  );
+
+  process.env.EV_CAL_BIN = helperFalso({ apagado: true, lembrete: { id: "LM-9", titulo: "ENEM" } });
+  delete require.cache[require.resolve("../calendario.js")];
+  const cal6 = require("../calendario.js");
+  ferramentas.configurar({ calendario: cal6 });
+
+  await cal6.listarLembretesApp({});
+  assert.match(chamadas().at(-1), /^lembretes$/, "listar sem lista pega todas");
+  await cal6.listarLembretesApp({ lista: "Pessoal" });
+  assert.match(chamadas().at(-1), /^lembretes --lista Pessoal$/);
+
+  await cal6.apagarLembreteApp("LM-9");
+  assert.match(chamadas().at(-1), /^lembrete-apagar --id LM-9$/);
+  const semIdLem = await cal6.apagarLembreteApp().then(() => null, (e) => e);
+  assert.ok(semIdLem instanceof Error, "apagar sem id tem de ser recusado");
+
+  // A mesma trava do apagar_evento: id interno não serve aqui tampouco.
+  const ruim = JSON.parse(await ferramentas.runTool("apagar_lembrete_app", { id: "dz5a8q" }));
+  assert.strictEqual(ruim.codigo, "id_de_outro_tipo", "id interno não é id do app Lembretes");
+
+  // E o helper confere a remoção antes de dizer que removeu — como as outras três vias.
+  const ondeRemoveLem = swiftLem.indexOf("try store.remove(item, commit: true)");
+  const ondeConfereLem = swiftLem.indexOf("store.calendarItem(withIdentifier: id) != nil");
+  assert.ok(ondeRemoveLem > 0 && ondeConfereLem > ondeRemoveLem,
+    "confira que o lembrete saiu ANTES de dizer que saiu");
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");

@@ -331,7 +331,13 @@ const TETO_POR_PROVEDOR = {
   // (28 ferramentas + o prompt), e o que resta do orçamento de dois pedidos
   // por minuto é isto. Na prática o Groq virou socorro de última hora, sem
   // memória da conversa — e é por isso que ele é o penúltimo da corrente.
-  groq: 2_400,
+  // 01/11: 2.000. Com 30 ferramentas o custo fixo chegou a 3.480 tokens, e o
+  // que sobra do minuto do Groq é isto — na prática, nada de conversa. Ele é o
+  // sexto de sete na corrente, então só entra quando cinco falharam; a troca
+  // que o aciona já descarta o histórico de qualquer forma. Se um dia o Groq
+  // precisar voltar a lembrar algo, o caminho não é afrouxar este número: é
+  // cortar ferramenta ou pagar o plano dele.
+  groq: 2_000,
 };
 const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
 

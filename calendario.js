@@ -115,10 +115,15 @@ const listarLembretesApp = ({ lista } = {}) =>
   rodar(lista ? ["lembretes", "--lista", String(lista)] : ["lembretes"]);
 
 const listasDeLembretes = () => rodar(["listas"]);
+
+const apagarLembreteApp = (id) =>
+  id
+    ? rodar(["lembrete-apagar", "--id", String(id)])
+    : Promise.reject(new Error("falta o id do lembrete"));
 const apagar = (id) =>
   id ? rodar(["apagar", "--id", String(id)]) : Promise.reject(new Error("falta o id do evento"));
 
 module.exports = {
   criar, listar, calendarios, apagar, caminhoDoHelper,
-  criarLembreteApp, listarLembretesApp, listasDeLembretes,
+  criarLembreteApp, listarLembretesApp, listasDeLembretes, apagarLembreteApp,
 };

@@ -43,9 +43,15 @@ func morrer(_ mensagem: String, codigo: String? = nil) -> Never {
 // ---------------------------------------------------------------------------
 // Argumentos
 // ---------------------------------------------------------------------------
+/// As ações, em UM lugar. As duas mensagens de erro listavam "criar, listar,
+/// calendarios, apagar" cada uma na sua cópia, e nenhuma foi atualizada quando
+/// entraram as quatro de lembrete — uma mensagem de erro que mente sobre o que
+/// existe é pior que mensagem nenhuma, porque ela acredita.
+let ACOES = "criar, listar, apagar, calendarios, lembrete, lembretes, lembrete-apagar, listas"
+
 let argumentos = Array(CommandLine.arguments.dropFirst())
 guard let acao = argumentos.first, !acao.hasPrefix("--") else {
-    morrer("falta a ação (criar, listar, calendarios, apagar)")
+    morrer("falta a ação (\(ACOES))")
 }
 
 func opcao(_ nome: String) -> String? {
@@ -572,6 +578,25 @@ case "lembretes":
         "lembretes": pendentes.prefix(100).map(descreverLembrete),
     ])
 
+case "lembrete-apagar":
+    guard let id = opcao("id") else { morrer("falta --id") }
+    garantirPermissaoLembretes()
+    guard let item = store.calendarItem(withIdentifier: id) as? EKReminder else {
+        morrer("não achei lembrete com esse id", codigo: "nao_encontrado")
+    }
+    let resumoLembrete = descreverLembrete(item)
+    do {
+        try store.remove(item, commit: true)
+    } catch {
+        morrer("não consegui apagar o lembrete: \(error.localizedDescription)")
+    }
+    // Mesmo cuidado das outras três vias: `remove` sem erro não é prova.
+    if store.calendarItem(withIdentifier: id) != nil {
+        morrer("o lembrete foi aceito para remoção mas continua no app Lembretes",
+               codigo: "nao_confirmado")
+    }
+    imprimir(["apagado": true, "lembrete": resumoLembrete])
+
 case "listas":
     garantirPermissaoLembretes()
     let todas = store.calendars(for: .reminder)
@@ -588,5 +613,5 @@ case "listas":
     ])
 
 default:
-    morrer("ação desconhecida \"\(acao)\" (criar, listar, calendarios, apagar)")
+    morrer("ação desconhecida \"\(acao)\" (\(ACOES))")
 }

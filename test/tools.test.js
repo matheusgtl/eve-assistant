@@ -71,7 +71,13 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // que é o que notifica no iPhone). 28 ferramentas somam 2.213 tokens, ou
   // 79,0 por ferramenta — a MÉDIA caiu de novo, que é a prova de que o teto
   // subiu por capacidade e não por prosa. O teto da média é que guarda isso.
-  assert.ok(tokens < 2250, `as ferramentas somam ~${tokens} tokens (teto: 2250)`);
+  // 01/11, segunda subida do dia: 2.350 para caber listar_lembretes_app e
+  // apagar_lembrete_app — sem elas ela criava lembrete no app Lembretes e não
+  // conseguia ler nem apagar, então não podia desfazer o próprio trabalho.
+  // 30 ferramentas somam 2.316 tokens, ou 77,2 por ferramenta: a média caiu de
+  // 79,7, o que diz que as duas novas são mais enxutas que a média. É isso que
+  // o teto da média guarda, e é por isso que ele não sobe.
+  assert.ok(tokens < 2350, `as ferramentas somam ~${tokens} tokens (teto: 2350)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
   // ------------------- 1c. pesquisar não pode abrir aba no navegador
