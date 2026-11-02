@@ -449,13 +449,19 @@ function escrever(el, textoCru) {
 
 /// Cola o fragmento novo no que a bolha já tem.
 ///
-/// O separador de falas devolve a quebra de parágrafo no fim do fragmento
-/// quando ela escreveu uma; quando o corte foi só fim de frase, não devolve
-/// nada. Então quebra existente manda, e na falta dela entra um espaço — é
-/// isso que diferencia "dois parágrafos" de "duas frases do mesmo parágrafo".
+/// A quebra pode vir no FIM do fragmento anterior ou no COMEÇO do novo,
+/// dependendo de onde o corte de fala caiu: se caiu no ponto final de um item
+/// de lista, a quebra que separa os itens chega na frente do fragmento
+/// seguinte. Qualquer uma das duas vale; na falta das duas entra um espaço, que
+/// é o que diferencia "dois parágrafos" de "duas frases do mesmo parágrafo".
 function juntarFragmentos(antes, novo) {
-  if (!antes) return novo;
-  if (/\n$/.test(antes)) return antes + novo;
+  // Bolha nova não começa com quebra: isso só abriria uma linha vazia.
+  if (!antes) return novo.replace(/^\n+/, "");
+  const fechaAntes = /\n$/.test(antes);
+  const abreNovo = /^\n/.test(novo);
+  // As duas juntas dariam parágrafo onde havia só linha nova.
+  if (fechaAntes && abreNovo) return antes + novo.replace(/^\n+/, "");
+  if (fechaAntes || abreNovo) return antes + novo;
   return antes + " " + novo;
 }
 

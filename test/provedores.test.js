@@ -306,6 +306,7 @@ servidor.listen(0, async () => {
   conferirPodaDoHistorico();
   const tetos = conferirTetoPorProvedor();
   await conferirGuardaDeRepeticao();
+  await conferirBuscaReescrita();
   const orcamento = conferirOrcamentoDoGroq();
   conferirEsperaAntesDeTrocar();
   console.log("✓ provedores no formato OpenAI: ferramenta fatiada, histórico e corrente de reserva");
@@ -318,6 +319,7 @@ servidor.listen(0, async () => {
   console.log("   poda do histórico   → por tamanho, em grupos, começando por ele");
   console.log("   teto por provedor   → groq lembra", tetos.comGroq.length, "trocas de 10; nvidia lembra", tetos.comNvidia.length);
   console.log("   chamada repetida    → barrada na 3ª, com recado para sair do laço");
+  console.log("   busca reescrita     → 7 buscas do log dele viraram 3");
   console.log(
     "   orçamento do groq   → fixo " + orcamento.fixo + " tokens; teto " +
       orcamento.teto + " caracteres; " + orcamento.pedidos + " pedidos/minuto"
@@ -331,6 +333,84 @@ servidor.listen(0, async () => {
   );
   servidor.close();
 });
+
+// ---------------------------------------------------------------------------
+// A MESMA pergunta reescrita não é uma busca nova
+// ---------------------------------------------------------------------------
+// Log de 02/11: sete buscas para DUAS perguntas, reescrevendo a mesma coisa.
+// A guarda exata não pegava nada, porque as strings eram diferentes — e cada
+// busca custa um crédito do Tavily (mil por mês) e ~4.500 caracteres de
+// contexto, que saem do orçamento da pergunta.
+async function conferirBuscaReescrita() {
+  const { guardaDeRepeticao, semelhanca, SEMELHANCA_MAXIMA } = require("../brains.js");
+
+  // O limiar foi MEDIDO nas buscas dele, não escolhido: as duplicatas reais
+  // ficaram entre 0,60 e 1,00, e as buscas diferentes entre 0,00 e 0,11.
+  assert.ok(
+    semelhanca("Londrina restaurantes aceitam Alelo vale refeição", "Londrina Alelo vale refeição aceita restaurantes") >= 0.99,
+    "ordem das palavras não muda a pergunta"
+  );
+  assert.ok(
+    semelhanca("Alelo Londrina aceita restaurantes", "Londrina Alelo vale refeição aceita restaurantes") >= SEMELHANCA_MAXIMA,
+    "acrescentar palavra à mesma pergunta não a torna nova"
+  );
+  assert.ok(
+    semelhanca("previsão do tempo Londrina amanhã", "resultado primeira fase UEL 2026") < 0.2,
+    "buscas de assunto diferente têm de ficar LONGE do limiar"
+  );
+  assert.ok(
+    semelhanca("lugares abertos hoje à noite Londrina para comer", "previsão do tempo Londrina amanhã") < SEMELHANCA_MAXIMA,
+    "uma cidade em comum não faz duas buscas serem a mesma"
+  );
+
+  // O log dele, replayado: sete buscas entram, três chegam ao buscador.
+  const chegaram = [];
+  const rodar = guardaDeRepeticao(async (_n, a) => {
+    chegaram.push(a.query);
+    return JSON.stringify({ ok: true });
+  });
+  const doLog = [
+    "Lugares que aceitam vale refeição Londrina feriado hoje",
+    "Londrina feriado hoje vale refeição aceita restaurantes",
+    "feriado hoje Londrina 2 de novembro 2026",
+    "feriado 2 de novembro Londrina 2026",
+    "Alelo Londrina aceita restaurantes",
+    "Londrina restaurantes aceitam Alelo vale refeição",
+    "Londrina Alelo vale refeição aceita restaurantes",
+  ];
+  const barradas = [];
+  for (const query of doLog) {
+    const r = JSON.parse(await rodar("web_search", { query }));
+    if (r.repetida) barradas.push(query);
+  }
+  assert.strictEqual(chegaram.length, 3, `3 buscas de 7 (chegaram ${chegaram.length})`);
+  assert.strictEqual(barradas.length, 4);
+  // E a mensagem tem de dizer O QUE fazer, senão ela reescreve outra vez.
+  const aviso = JSON.parse(await rodar("web_search", { query: doLog[1] }));
+  assert.match(aviso.error, /Use o que já veio/, "a recusa precisa mandar usar o que já tem");
+  assert.match(aviso.error, /busque OUTRA coisa/, "e dizer qual é a saída válida");
+
+  // A regra é SÓ da busca. Caminho parecido é arquivo diferente; barrar ali
+  // recusaria trabalho legítimo.
+  const arquivos = [];
+  const rodar2 = guardaDeRepeticao(async (_n, a) => {
+    arquivos.push(a.query);
+    return JSON.stringify({ ok: true });
+  });
+  for (const q of ["relatorio vendas 2025", "relatorio vendas 2026"]) {
+    await rodar2("find_files", { query: q });
+  }
+  assert.strictEqual(arquivos.length, 2, "find_files não entra na regra difusa");
+
+  // E a guarda é por RESPOSTA: a pergunta seguinte pode buscar a mesma coisa.
+  const outra = [];
+  const rodar3 = guardaDeRepeticao(async (_n, a) => {
+    outra.push(a.query);
+    return JSON.stringify({ ok: true });
+  });
+  await rodar3("web_search", { query: doLog[0] });
+  assert.strictEqual(outra.length, 1, "guarda nova por resposta, senão ela nunca mais busca aquilo");
+}
 
 // ---------------------------------------------------------------------------
 // O orçamento do Groq: o teto de histórico é uma CONTA, não um palpite

@@ -163,6 +163,38 @@ const { escrever, juntarFragmentos } = new Function(
   assert.strictEqual(juntarFragmentos("- item um\n", "- item dois"), "- item um\n- item dois");
 }
 
+// ------------------------------------------- 7b. a quebra vem na FRENTE
+// Dados reais dele, 02/11. Ela escreveu uma lista; o corte de fala caiu no
+// ponto final de um item, ANTES da quebra de linha chegar — então o "\n" que
+// separava os itens veio no COMEÇO do fragmento seguinte. A versão anterior
+// jogava fora o espaço da frente, e três itens apareceram colados num só.
+{
+  const fragmentos = [
+    "Feito! Anotei isto sobre o seu **cartão Alelo**:\n\n",
+    "- **Cartão:** Alelo (vale-refeição)  \n- **Cidade:** Londrina\n",
+    "- **Data:** hoje, 02/11/2026 – feriado, muitos lugares com horário reduzido.",
+    "\n- **Lugares:** LabraBurger, Fish King Band, Bar do Japa.",
+    "\n- **Dica:** depende do credenciamento de cada ponto.\n\n",
+    "Agora é só chamar quando precisar.",
+  ];
+  let cru = "";
+  for (const f of fragmentos) cru = juntarFragmentos(cru, f);
+  const el = new No("span");
+  escrever(el, cru);
+
+  const uls = el.porTag("ul");
+  assert.strictEqual(uls.length, 1, "uma lista só");
+  assert.strictEqual(
+    uls[0].porTag("li").length,
+    5,
+    "os CINCO itens têm de ficar separados — antes três colavam num"
+  );
+  for (const li of uls[0].porTag("li")) {
+    assert.doesNotMatch(li.textContent, / - \*\*| - [A-Z]/, `item com outro grudado: ${li.textContent.slice(0, 60)}`);
+  }
+  assert.strictEqual(el.porClasse("md-p").length, 2, "e os parágrafos em volta");
+}
+
 // ------------------------------------------- 8. o caminho completo
 // Do separador de falas até o DOM, como acontece de verdade: os fragmentos
 // saem do criarFalante e a bolha é remontada com eles.

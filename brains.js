@@ -248,8 +248,53 @@ const MAX_TURNS = 16;
 ///
 /// Duas vezes passa (uma falha de rede merece uma segunda tentativa); da
 /// terceira em diante o resultado vira um recado para ela sair do laço.
+/// Palavras que não distinguem uma busca de outra em português.
+const PALAVRAS_VAZIAS = new Set(
+  ("a o as os um uma de da do das dos e em no na nos nas que para por com sem " +
+   "hoje agora aceita aceitam aceito tem ter quais qual onde como").split(" ")
+);
+
+/// O conjunto de palavras que CARREGA o sentido de uma busca.
+/// Sem acento, sem caixa, sem palavra curta e sem palavra vazia — e sem ordem,
+/// porque "Alelo Londrina restaurantes" e "Londrina restaurantes Alelo" são a
+/// mesma pergunta escrita de dois jeitos.
+function palavrasDaBusca(texto) {
+  return new Set(
+    String(texto)
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .split(/[^a-z0-9]+/)
+      .filter((w) => w.length > 2 && !PALAVRAS_VAZIAS.has(w))
+  );
+}
+
+/// Quanto duas buscas se sobrepõem, de 0 a 1 (interseção sobre união).
+function semelhanca(a, b) {
+  const A = palavrasDaBusca(a);
+  const B = palavrasDaBusca(b);
+  if (!A.size || !B.size) return 0;
+  const comuns = [...A].filter((x) => B.has(x)).length;
+  return comuns / new Set([...A, ...B]).size;
+}
+
+/// Acima disto, é a mesma pergunta reescrita.
+///
+/// Medido nas buscas dele de 02/11: as quatro duplicatas reais ficaram entre
+/// 0,60 e 1,00, e as buscas genuinamente diferentes entre 0,00 e 0,11. O
+/// limiar não é palpite — é o meio de um vão largo.
+const SEMELHANCA_MAXIMA = 0.6;
+
+/// Só a busca na web entra na regra difusa. Caminho de arquivo parecido é
+/// arquivo diferente, e URL parecida é página diferente; barrar ali recusaria
+/// trabalho legítimo. A busca é onde o desperdício foi medido, e é a que custa
+/// crédito de verdade (mil por mês no Tavily).
+const FERRAMENTAS_DIFUSAS = new Set(["web_search"]);
+
 function guardaDeRepeticao(executar = runTool) {
   const vezes = new Map();
+  const buscas = []; // as queries já feitas NESTA resposta
+
   return async function rodar(nome, args) {
     const assinatura = `${nome}\u0000${JSON.stringify(args ?? {})}`;
     const n = (vezes.get(assinatura) || 0) + 1;
@@ -262,6 +307,30 @@ function guardaDeRepeticao(executar = runTool) {
         repetida: true,
       });
     }
+
+    // A MESMA PERGUNTA REESCRITA.
+    //
+    // No log de 02/11 ela fez sete buscas para duas perguntas, reescrevendo a
+    // mesma coisa: "Alelo Londrina aceita restaurantes", depois "Londrina
+    // restaurantes aceitam Alelo vale refeição", depois "Londrina Alelo vale
+    // refeição aceita restaurantes". A guarda exata não pegava nada disso,
+    // porque as strings eram diferentes — e cada busca custa um crédito e
+    // ~4.500 caracteres de contexto.
+    const consulta = typeof args?.query === "string" ? args.query : null;
+    if (consulta && FERRAMENTAS_DIFUSAS.has(nome)) {
+      const parecida = buscas.find((q) => semelhanca(q, consulta) >= SEMELHANCA_MAXIMA);
+      if (parecida) {
+        return JSON.stringify({
+          error:
+            `Esta busca é a mesma que "${parecida}" com outras palavras, e o resultado vai ser ` +
+            "o mesmo. Use o que já veio das buscas anteriores. Se faltou algo específico, " +
+            "busque OUTRA coisa — não a mesma pergunta reescrita.",
+          repetida: true,
+        });
+      }
+      buscas.push(consulta);
+    }
+
     return executar(nome, args);
   };
 }
@@ -689,21 +758,31 @@ async function geminiStream(modelo, apiKey, body, onFrase, sinal) {
 ///    meio por acidente de notação. Exigir espaço depois já resolveria o
 ///    "09:00", mas não "1. 500" nem uma lista numerada quebrando em "3. ",
 ///    então a regra é explícita.
-/// Tira o espaço da frente e PRESERVA a quebra de parágrafo do fim.
+/// Normaliza o espaço das PONTAS preservando as quebras de linha.
 ///
-/// O `.trim()` que estava aqui matava a estrutura: ela escrevia um parágrafo,
-/// uma linha em branco e outro parágrafo, e a tela recebia dois fragmentos sem
-/// sinal nenhum de que havia uma quebra entre eles — resultado, um bloco de
-/// texto corrido. A fala não se importa (o limparParaFala normaliza espaço de
-/// qualquer jeito); a tela se importa, e é a mesma string que vai para as duas.
+/// A versão anterior jogava fora o espaço da frente e guardava só o do fim, e
+/// os dados dele de 02/11 mostraram o furo. Ela escreveu uma lista; o corte de
+/// fala caiu no ponto final de um item, ANTES da quebra de linha chegar — então
+/// o "\n" que separava os itens veio no COMEÇO do fragmento seguinte, e era
+/// descartado. Resultado na tela: três itens colados num só.
 ///
-/// Mais de duas quebras seguidas viram duas: parágrafo é parágrafo, e vazio
-/// empilhado é só o modelo sendo prolixo com Enter.
+///   "- **Data:** ... reduzido."        ← corte no ponto, sem quebra no fim
+///   "\n- **Lugares abertos:** ..."     ← a quebra estava AQUI, na frente
+///
+/// Agora as duas pontas são preservadas, normalizadas: nenhuma quebra, uma
+/// (linha nova) ou duas (parágrafo). Mais do que isso é o modelo sendo prolixo
+/// com Enter. A fala não se importa — o limparParaFala normaliza espaço de
+/// qualquer forma — e é a mesma string que vai para os dois lados.
 function comQuebra(texto) {
-  const semFrente = texto.replace(/^[ \t\r\n]+/, "");
-  const fim = semFrente.match(/[ \t\r\n]*$/)[0];
-  const quebras = (fim.match(/\n/g) || []).length;
-  return semFrente.replace(/[ \t\r\n]+$/, "") + (quebras >= 2 ? "\n\n" : quebras === 1 ? "\n" : "");
+  const quebrasDe = (espaco) => {
+    const n = (espaco.match(/\n/g) || []).length;
+    return n >= 2 ? "\n\n" : n === 1 ? "\n" : "";
+  };
+  const frente = texto.match(/^[ \t\r\n]*/)[0];
+  const fim = texto.match(/[ \t\r\n]*$/)[0];
+  const meio = texto.slice(frente.length, texto.length - fim.length);
+  if (!meio) return ""; // só espaço: não é fala nem estrutura
+  return quebrasDe(frente) + meio + quebrasDe(fim);
 }
 
 function criarFalante(onFrase) {
@@ -2024,6 +2103,8 @@ module.exports = {
   createBrain,
   podarHistorico,
   guardaDeRepeticao,
+  semelhanca,
+  SEMELHANCA_MAXIMA,
   criarFalante,
   FORMATO_OPENAI,
   FORMATO_GEMINI,
