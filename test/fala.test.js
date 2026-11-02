@@ -162,9 +162,56 @@ servidor.listen(0, async () => {
   assert.deepStrictEqual(ditos3, ["Respondi sem streaming."], "não pode ficar muda");
   assert.ok(debug3.some((m) => /sem streaming/.test(m)), "a queda precisa ficar registrada");
 
+  // =========================================================================
+  // O corte não pode cair DENTRO de um número
+  // =========================================================================
+  // Visto na tela dele em 02/11, numa lista de lembretes:
+  //
+  //   E.V.E: | 06/11, 09:
+  //   E.V.E: 00 | Resultado 1ª fase UEL |
+  //
+  // Duas causas na mesma regex. O ":" contava como fim de frase, e o
+  // terminador valia também no FIM DA STRING — que durante o streaming é só
+  // onde o pedaço da rede foi cortado. Caindo o corte depois do "09:", aquilo
+  // virava uma fala e o "00" virava a seguinte.
+  {
+    const { criarFalante } = require("../brains.js");
+    const falas = [];
+    const f = criarFalante((t) => falas.push(t));
+    // Os pedaços abaixo cortam exatamente onde a rede cortou para ele.
+    for (const pedaco of [
+      "Avisos para novembro: ",
+      "| 06/11, 09:",
+      "00 | Resultado 1ª fase UEL |\n",
+      "São 1.",
+      "500 no total. ",
+      "Pronto.",
+    ]) {
+      f.engolir(pedaco);
+    }
+    f.fechar();
+
+    const tudo = falas.join(" ");
+    assert.match(tudo, /09:00/, "o horário não pode ser cortado entre os dígitos");
+    assert.match(tudo, /1\.500/, "nem o milhar");
+    for (const fala of falas) {
+      assert.doesNotMatch(fala, /\d[.:]$/, `fala termina em dígito+pontuação: ${JSON.stringify(fala)}`);
+      assert.doesNotMatch(fala, /^\d/, `fala começa com dígito solto: ${JSON.stringify(fala)}`);
+    }
+
+    // E o corte normal continua valendo: ponto seguido de espaço separa.
+    const f2 = [];
+    const g = criarFalante((t) => f2.push(t));
+    g.engolir("Primeira frase bem comprida para passar do mínimo de fala. ");
+    g.engolir("Segunda frase também comprida o suficiente para sair sozinha. ");
+    g.fechar();
+    assert.ok(f2.length >= 2, `ponto seguido de espaço tem de separar (saíram ${f2.length})`);
+  }
+
   console.log("✓ fala em pedaços: começa antes de o modelo terminar, sem perder nem repetir");
   console.log("  pedaços:", ditos.length, "· primeiro:", JSON.stringify(ditos[0].slice(0, 46) + "…"));
   console.log("  com ferramenta:", ditos2.length, "pedaços, nenhum repetido");
   console.log("  sem SSE → repetiu pelo caminho normal");
+  console.log("  número inteiro → 09:00 e 1.500 sobrevivem ao corte da rede");
   servidor.close();
 });

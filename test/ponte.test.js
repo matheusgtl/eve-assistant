@@ -478,6 +478,47 @@ assert.match(html, /<script src="interface\.js">/);
 }
 
 
+// ===========================================================================
+// 10. Uma resposta, uma bolha — e nada de tabela
+// ===========================================================================
+// Tela dele em 02/11: sete linhas "E.V.E:" para UMA resposta, e a lista saindo
+// como "| 06/11, 09:00 | Resultado 1ª fase UEL |". Dois problemas distintos.
+{
+  const inter = fs.readFileSync(path.join(__dirname, "..", "renderer", "interface.js"), "utf8");
+  const brains = fs.readFileSync(path.join(__dirname, "..", "brains.js"), "utf8");
+
+  // A fala continua saindo frase a frase (é o que deixa ela começar a falar
+  // antes de o modelo terminar); o que muda é a TELA juntar os fragmentos.
+  assert.match(
+    inter,
+    /if \(quem === "eve" && !classe && ultimaLinhaEve\)/,
+    "fragmento seguido dela tem de entrar na mesma bolha"
+  );
+  // Erro e lembrete disparado precisam de bolha própria, e a fala dele fecha
+  // a bolha anterior — senão a resposta seguinte gruda no que veio antes.
+  assert.match(
+    inter,
+    /ultimaLinhaEve = quem === "eve" && !classe \? linha : null;/,
+    "fala dele, erro e lembrete têm de fechar a bolha"
+  );
+
+  // E o prompt tem de proibir tabela: tudo o que ela escreve é falado.
+  const { montarSystemPrompt } = require("../brains.js");
+  const prompt = montarSystemPrompt();
+  assert.match(prompt, /NUNCA use tabela, pipe/, "falta a proibição de tabela no prompt");
+  assert.match(prompt, /falado em voz alta/, "e o motivo: isso vai ser lido em voz alta");
+
+  // O separador de falas não pode voltar a aceitar terminador no fim do buffer.
+  assert.doesNotMatch(
+    brains,
+    /\[\.!\?…:\]\(\?:\\s\+\|\$\)/,
+    "o `|$` no separador é o que cortava 09:00 ao meio"
+  );
+  assert.match(brains, /\(\?<!\[0-9\]\)\[\.!\?…:\]\(\?!\[0-9\]\)/,
+    "o terminador não pode valer entre dígitos");
+}
+
+
 console.log("✓ ponte interface ↔ preload ↔ main: canais, eventos, métodos e ids conferem");
 console.log("  canais de ida:", invocados.size, "· eventos de volta:", enviados.size);
 console.log("  métodos expostos:", expostos.size, "· ids ligados:", idsUsados.size);

@@ -334,6 +334,28 @@ function escrever(el, texto) {
 }
 
 function registrar({ quem, texto, classe }) {
+  // FRAGMENTOS SEGUIDOS DELA ENTRAM NA MESMA BOLHA.
+  //
+  // A fala sai frase a frase para ela começar a falar antes de o modelo
+  // terminar — ótimo para a voz, péssimo para a tela: cada frase virava uma
+  // linha "E.V.E:" própria, e uma resposta de sete linhas aparecia picada em
+  // sete falas, como ele viu em 02/11. Juntar aqui não mexe na fala: o áudio
+  // continua saindo frase a frase.
+  //
+  // `classe` separa o que PRECISA de bolha própria: erro e lembrete disparado
+  // não são continuação da resposta.
+  if (quem === "eve" && !classe && ultimaLinhaEve) {
+    const alvo = ultimaLinhaEve.querySelector(".txt");
+    if (alvo) {
+      if (alvo.textContent && !/\s$/.test(alvo.textContent)) {
+        alvo.appendChild(document.createTextNode(" "));
+      }
+      escrever(alvo, texto);
+      rolar();
+      return ultimaLinhaEve;
+    }
+  }
+
   const linha = document.createElement("div");
   linha.className = "linha-log " + quem + (classe ? " " + classe : "");
 
@@ -349,7 +371,10 @@ function registrar({ quem, texto, classe }) {
   linha.appendChild(txt);
 
   roloEl.appendChild(linha);
-  if (quem === "eve") ultimaLinhaEve = linha;
+  // Só a resposta corrida continua aberta para receber frase. Fala dele, erro
+  // e lembrete fecham a bolha anterior — senão a resposta seguinte dela
+  // grudaria no que veio antes.
+  ultimaLinhaEve = quem === "eve" && !classe ? linha : null;
   rolar();
   return linha;
 }

@@ -127,6 +127,12 @@ function montarSystemPrompt({
     "- PDF é ler_pdf, nunca read_file: o texto de um PDF não sai como texto cru. " +
       "read_file é para arquivo de texto (código, .md, .txt, .json). Imagem, zip, .docx " +
       "e programa não se leem com read_file nenhum.",
+    // 02/11: ela respondeu uma lista de lembretes em tabela Markdown, e na tela
+    // dele saiu "| 06/11, 09:00 | Resultado 1ª fase UEL |". Você é uma VOZ:
+    // isso vai ser LIDO EM VOZ ALTA, e pipe não se fala.
+    "- NUNCA use tabela, pipe (|) nem cabeçalho de Markdown. Tudo o que você escreve é falado " +
+      "em voz alta. Para listar, uma linha por item, do jeito que se diz: " +
+      "\"6 de novembro, 9h — resultado da primeira fase da UEL\". Negrito e `código` podem.",
     "- Ao usar ferramentas, não narre o que vai fazer antes; faça e diga o resultado.",
     "",
     "VOCÊ TEM AUTORIZAÇÃO PERMANENTE PARA AGIR",
@@ -660,8 +666,27 @@ async function geminiStream(modelo, apiKey, body, onFrase, sinal) {
 ///
 /// Mora aqui, fora do leitor do Gemini, porque todo provedor precisa dela —
 /// e duas cópias disso acabariam divergindo justamente na regra sutil.
+/// Junta os pedaços que chegam da rede e entrega FALAS inteiras.
+///
+/// Duas regras, e as duas são conserto de defeito visto na tela dele em 02/11:
+///
+///   | 06/11, 09:
+///   00 | Resultado 1ª fase UEL |
+///
+/// 1. TERMINADOR NO FIM DO BUFFER NÃO É FIM DE FRASE. A versão anterior
+///    aceitava `[.!?…:]` seguido de espaço OU DO FIM DA STRING — e o fim da
+///    string, durante o streaming, é só onde o pedaço da rede foi cortado. Se
+///    o corte caísse depois do "09:", aquilo virava uma fala, e o "00" virava
+///    a seguinte. Quem fecha o resto é o `fechar()`, no fim de verdade.
+/// 2. NÃO SE CORTA ENTRE DÍGITOS. "09:00", "1.500", "14:30" têm terminador no
+///    meio por acidente de notação. Exigir espaço depois já resolveria o
+///    "09:00", mas não "1. 500" nem uma lista numerada quebrando em "3. ",
+///    então a regra é explícita.
 function criarFalante(onFrase) {
   const MIN_FALA = 42;
+  // Terminador seguido de espaço de verdade, e não precedido+seguido de dígito.
+  // A quebra de linha continua valendo sozinha: é fim de ideia em qualquer caso.
+  const FIM_DE_FRASE = /^([\s\S]*?(?<![0-9])[.!?…:](?![0-9])\s+|[\s\S]*?\n)/;
   let pendente = "";
   let lote = "";
 
@@ -669,7 +694,7 @@ function criarFalante(onFrase) {
     engolir(texto) {
       pendente += texto;
       while (true) {
-        const m = pendente.match(/^([\s\S]*?[.!?…:](?:\s+|$)|[\s\S]*?\n)/);
+        const m = pendente.match(FIM_DE_FRASE);
         if (!m) break;
         lote += m[1];
         pendente = pendente.slice(m[1].length);
@@ -1975,6 +2000,7 @@ module.exports = {
   createBrain,
   podarHistorico,
   guardaDeRepeticao,
+  criarFalante,
   FORMATO_OPENAI,
   FORMATO_GEMINI,
   FORMATO_CLAUDE,
