@@ -193,6 +193,13 @@ function saveConfig(cfg) {
 // tinha o campo.
 const RESERVAS = ["groq", "nvidia", "mistral", "cerebras", "openrouter"];
 
+/// Quem tem chave. O provedor que está como PRINCIPAL pode ter a chave na
+/// genérica (`apiKey`) em vez do campo próprio — é o caso dele desde 01/11, com
+/// o OpenRouter. Escrever essa regra em cada lugar que precisa dela é como
+/// aparece um lugar que a esqueceu: a mensagem de "reservas salvas" listava
+/// tudo menos o provedor em uso.
+const temChave = (cfg, p) => !!(cfg[`${p}Key`] || (cfg.provider === p && cfg.apiKey));
+
 function configPublica() {
   const cfg = loadConfig();
   return {
@@ -220,15 +227,11 @@ function configPublica() {
     // Gemini e a Anthropic: quem está como principal pode ter a chave na
     // genérica, e tratar isso como ausência fazia o provedor em uso aparecer
     // como "sem chave" no seletor que escolhe justamente ele.
-    disponiveis: ["gemini", "anthropic", ...RESERVAS].filter(
-      (p) => !!(cfg[`${p}Key`] || (cfg.provider === p && cfg.apiKey))
-    ),
+    disponiveis: ["gemini", "anthropic", ...RESERVAS].filter((p) => temChave(cfg, p)),
     // Um mapa em vez de temGroq/temNvidia/temMistral: provedor novo entrava em
     // três lugares e era esquecido em pelo menos um — foi assim que o
     // OpenRouter e o Cerebras ficaram sem campo na tela.
-    temChaves: Object.fromEntries(
-      RESERVAS.map((p) => [p, !!(cfg[`${p}Key`] || (cfg.provider === p && cfg.apiKey))])
-    ),
+    temChaves: Object.fromEntries(RESERVAS.map((p) => [p, temChave(cfg, p)])),
     elevenVelocidade: cfg.elevenVelocidade,
     provider: cfg.provider || null,
     model: cfg.model || null,
@@ -1570,7 +1573,7 @@ ipcMain.handle("ev:save-reserves", async (_e, chaves = {}) => {
   saveConfig(cfg);
   iniciarCerebro(); // a corrente é montada na construção: precisa remontar
   enviarAgentes();
-  const ativos = RESERVAS.filter((p) => cfg[`${p}Key`]);
+  const ativos = RESERVAS.filter((p) => temChave(cfg, p));
   send("ev:notice", {
     message: ativos.length
       ? `reservas salvas: ${ativos.join(", ")}.`

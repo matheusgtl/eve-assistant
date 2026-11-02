@@ -1422,6 +1422,16 @@ const PROVEDORES = {
     // thinkingmachines/inkling-small:free só atende harness agêntico.
     modelo: "nvidia/nemotron-3.5-lightning:free",
     chaveEm: "https://openrouter.ai/keys",
+    // Este é o MESMO modelo base do provedor nvidia, e vem com raciocínio
+    // ligado — mas o `chat_template_kwargs` que desliga lá é IGNORADO aqui:
+    // medindo os dois em 02/11, com o kwargs ele ainda gastou 284 tokens
+    // pensando. O OpenRouter tem o botão dele, e é este.
+    //
+    // Sem o botão ele secava a cada pedido: no log de 02/11 ele gastou a
+    // resposta inteira raciocinando duas vezes seguidas (15s e 28s) e devolveu
+    // nada, derrubando a conversa no gemini. Medido: 452 tokens de raciocínio
+    // e 4096ms viram 0 tokens e 503ms, com a resposta igual.
+    extra: { reasoning: { enabled: false } },
   },
 };
 
@@ -1709,7 +1719,13 @@ class OpenAIBrain {
         const delta = dado.choices?.[0]?.delta;
         if (!delta) return;
 
-        if (delta.reasoning_content) pensamento += delta.reasoning_content.length;
+        // Dois nomes para a mesma coisa: `reasoning_content` é o que o Groq e
+        // a NVIDIA mandam, `reasoning` é o que o OpenRouter manda. Ler só um
+        // deixava `pensamento` em zero e a E.V.E dizia "resposta vazia" quando
+        // o certo era "gastou a resposta raciocinando" — o diagnóstico errado
+        // me custou duas leituras de log.
+        const raciocinio = delta.reasoning_content || delta.reasoning;
+        if (raciocinio) pensamento += raciocinio.length;
 
         if (delta.content) {
           texto += delta.content;

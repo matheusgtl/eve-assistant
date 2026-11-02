@@ -63,6 +63,18 @@ const servidor = http.createServer((req, res) => {
       ]);
     }
 
+    // ---- o MESMO caso, com o outro nome de campo. O OpenRouter manda o
+    // raciocínio em `reasoning`, não em `reasoning_content`: medido em 02/11,
+    // num stream real vieram 321 deltas de `reasoning` e zero do outro nome.
+    // Lendo só um dos dois, o contador ficava em zero e a E.V.E dizia
+    // "resposta vazia" quando o certo era "gastou a resposta raciocinando".
+    if (cenario === "so-pensou-or" && qual === "mistral") {
+      return sse(res, [
+        delta({ reasoning: "Vou pensar nisso com muito cuidado…" }),
+        delta({ reasoning: " e seguir pensando, sem nunca concluir." }),
+      ]);
+    }
+
     // ---- nome de modelo que envelheceu. O provedor está ÓTIMO; só o nome
     // fixo no código morreu. Aconteceu de verdade: o Groq respondeu
     // "does not exist or you do not have access to it" e a E.V.E abandonou um
@@ -261,12 +273,30 @@ servidor.listen(0, async () => {
     /gastou a resposta raciocinando/
   );
 
+  // O mesmo com o nome de campo do OpenRouter: tem de dar o mesmo diagnóstico.
+  cenario = "so-pensou-or";
+  const soPensaOr = createBrain({ provider: "mistral", mistralKey: "m_x" });
+  await assert.rejects(
+    soPensaOr.ask("oi", { ...base_ops, onSay: () => {}, onTool: () => {} }),
+    /gastou a resposta raciocinando/,
+    "`reasoning` é raciocínio igual a `reasoning_content` — ler um só dá o diagnóstico errado"
+  );
+
   // E o provedor recebe o ajuste que desliga o raciocínio.
   const comExtra = createBrain({ provider: "nvidia", nvidiaKey: "nvapi-falsa" });
   assert.deepStrictEqual(
     comExtra.def.extra,
     { chat_template_kwargs: { enable_thinking: false } },
     "o nemotron precisa ir com o raciocínio desligado: para voz, pensar é latência"
+  );
+
+  // Mesmo modelo base no OpenRouter, botão DIFERENTE: o `chat_template_kwargs`
+  // é ignorado lá (medido: ainda gastou 284 tokens pensando), e sem o botão
+  // certo ele secava a cada pedido.
+  assert.deepStrictEqual(
+    PROVEDORES.openrouter.extra,
+    { reasoning: { enabled: false } },
+    "o OpenRouter desliga o raciocínio por `reasoning.enabled`, não por chat_template_kwargs"
   );
 
   // ---- 4d. nome de modelo velho: troca de MODELO, não de provedor
@@ -315,6 +345,7 @@ servidor.listen(0, async () => {
   console.log("   já tinha falado     → erro sobe, sem repetir a fala");
   console.log("   modelo sem tool use → trocou de provedor em vez de morrer no 400");
   console.log("   só raciocinou       → não falou o rascunho, e não ficou muda");
+  console.log("   raciocínio em dois nomes → reasoning_content (groq) e reasoning (openrouter)");
   console.log("   nome de modelo velho → trocou de MODELO (gpt-oss-120b), não de provedor");
   console.log("   poda do histórico   → por tamanho, em grupos, começando por ele");
   console.log("   teto por provedor   → groq lembra", tetos.comGroq.length, "trocas de 10; nvidia lembra", tetos.comNvidia.length);
