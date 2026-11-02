@@ -365,6 +365,61 @@ const chamadas = () =>
     "a conferência precisa vir ANTES de gravar"
   );
 
+  // ---------------- 13. id de lembrete interno não é id de evento ----------
+  // Log de 01/11: `apagar_evento id="dz5a8q"` e, pior,
+  // `apagar_evento id="A5DDE6E6-…-FA0DB8D3300A:nsa5aq"` — ela pegou o prefixo
+  // do calendário e colou nele um id de lembrete interno. As duas falharam com
+  // "nao_encontrado": erro verdadeiro e inútil, porque não diz que ela misturou
+  // dois espaços de id, e por isso ela tentaria de novo.
+  process.env.EV_CAL_BIN = helperFalso({ apagado: true });
+  delete require.cache[require.resolve("../calendario.js")];
+  ferramentas.configurar({ calendario: require("../calendario.js") });
+
+  const antesDaTrava = chamadas().length;
+  for (const idRuim of ["dz5a8q", "A5DDE6E6-2A73-4E2F-919D-FA0DB8D3300A:nsa5aq"]) {
+    const r = JSON.parse(await ferramentas.runTool("apagar_evento", { id: idRuim }));
+    assert.strictEqual(r.codigo, "id_de_outro_tipo", `${idRuim} tinha de ser recusado`);
+    assert.match(r.error, /cancel_reminder/, "e tem de dizer qual ferramenta serve para o interno");
+    assert.match(r.error, /listar_eventos/, "e onde pegar o id certo");
+  }
+  assert.strictEqual(
+    chamadas().length,
+    antesDaTrava,
+    "id errado não pode nem chegar ao helper: falhar rápido é o ponto"
+  );
+
+  // E o que é id de evento DE VERDADE tem de passar — inclusive formatos que
+  // não são UUID, como os de calendário CalDAV ou Exchange. Recusar o que
+  // funciona é pior do que aceitar o que vai falhar.
+  for (const idBom of [
+    "A5DDE6E6-2A73-4E2F-919D-FA0DB8D3300A:109A92E3-E903-4D95-856D-D52C8CA0A162",
+    "109A92E3-E903-4D95-856D-D52C8CA0A162",
+    "evento-1234567890@algum-servidor.com",
+  ]) {
+    const r = JSON.parse(await ferramentas.runTool("apagar_evento", { id: idBom }));
+    assert.notStrictEqual(r.codigo, "id_de_outro_tipo", `${idBom} NÃO podia ser recusado`);
+  }
+
+  // ---------------- 14. dia inteiro avisa de MANHÃ, não à meia-noite -------
+  // Medido nos lembretes dele em 01/11: os que o espelho criou tinham
+  // "remind me date" às 00:00, porque evento de dia inteiro não tem hora e eu
+  // não punha alarme — então os Lembretes puseram o deles, meia-noite. Ser
+  // acordado à meia-noite para lembrar do ENEM não é o que ele pediu ao querer
+  // "o dia todo": isso é sobre como o compromisso aparece no CALENDÁRIO, não
+  // sobre a hora do aviso.
+  assert.match(swiftLem, /let HORA_DO_AVISO = 9/, "falta a hora do aviso de dia inteiro");
+  assert.match(
+    swiftLem,
+    /bySettingHour: HORA_DO_AVISO/,
+    "lembrete sem hora tem de ganhar alarme de manhã, senão o aviso cai à meia-noite"
+  );
+  // E o caminho com hora marcada não pode ter sido trocado pelo de manhã.
+  assert.match(
+    swiftLem,
+    /if comHora \{\s*r\.addAlarm\(EKAlarm\(absoluteDate: quando/,
+    "com hora marcada o alarme continua sendo na hora"
+  );
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");

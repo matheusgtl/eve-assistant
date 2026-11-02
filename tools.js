@@ -96,6 +96,36 @@ function pedirConfirmacao(oque) {
 // sozinho estoura o histórico da conversa — e o que sai para dar lugar a ele é
 // a pergunta que ele fez. O corte é grande o bastante para um contrato ou um
 // exame caber inteiro, e pequeno o bastante para sobrar conversa em volta.
+/// O id que ela mandou é de LEMBRETE INTERNO, e não de evento do Calendário?
+///
+/// Log de 01/11: `apagar_evento id="dz5a8q"` e, pior,
+/// `apagar_evento id="A5DDE6E6-…-FA0DB8D3300A:nsa5aq"` — ela pegou o prefixo
+/// do calendário e colou nele um id de lembrete interno. As duas falharam no
+/// Calendário com "nao_encontrado", que é um erro verdadeiro e inútil: não diz
+/// que ela misturou dois espaços de id diferentes, então ela tentaria de novo.
+///
+/// A regra olha a FORMA do id interno (Math.random().toString(36).slice(2,8),
+/// isto é 4 a 6 caracteres de [a-z0-9]) em vez de exigir UUID do evento. Exigir
+/// UUID recusaria id de calendário CalDAV ou Exchange, que têm outro formato —
+/// e recusar o que funciona é pior do que aceitar o que vai falhar.
+const FORMA_ID_INTERNO = /^[a-z0-9]{4,6}$/;
+
+function idDeLembreteInterno(id) {
+  const texto = String(id).trim();
+  // O id de evento do iCloud é "<uuid do calendário>:<uuid do evento>". Se a
+  // última parte tem forma de id interno, ela montou um híbrido.
+  const ultima = texto.split(":").pop();
+  if (!FORMA_ID_INTERNO.test(ultima)) return null;
+  return {
+    error:
+      `"${texto}" não é id de evento do Calendário — é id de lembrete interno. ` +
+      "São dois espaços diferentes: para apagar EVENTO, chame listar_eventos no dia e use o " +
+      "id de lá (duas partes longas separadas por dois-pontos). Para apagar LEMBRETE INTERNO, " +
+      "use cancel_reminder. E não monte um id juntando pedaços de dois lugares.",
+    codigo: "id_de_outro_tipo",
+  };
+}
+
 const TETO_TEXTO_FERRAMENTA = 24_000;
 
 /// Este arquivo é texto, ou são bytes que só PARECEM texto?
@@ -1000,6 +1030,8 @@ const executors = {
           "e use o id que vier de lá.",
       };
     }
+    const errado = idDeLembreteInterno(id);
+    if (errado) return errado;
     try {
       return await ctx.calendario.apagar(id);
     } catch (err) {

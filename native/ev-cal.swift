@@ -271,6 +271,11 @@ func descrever(_ e: EKEvent) -> [String: Any] {
     return d
 }
 
+/// A que hora avisar quando o compromisso é de dia inteiro. Nove da manhã é o
+/// mesmo padrão que o macOS usa para lembrete sem hora, e é a hora que os
+/// lembretes dele já tinham antes de eu entrar no caminho.
+let HORA_DO_AVISO = 9
+
 /// Cria um lembrete no app Lembretes e CONFERE que ficou lá.
 ///
 /// Usada por duas vias: pela ação "lembrete" e, de carona, pelo "criar" do
@@ -294,11 +299,24 @@ func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
         if comHora { campos.formUnion([.hour, .minute]) }
         r.dueDateComponents = Calendar.current.dateComponents(campos, from: quando)
 
-        // Vencimento com hora já notifica, mas um alarme explícito é o que faz
-        // o aviso chegar também no iPhone de forma confiável.
+        // O ALARME, e aqui estava um defeito meu de 01/11.
+        //
+        // Com hora marcada o alarme é na hora (menos o desconto pedido). SEM
+        // hora eu não punha alarme nenhum, e os Lembretes puseram o deles: à
+        // MEIA-NOITE. Medido nos lembretes dele — os que o espelho criou têm
+        // "remind me date" às 00:00. Ser acordado à meia-noite para lembrar do
+        // ENEM não é o que ele pediu ao querer "o dia todo".
+        //
+        // "O dia todo" é sobre como o compromisso aparece no CALENDÁRIO, não
+        // sobre a hora do aviso. Então o evento continua de dia inteiro e o
+        // aviso vem de manhã.
+        let desconto = (alarmeMinutos ?? 0) * 60
         if comHora {
-            let desconto = (alarmeMinutos ?? 0) * 60
             r.addAlarm(EKAlarm(absoluteDate: quando.addingTimeInterval(-abs(desconto))))
+        } else if let manha = Calendar.current.date(
+            bySettingHour: HORA_DO_AVISO, minute: 0, second: 0, of: quando
+        ) {
+            r.addAlarm(EKAlarm(absoluteDate: manha.addingTimeInterval(-abs(desconto))))
         }
     }
 
