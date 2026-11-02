@@ -193,7 +193,11 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
     });
     assert.ok(recusa.erro, "gravar um pedaço por cima tinha de ser recusado");
     assert.match(recusa.erro, /APAGA/, "a recusa precisa dizer o que aconteceria");
-    assert.match(recusa.erro, /grave o texto completo/, "e o que fazer");
+    // A saída tem de estar escrita, e com a ferramenta nomeada: em 02/11 a
+    // recusa dizia o problema e não a saída, e ela desviou para o write_file —
+    // que escreveu numa pasta fantasma no home.
+    assert.match(recusa.erro, /chame anotar_memoria DE NOVO/, "e o que fazer");
+    assert.match(recusa.erro, /não use write_file/, "e o que NÃO fazer");
     assert.ok(recusa.conteudo_atual, "a recusa precisa devolver o conteúdo atual");
     assert.match(recusa.conteudo_atual, /Premiações/, "o conteúdo inteiro, para ela juntar");
 
