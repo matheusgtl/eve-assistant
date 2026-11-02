@@ -154,6 +154,100 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
 
   const semNome = await chamar("anotar_memoria", { nome: "", quando: "x", conteudo: "y" });
   assert.match(semNome.error, /nome/, "nota sem nome é recusada, não salva em branco");
+  // =========================================================================
+  // Não substituir uma nota grande por um pedaço dela
+  // =========================================================================
+  // 02/11, duas vezes no mesmo dia: ela leu `hortencia-barbosa-leote` (3.106
+  // bytes, o perfil acadêmico inteiro tirado de um PDF dele) e gravou de volta
+  // uma atualização de 809 bytes com o mesmo nome. Depois fez igual com
+  // `perfil-matheus`: 2.352 → 877, levando família, formação e documentos.
+  // O backup salvou as duas, mas nem ele nem eu teríamos notado.
+  {
+    const cofre = fs.mkdtempSync(path.join(os.tmpdir(), "eve-cofre-"));
+    const mem = new Memoria({ pasta: cofre, onDebug: () => {} });
+    await mem.preparar();
+
+    const grande = [
+      "# Hortência Barbosa Leote",
+      "",
+      "## Formação",
+      "- Medicina, UEL",
+      "## Experiências",
+      "- Intercâmbio no Chile",
+      "## Contato",
+      "- email e telefone",
+      "## Premiações",
+      "- primeiro lugar na olimpíada",
+      "x".repeat(400),
+    ].join("\n");
+    const criada = await mem.anotar({ nome: "hortencia", quando: "falar da Hortência", conteudo: grande, pasta: "fatos" });
+    assert.ok(criada.ok, "a nota grande precisa ser criada");
+
+    // O acréscimo sozinho é recusado, e a recusa TRAZ o conteúdo atual: sem
+    // isso ela precisaria de outra rodada só para descobrir o que apagaria.
+    const recusa = await mem.anotar({
+      nome: "hortencia",
+      quando: "falar da Hortência",
+      conteudo: "# Atualização\n\n- Agora são amigos desde agosto.",
+      pasta: "fatos",
+    });
+    assert.ok(recusa.erro, "gravar um pedaço por cima tinha de ser recusado");
+    assert.match(recusa.erro, /APAGA/, "a recusa precisa dizer o que aconteceria");
+    assert.match(recusa.erro, /grave o texto completo/, "e o que fazer");
+    assert.ok(recusa.conteudo_atual, "a recusa precisa devolver o conteúdo atual");
+    assert.match(recusa.conteudo_atual, /Premiações/, "o conteúdo inteiro, para ela juntar");
+
+    // O arquivo continua intacto: recusa não grava nada.
+    const noDisco = fs.readFileSync(path.join(cofre, "fatos", "hortencia.md"), "utf8");
+    assert.match(noDisco, /Premiações/, "a nota não pode ter sido tocada");
+
+    // Com o texto completo mais o acréscimo, passa.
+    const junto = await mem.anotar({
+      nome: "hortencia",
+      quando: "falar da Hortência",
+      conteudo: grande + "\n\n## Atualização\n\n- Agora são amigos desde agosto.",
+      pasta: "fatos",
+    });
+    assert.ok(junto.ok, "o texto completo com o acréscimo tem de passar");
+    const final = fs.readFileSync(path.join(cofre, "fatos", "hortencia.md"), "utf8");
+    assert.match(final, /Premiações/);
+    assert.match(final, /amigos desde agosto/);
+
+    // Nota pequena pode ser reescrita à vontade: a trava é para perda grande.
+    await mem.anotar({ nome: "curta", quando: "x", conteudo: "# Curta\n\numa linha", pasta: "fatos" });
+    const trocada = await mem.anotar({ nome: "curta", quando: "x", conteudo: "# Curta\n\noutra", pasta: "fatos" });
+    assert.ok(trocada.ok, "nota curta não entra na trava");
+
+    // =======================================================================
+    // Link para si mesma não é link
+    // =======================================================================
+    // Em 02/11 ela pôs [[hortencia-barbosa-leote]] dentro do arquivo
+    // hortencia-barbosa-leote.md, em três notas diferentes.
+    await mem.anotar({
+      nome: "sozinha",
+      quando: "x",
+      conteudo: "# Sozinha\n\ntexto",
+      pasta: "fatos",
+      relacionado: ["sozinha", "fatos/sozinha", "outra-nota", "outra-nota"],
+    });
+    const texto = fs.readFileSync(path.join(cofre, "fatos", "sozinha.md"), "utf8");
+    assert.doesNotMatch(texto, /\[\[(fatos\/)?sozinha\]\]/, "autolink tem de ser descartado");
+    assert.match(texto, /\[\[outra-nota\]\]/, "e o link de verdade fica");
+    assert.strictEqual(
+      (texto.match(/\[\[outra-nota\]\]/g) || []).length,
+      1,
+      "link repetido entra uma vez só"
+    );
+
+    // E o padrão: um H1 só, humano, mesmo quando ela manda título no conteúdo.
+    assert.strictEqual((texto.match(/^# /gm) || []).length, 1, "um H1 por nota");
+    assert.match(texto, /^# Sozinha$/m, "o título dela, não o slug");
+    assert.match(texto, /^tags: \[fato\]$/m);
+
+    fs.rmSync(cofre, { recursive: true, force: true });
+  }
+
+
 
   console.log("✓ memória .md: índice no prompt, conteúdo sob demanda, cofre do Obsidian");
   console.log("   nome errado de 5 jeitos → achou nos 5");

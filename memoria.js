@@ -117,10 +117,15 @@ function humanizar(slug) {
 
 /// A seção de links. É o que faz as notas se conversarem no Obsidian — sem ela
 /// o cofre é uma pasta com arquivos, e o grafo não mostra nada.
-function secaoRelacionado(relacionado) {
-  const itens = (Array.isArray(relacionado) ? relacionado : [relacionado])
-    .filter((x) => typeof x === "string" && x.trim())
-    .map((x) => x.trim().replace(/^\[\[|\]\]$/g, ""));
+function secaoRelacionado(relacionado, proprioSlug) {
+  const itens = [...new Set(
+    (Array.isArray(relacionado) ? relacionado : [relacionado])
+      .filter((x) => typeof x === "string" && x.trim())
+      .map((x) => x.trim().replace(/^\[\[|\]\]$/g, ""))
+      // Link para si mesma não é link. Em 02/11 ela pôs
+      // [[hortencia-barbosa-leote]] dentro de hortencia-barbosa-leote.md.
+      .filter((x) => x.replace(/^(fatos|processos)\//, "") !== proprioSlug)
+  )];
   if (!itens.length) return [];
   return ["", "## Relacionado", ...itens.map((i) => `- [[${i}]]`)];
 }
@@ -350,8 +355,34 @@ class Memoria {
     const caminho = path.join(this.pasta, arquivo);
     await fsp.mkdir(path.dirname(caminho), { recursive: true });
 
-    let backup;
+    // SUBSTITUIR UMA NOTA GRANDE POR UM PEDAÇO DELA NÃO PASSA.
+    //
+    // 02/11: ela leu `hortencia-barbosa-leote` (3.106 bytes, o perfil acadêmico
+    // inteiro, tirado de um PDF dele), e depois gravou uma atualização de 809
+    // bytes com o MESMO nome. O backup salvou, mas nem ele nem eu teríamos
+    // notado — a nota simplesmente perdeu dois terços.
+    //
+    // A recusa devolve o conteúdo atual junto. Assim ela não precisa de outra
+    // rodada para descobrir o que apagaria: já tem o texto em mãos para juntar
+    // com o acréscimo e gravar de uma vez.
+    let anterior = null;
     if (fs.existsSync(caminho)) {
+      anterior = await fsp.readFile(caminho, "utf8");
+      const vaiVirar = conteudo.trim().length;
+      const era = anterior.replace(/^---[\s\S]*?---\n/, "").trim().length;
+      if (era > 500 && vaiVirar < era * 0.5) {
+        return {
+          erro:
+            `a nota "${arquivo}" tem ${era} caracteres e você mandou ${vaiVirar}: isso APAGA ` +
+            "mais da metade dela. Se é um acréscimo, junte com o que já está lá e grave o " +
+            "texto completo. O conteúdo atual segue abaixo.",
+          conteudo_atual: anterior,
+        };
+      }
+    }
+
+    let backup;
+    if (anterior !== null) {
       backup = caminho + ".bak";
       await fsp.copyFile(caminho, backup);
     }
@@ -369,7 +400,7 @@ class Memoria {
       `# ${cabeca}`,
       "",
       corpo,
-      ...secaoRelacionado(relacionado),
+      ...secaoRelacionado(relacionado, slug),
       "",
     ].join("\n");
 

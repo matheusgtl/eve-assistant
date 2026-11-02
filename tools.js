@@ -838,7 +838,9 @@ const executors = {
     if (!ctx.memoria) return { error: "memória não disponível" };
     try {
       const r = await ctx.memoria.anotar({ nome, quando, conteudo, pasta, relacionado });
-      if (r.erro) return { error: r.erro };
+      // `conteudo_atual` vem quando a gravação foi recusada por apagar demais:
+      // ela precisa do texto para juntar e tentar de novo na mesma resposta.
+      if (r.erro) return { error: r.erro, conteudo_atual: r.conteudo_atual };
       return r;
     } catch (err) {
       return { error: err.message };

@@ -886,6 +886,9 @@ function iniciarMemoria() {
     pasta: path.join(memoria.pasta, "Conversas"),
     nomeDela: loadConfig().nome || "E.V.E",
     onDebug: (msg) => log(msg),
+    // Esta sessão começa agora. O que foi dito antes pertence às conversas
+    // anteriores, mesmo que o histórico ainda o traga.
+    desde: Date.now(),
   });
 
   skills = new Skills({

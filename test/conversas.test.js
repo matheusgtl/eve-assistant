@@ -89,10 +89,59 @@ const hora = (min) => new Date(Date.UTC(2026, 10, 2, 12, min, 0)).toISOString();
   assert.ok(!longo.endsWith("dupl"), "não corta palavra ao meio");
 }
 
+// ------------------------------------------- 3b. abrir o app corta a conversa
+// 02/11: ele conversou até 16:09, FECHOU o app, reabriu 16:36 e conversou até
+// 17:04. A pausa foi de 29 minutos — um minuto abaixo do limiar — então a regra
+// de tempo juntou as duas sessões num arquivo de duas horas, com o título da
+// primeira pergunta. Abrir o app é um limite mais forte do que qualquer
+// heurística de pausa: o histórico sobrevive ao fechamento, a conversa não.
+{
+  const pasta = fs.mkdtempSync(path.join(os.tmpdir(), "eve-sessao-"));
+  const antes = [
+    { quem: "voce", texto: "quais os avisos desse mês?", hora: hora(0) },
+    { quem: "eve", texto: "Você tem sete.", hora: hora(1) },
+  ];
+  // 29 minutos depois — dentro do limiar de pausa, mas o app reabriu.
+  const depois = [
+    { quem: "voce", texto: "sabe a minha amiga Hortência?", hora: hora(30) },
+    { quem: "eve", texto: "Sei, sim.", hora: hora(31) },
+  ];
+
+  const novaSessao = new Conversas({
+    pasta,
+    nomeDela: "E.V.E",
+    onDebug: () => {},
+    desde: Date.parse(hora(30)),
+  });
+
+  return novaSessao.salvar([...antes, ...depois]).then(async (nome) => {
+    // O arquivo é da pergunta NOVA, não da antiga.
+    assert.match(nome, /sabe-a-minha-amiga-hortencia/, `o título veio da sessão velha: ${nome}`);
+    const texto = fs.readFileSync(path.join(pasta, nome), "utf8");
+    assert.match(texto, /turnos: 2/, "só os turnos desta sessão");
+    assert.doesNotMatch(texto, /quais os avisos/, "a sessão anterior não pode vazar para cá");
+    assert.match(texto, /Hortência/);
+
+    // E nada a salvar quando o histórico só tem coisa de antes da abertura.
+    assert.strictEqual(await novaSessao.salvar(antes), null, "histórico antigo não cria arquivo");
+
+    fs.rmSync(pasta, { recursive: true, force: true });
+    continuar();
+  });
+}
+
+function continuar() {
 // ------------------------------------------- 4. o arquivo e o índice
 {
   const pasta = fs.mkdtempSync(path.join(os.tmpdir(), "eve-conv-"));
-  const c = new Conversas({ pasta, nomeDela: "E.V.E", onDebug: () => {} });
+  // `desde` explícito: este bloco usa horários fixos de 02/11, e o padrão
+  // ("agora") descartaria todos eles por serem anteriores à abertura.
+  const c = new Conversas({
+    pasta,
+    nomeDela: "E.V.E",
+    onDebug: () => {},
+    desde: Date.parse(hora(0)),
+  });
 
   const itens = [
     { quem: "voce", texto: "quais os avisos desse mês?", hora: hora(0) },
@@ -151,4 +200,5 @@ const hora = (min) => new Date(Date.UTC(2026, 10, 2, 12, min, 0)).toISOString();
     console.log("   arquivo:", nome);
     console.log("   pausa que começa conversa nova:", PAUSA_NOVA_CONVERSA / 60000, "min");
   });
+}
 }

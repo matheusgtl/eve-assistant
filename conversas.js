@@ -137,10 +137,22 @@ function markdown(turnos, nomeDela) {
 }
 
 class Conversas {
-  constructor({ pasta, nomeDela = "E.V.E", onDebug = () => {} }) {
+  /// `desde` é a hora em que o app abriu, e é o que separa esta conversa das
+  /// anteriores.
+  ///
+  /// Sem isso, em 02/11 duas sessões caíram no MESMO arquivo: ele conversou
+  /// até 16:09, fechou o app, reabriu 16:36 e conversou até 17:04. A pausa foi
+  /// de 29 minutos — um minuto abaixo do limiar — então a regra de tempo juntou
+  /// as duas, e o arquivo ficou com duas horas e o título da primeira pergunta.
+  ///
+  /// Abrir o app é um limite mais forte do que qualquer heurística de pausa: o
+  /// histórico sobrevive ao fechamento, mas a conversa não. A pausa continua
+  /// valendo DENTRO de uma sessão, para quem deixa a janela aberta o dia todo.
+  constructor({ pasta, nomeDela = "E.V.E", onDebug = () => {}, desde = Date.now() }) {
     this.pasta = pasta;
     this.nomeDela = nomeDela;
     this.onDebug = onDebug;
+    this.desde = desde;
     this.ultimoEscrito = new Map(); // arquivo → conteúdo, para não reescrever igual
   }
 
@@ -148,7 +160,15 @@ class Conversas {
   /// Reescreve o arquivo da conversa ATUAL; as anteriores ficam como estão.
   async salvar(itens) {
     if (!this.pasta || !itens?.length) return null;
-    const conversas = emConversas(emTurnos(itens));
+    // Só o que foi dito DESDE que o app abriu. O histórico guarda 120 entradas
+    // e atravessa reinícios; sem este corte, a sessão de hoje herdaria a de
+    // ontem sempre que a pausa entre as duas fosse curta.
+    const desta = itens.filter((i) => {
+      const t = Date.parse(i.hora || "");
+      return !Number.isFinite(t) || t >= this.desde;
+    });
+    if (!desta.length) return null;
+    const conversas = emConversas(emTurnos(desta));
     const atual = conversas[conversas.length - 1];
     if (!atual?.length) return null;
 
