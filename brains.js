@@ -2147,6 +2147,7 @@ module.exports = {
   modeloServe,
   rankModels,
   detectProvider,
+  chaveDe,
   pickGeminiModel,
   checkGemini,
   montarSystemPrompt,

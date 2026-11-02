@@ -96,6 +96,36 @@ function apelido(texto) {
     .slice(0, 60) || "nota";
 }
 
+/// Desfaz duas coisas que ela manda por engano e que estragam a nota em
+/// silêncio. Nenhuma das duas encolhe o arquivo, então a guarda de perda não
+/// vê, e nem ele nem eu notaríamos olhando o tamanho.
+///
+/// 1. `\n` LITERAL em vez de quebra de linha. Em 02/11, às 18:32, ela gravou a
+///    nota do Alelo inteira numa única linha, com os `\n` como dois caracteres
+///    — o arquivo CRESCEU de 490 para 1.044 bytes e virou ilegível. Acontece
+///    quando ela remonta o texto a partir do JSON sem desescapar.
+///
+/// 2. O frontmatter do arquivo DENTRO do corpo. A guarda de perda devolve a
+///    nota completa, com frontmatter, para ela juntar o acréscimo; ela devolve
+///    tudo de volta, e aqui se escreve um frontmatter novo em cima — a nota
+///    fica com dois, e o segundo aparece como texto no Obsidian.
+function normalizarConteudo(bruto) {
+  let texto = String(bruto);
+
+  // Só desescapa quando o `\n` literal é claramente a quebra de linha que
+  // falta. Uma nota normal tem muitas quebras e nenhum `\n` escrito; uma que
+  // CITA `\n` num trecho de código tem uma ocorrência e muitas quebras.
+  const literais = (texto.match(/\\n/g) || []).length;
+  const reais = (texto.match(/\n/g) || []).length;
+  if (literais > reais) {
+    texto = texto.replace(/\\r\\n|\\n/g, "\n").replace(/\\t/g, "\t");
+  }
+
+  // O frontmatter que vier no corpo sai: quem escreve o frontmatter é o anotar.
+  const { corpo } = lerFrontmatter(texto.trim());
+  return corpo.trim();
+}
+
 /// Tira o H1 da frente do conteúdo e devolve os dois separados.
 ///
 /// Ela quase sempre escreve um título no começo do conteúdo. Mantendo esse
@@ -347,6 +377,12 @@ class Memoria {
   async anotar({ nome, titulo, quando, conteudo, pasta = "processos", relacionado } = {}) {
     if (!nome?.trim()) return { erro: "a nota precisa de nome" };
     if (!conteudo?.trim()) return { erro: "a nota precisa de conteúdo" };
+
+    // Antes de qualquer medida: o texto limpo. A guarda de perda compara
+    // tamanhos, e o `\n` literal INFLA o tamanho — o blob de uma linha que
+    // estragou a nota do Alelo passou pela guarda justamente por ser maior.
+    conteudo = normalizarConteudo(conteudo);
+    if (!conteudo) return { erro: "a nota precisa de conteúdo" };
 
     const subpasta = /^fatos/i.test(pasta) ? "fatos" : "processos";
     // O nome não repete a pasta: "fatos/fatos-perfil" vira "fatos/perfil".

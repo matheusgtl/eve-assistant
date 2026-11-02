@@ -223,6 +223,65 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
     assert.ok(trocada.ok, "nota curta não entra na trava");
 
     // =======================================================================
+    // `\n` literal e frontmatter dentro do corpo
+    // =======================================================================
+    // Em 02/11, às 18:32, ela gravou a nota do Alelo inteira numa ÚNICA linha:
+    // o frontmatter e o corpo com os `\n` como dois caracteres, e o acréscimo
+    // no fim. O arquivo cresceu de 490 para 1.044 bytes, então a guarda de
+    // perda não viu nada — ela só mede encolhimento. A nota ficou ilegível e o
+    // título saiu do slug ("Cartao alelo do matheus londrina", sem acento),
+    // porque o `# ` de verdade estava enterrado no meio da linha.
+    const comoVeioDela =
+      "---\\nquando: lugares que aceitam Alelo\\natualizado: 2026-11-02\\ntags: [fato]\\n---\\n\\n" +
+      "# Cartão Alelo do Matheus\\n\\n- Cartão: Alelo (vale-refeição)\\n- Cidade: Londrina\\n" +
+      "\\n**Organização e metódica:** acréscimo que ela queria fazer.";
+    const limpa = await mem.anotar({
+      nome: "alelo",
+      quando: "lugares que aceitam Alelo",
+      conteudo: comoVeioDela,
+      pasta: "fatos",
+    });
+    assert.ok(limpa.ok, "a nota tem de ser gravada");
+    const alelo = fs.readFileSync(path.join(cofre, "fatos", "alelo.md"), "utf8");
+
+    assert.doesNotMatch(alelo, /\\n/, "nenhum `\\n` literal pode sobrar no arquivo");
+    assert.ok(alelo.split("\n").length > 8, "o texto tem de voltar a ter linhas");
+    assert.match(alelo, /^# Cartão Alelo do Matheus$/m, "o título dela, com acento, e não o slug");
+    assert.doesNotMatch(alelo, /^# Alelo$/m, "o humanizar do slug não devia ter sido usado");
+    assert.match(alelo, /Organização e metódica/, "o acréscimo fica");
+    assert.match(alelo, /vale-refeição/, "e o conteúdo antigo também");
+
+    // Um frontmatter só, e no topo. Ela devolve a nota inteira (com
+    // frontmatter) quando junta o acréscimo, e aqui se escreve outro em cima.
+    assert.strictEqual(
+      (alelo.match(/^---$/gm) || []).length,
+      2,
+      "dois `---` e não quatro: frontmatter duplicado aparece como texto no Obsidian"
+    );
+    assert.strictEqual(
+      (alelo.match(/^tags:/gm) || []).length,
+      1,
+      "o frontmatter do corpo tem de sair"
+    );
+
+    // E o inverso não pode quebrar: uma nota que CITA `\n` num trecho de
+    // código tem muitas quebras de verdade e o `\n` precisa continuar lá.
+    const comCodigo = [
+      "# Código",
+      "",
+      "Para separar as linhas o split usa `\\n` como marca:",
+      "",
+      "```js",
+      'texto.split("\\n")',
+      "```",
+      "",
+      "E isso vale para o arquivo inteiro.",
+    ].join("\n");
+    await mem.anotar({ nome: "codigo", quando: "x", conteudo: comCodigo, pasta: "fatos" });
+    const codigo = fs.readFileSync(path.join(cofre, "fatos", "codigo.md"), "utf8");
+    assert.match(codigo, /split\("\\n"\)/, "o `\\n` citado em código não pode ser desescapado");
+
+    // =======================================================================
     // Link para si mesma não é link
     // =======================================================================
     // Em 02/11 ela pôs [[hortencia-barbosa-leote]] dentro do arquivo
@@ -296,6 +355,8 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
   fs.rmSync(velhaCasa, { recursive: true, force: true });
   fs.rmSync(novaCasa, { recursive: true, force: true });
 
+  console.log("   \\n literal              → desescapado; `\\n` citado em código fica");
+  console.log("   frontmatter no corpo    → sai, e o título dela sobrevive");
   console.log("   conteúdo no prompt      → nunca");
   console.log("   ordem de gravar         → fora da lista, com título próprio");
 

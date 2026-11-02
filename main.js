@@ -183,6 +183,20 @@ function saveConfig(cfg) {
   fs.writeFileSync(configPath(), JSON.stringify(cfg, null, 2), { mode: 0o600 });
 }
 
+/// A chave do provedor principal mora na genérica (`apiKey`) desde antes da
+/// corrente existir. Isso funciona enquanto ele é o principal — e só enquanto:
+/// trocar de principal fazia o provedor ANTERIOR sair da corrente junto, sem
+/// chave nenhuma, porque o `chaveDe` só aceita a genérica para quem está na
+/// frente. Copiar para o campo próprio na primeira abertura desarma isso.
+function migrarChavePrincipal() {
+  const cfg = loadConfig();
+  const dono = cfg.provider;
+  if (!dono || !cfg.apiKey || cfg[`${dono}Key`]) return;
+  cfg[`${dono}Key`] = cfg.apiKey;
+  saveConfig(cfg);
+  log(`chave do ${dono} copiada para o campo próprio (estava só na genérica)`);
+}
+
 /// A configuração que a interface pode ver — sem as chaves de API.
 // Todos os provedores no formato OpenAI que a corrente conhece. O OpenRouter e
 // o Cerebras estavam fora desta lista e sem campo na interface, embora o
@@ -1335,6 +1349,7 @@ function createWindow() {
 app.whenReady().then(() => {
   migrarConfigAntiga();
   separarChaveDoGemini();
+  migrarChavePrincipal();
   iniciarLembretes();
   iniciarMemoria();
   agentes = new Agentes({
