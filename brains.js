@@ -130,9 +130,16 @@ function montarSystemPrompt({
     // 02/11: ela respondeu uma lista de lembretes em tabela Markdown, e na tela
     // dele saiu "| 06/11, 09:00 | Resultado 1ª fase UEL |". Você é uma VOZ:
     // isso vai ser LIDO EM VOZ ALTA, e pipe não se fala.
-    "- NUNCA use tabela, pipe (|) nem cabeçalho de Markdown. Tudo o que você escreve é falado " +
-      "em voz alta. Para listar, uma linha por item, do jeito que se diz: " +
-      "\"6 de novembro, 9h — resultado da primeira fase da UEL\". Negrito e `código` podem.",
+    // 02/11: ele pediu a resposta com FORMA — "o que tiver que quebrar
+    // parágrafo que seja assim, para não ficar tudo em um texto só". A tela
+    // agora desenha parágrafo, lista, título e bloco de código; e o
+    // limparParaFala tira todos os marcadores antes de falar, então escrever
+    // com forma não custa nada na voz.
+    "- Escreva com FORMA: parágrafos separados por linha em branco, lista com \"- \" um item " +
+      "por linha, **negrito** no que importa, `código` para caminho e comando. A tela desenha " +
+      "isso; a voz ignora os marcadores. Resposta longa num parágrafo só é difícil de ler.",
+    "- Mas NUNCA tabela nem pipe (|): não cabe na largura da conversa e, como tudo é lido em " +
+      "voz alta, pipe não se fala. Lista resolve: \"6 de novembro, 9h — resultado da UEL\".",
     "- Ao usar ferramentas, não narre o que vai fazer antes; faça e diga o resultado.",
     "",
     "VOCÊ TEM AUTORIZAÇÃO PERMANENTE PARA AGIR",
@@ -682,6 +689,23 @@ async function geminiStream(modelo, apiKey, body, onFrase, sinal) {
 ///    meio por acidente de notação. Exigir espaço depois já resolveria o
 ///    "09:00", mas não "1. 500" nem uma lista numerada quebrando em "3. ",
 ///    então a regra é explícita.
+/// Tira o espaço da frente e PRESERVA a quebra de parágrafo do fim.
+///
+/// O `.trim()` que estava aqui matava a estrutura: ela escrevia um parágrafo,
+/// uma linha em branco e outro parágrafo, e a tela recebia dois fragmentos sem
+/// sinal nenhum de que havia uma quebra entre eles — resultado, um bloco de
+/// texto corrido. A fala não se importa (o limparParaFala normaliza espaço de
+/// qualquer jeito); a tela se importa, e é a mesma string que vai para as duas.
+///
+/// Mais de duas quebras seguidas viram duas: parágrafo é parágrafo, e vazio
+/// empilhado é só o modelo sendo prolixo com Enter.
+function comQuebra(texto) {
+  const semFrente = texto.replace(/^[ \t\r\n]+/, "");
+  const fim = semFrente.match(/[ \t\r\n]*$/)[0];
+  const quebras = (fim.match(/\n/g) || []).length;
+  return semFrente.replace(/[ \t\r\n]+$/, "") + (quebras >= 2 ? "\n\n" : quebras === 1 ? "\n" : "");
+}
+
 function criarFalante(onFrase) {
   const MIN_FALA = 42;
   // Terminador seguido de espaço de verdade, e não precedido+seguido de dígito.
@@ -699,14 +723,14 @@ function criarFalante(onFrase) {
         lote += m[1];
         pendente = pendente.slice(m[1].length);
         if (lote.trim().length >= MIN_FALA) {
-          onFrase(lote.trim());
+          onFrase(comQuebra(lote));
           lote = "";
         }
       }
     },
     fechar() {
-      const resto = (lote + pendente).trim();
-      if (resto) onFrase(resto);
+      const resto = comQuebra(lote + pendente);
+      if (resto.trim()) onFrase(resto);
       lote = "";
       pendente = "";
     },

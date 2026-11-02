@@ -505,8 +505,11 @@ assert.match(html, /<script src="interface\.js">/);
   // E o prompt tem de proibir tabela: tudo o que ela escreve é falado.
   const { montarSystemPrompt } = require("../brains.js");
   const prompt = montarSystemPrompt();
-  assert.match(prompt, /NUNCA use tabela, pipe/, "falta a proibição de tabela no prompt");
-  assert.match(prompt, /falado em voz alta/, "e o motivo: isso vai ser lido em voz alta");
+  assert.match(prompt, /NUNCA tabela nem pipe/, "falta a proibição de tabela no prompt");
+  assert.match(prompt, /lido em\s+voz alta|voz ignora os marcadores/, "e o motivo: tudo é falado");
+  // E o prompt tem de PEDIR forma, não só proibir: era o pedido dele.
+  assert.match(prompt, /Escreva com FORMA/, "o prompt precisa pedir parágrafo e lista");
+  assert.match(prompt, /parágrafos separados por linha em branco/, "e dizer como");
 
   // O separador de falas não pode voltar a aceitar terminador no fim do buffer.
   assert.doesNotMatch(

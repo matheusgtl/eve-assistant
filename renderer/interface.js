@@ -316,8 +316,10 @@ function rolar(forcar) {
 
 /// Escreve tratando **negrito** e `código`. Monta nós de texto, nunca HTML:
 /// o que vem do modelo não pode virar markup.
-function escrever(el, texto) {
-  for (const parte of String(texto).split(/(\*\*[^*]+\*\*|`[^`]+`)/g)) {
+/// Pedaços em linha: **negrito**, `código` e [texto](link).
+function escreverLinha(el, texto) {
+  const partes = String(texto).split(/(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g);
+  for (const parte of partes) {
     if (!parte) continue;
     if (parte.startsWith("**") && parte.endsWith("**")) {
       const b = document.createElement("b");
@@ -328,9 +330,133 @@ function escrever(el, texto) {
       c.textContent = parte.slice(1, -1);
       el.appendChild(c);
     } else {
-      el.appendChild(document.createTextNode(parte));
+      const link = parte.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (link) {
+        const a = document.createElement("a");
+        a.dataset.url = link[2];
+        a.textContent = link[1];
+        el.appendChild(a);
+      } else {
+        el.appendChild(document.createTextNode(parte));
+      }
     }
   }
+}
+
+/// A resposta dela, com a forma que ela escreveu.
+///
+/// Antes isto era só negrito e código numa única linha de texto: parágrafo,
+/// lista e título chegavam como caractere solto e saíam como um bloco corrido.
+/// Ele pediu o contrário — "o que tiver que quebrar parágrafo que seja assim".
+///
+/// A estrutura do Markdown é de BLOCO: não se decide o que é um item de lista
+/// olhando um caractere por vez. Então o fragmento novo entra no texto cru da
+/// bolha e a bolha é redesenhada inteira. Custa reparsear algumas centenas de
+/// caracteres por frase, e é o que torna o resultado correto em vez de
+/// aproximado.
+///
+/// Tabela não entra de propósito: além de não caber na largura da bolha, tudo
+/// isto é LIDO EM VOZ ALTA, e pipe não se fala. O prompt pede lista.
+function escrever(el, textoCru) {
+  el.textContent = "";
+  const linhas = String(textoCru || "").split("\n");
+  let i = 0;
+  let listaAtual = null; // <ul>/<ol> aberto, para itens seguidos entrarem juntos
+
+  const fecharLista = () => {
+    listaAtual = null;
+  };
+
+  while (i < linhas.length) {
+    const linha = linhas[i];
+
+    // Bloco de código cercado por ```
+    const cerca = linha.match(/^\s*```(\w*)\s*$/);
+    if (cerca) {
+      fecharLista();
+      const corpo = [];
+      i++;
+      while (i < linhas.length && !/^\s*```\s*$/.test(linhas[i])) {
+        corpo.push(linhas[i]);
+        i++;
+      }
+      i++; // passa a cerca de fechamento
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = corpo.join("\n");
+      pre.appendChild(code);
+      el.appendChild(pre);
+      continue;
+    }
+
+    // Linha vazia: separa blocos, e fecha a lista que estava aberta.
+    if (!linha.trim()) {
+      fecharLista();
+      i++;
+      continue;
+    }
+
+    // Título. Vira uma linha de destaque, não um <h1> — isto é uma bolha de
+    // conversa, e um título de 2em dentro dela seria grito.
+    const titulo = linha.match(/^\s*#{1,6}\s+(.*)$/);
+    if (titulo) {
+      fecharLista();
+      const d = document.createElement("div");
+      d.className = "md-titulo";
+      escreverLinha(d, titulo[1]);
+      el.appendChild(d);
+      i++;
+      continue;
+    }
+
+    // Item de lista, com marcador ou numerado.
+    const item = linha.match(/^\s*(?:[-*•]|(\d+)[.)])\s+(.*)$/);
+    if (item) {
+      const numerada = item[1] !== undefined;
+      if (!listaAtual || listaAtual.tagName !== (numerada ? "OL" : "UL")) {
+        listaAtual = document.createElement(numerada ? "ol" : "ul");
+        listaAtual.className = "md-lista";
+        if (numerada) listaAtual.start = Number(item[1]) || 1;
+        el.appendChild(listaAtual);
+      }
+      const li = document.createElement("li");
+      escreverLinha(li, item[2]);
+      listaAtual.appendChild(li);
+      i++;
+      continue;
+    }
+
+    // Parágrafo: junta as linhas seguintes até uma vazia ou outro bloco, e uma
+    // quebra simples no meio vira <br> — ela usa isso para separar itens que
+    // não são lista.
+    fecharLista();
+    const p = document.createElement("p");
+    p.className = "md-p";
+    let primeira = true;
+    while (
+      i < linhas.length &&
+      linhas[i].trim() &&
+      !/^\s*(?:#{1,6}\s|```|[-*•]\s|\d+[.)]\s)/.test(linhas[i])
+    ) {
+      if (!primeira) p.appendChild(document.createElement("br"));
+      escreverLinha(p, linhas[i].trim());
+      primeira = false;
+      i++;
+    }
+    el.appendChild(p);
+  }
+}
+
+/// Cola o fragmento novo no que a bolha já tem.
+///
+/// O separador de falas devolve a quebra de parágrafo no fim do fragmento
+/// quando ela escreveu uma; quando o corte foi só fim de frase, não devolve
+/// nada. Então quebra existente manda, e na falta dela entra um espaço — é
+/// isso que diferencia "dois parágrafos" de "duas frases do mesmo parágrafo".
+function juntarFragmentos(antes, novo) {
+  if (!antes) return novo;
+  if (/\n$/.test(antes)) return antes + novo;
+  return antes + " " + novo;
 }
 
 function registrar({ quem, texto, classe }) {
@@ -347,10 +473,11 @@ function registrar({ quem, texto, classe }) {
   if (quem === "eve" && !classe && ultimaLinhaEve) {
     const alvo = ultimaLinhaEve.querySelector(".txt");
     if (alvo) {
-      if (alvo.textContent && !/\s$/.test(alvo.textContent)) {
-        alvo.appendChild(document.createTextNode(" "));
-      }
-      escrever(alvo, texto);
+      // A bolha guarda o texto CRU e é redesenhada inteira. Markdown é
+      // estrutura de bloco: não se costura um item de lista colando pedaço no
+      // DOM, porque o pedaço seguinte pode pertencer ao mesmo item.
+      ultimaLinhaEve._cru = juntarFragmentos(ultimaLinhaEve._cru || "", texto);
+      escrever(alvo, ultimaLinhaEve._cru);
       rolar();
       return ultimaLinhaEve;
     }
@@ -367,7 +494,8 @@ function registrar({ quem, texto, classe }) {
 
   const txt = document.createElement("span");
   txt.className = "txt";
-  escrever(txt, texto);
+  linha._cru = String(texto ?? "");
+  escrever(txt, linha._cru);
   linha.appendChild(txt);
 
   roloEl.appendChild(linha);
