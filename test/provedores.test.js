@@ -153,6 +153,25 @@ servidor.listen(0, async () => {
     assert.ok(PROVEDORES[p].chaveEm.startsWith("https://"), `${p}: falta onde pegar a chave`);
   }
 
+  // A corrente expõe `etapas` com provedor e modelo de cada degrau — é disso
+  // que o log de abertura diz quem pensa primeiro. Antes dessa linha o log
+  // mostrava as TROCAS e não o ponto de partida, e eu tinha de ir ler o
+  // config a cada diagnóstico.
+  const corrente = createBrain({
+    provider: "nvidia", nvidiaKey: "nvapi-x", nvidiaModel: "nvidia/nemotron-3.5-lightning-30b-a3b",
+    groqKey: "gsk_x", openrouterKey: "sk-or-x",
+  });
+  assert.ok(Array.isArray(corrente.etapas), "a corrente precisa expor as etapas");
+  assert.strictEqual(corrente.etapas[0].provider, "nvidia", "o principal vem na frente");
+  assert.strictEqual(
+    corrente.etapas[0].model, "nvidia/nemotron-3.5-lightning-30b-a3b",
+    "e com o modelo do campo próprio, que é o que o log mostra"
+  );
+  assert.ok(
+    corrente.etapas.slice(1).some((e) => e.provider === "openrouter"),
+    "quem tem chave no campo próprio fica na reserva"
+  );
+
   // --------------------- 2. ferramenta fatiada é remontada e executada
   recebidos.length = 0;
   const ditos = [];
@@ -347,6 +366,7 @@ servidor.listen(0, async () => {
   console.log("   só raciocinou       → não falou o rascunho, e não ficou muda");
   console.log("   raciocínio em dois nomes → reasoning_content (groq) e reasoning (openrouter)");
   console.log("   nome de modelo velho → trocou de MODELO (gpt-oss-120b), não de provedor");
+  console.log("   etapas da corrente  → provedor + modelo, que é o log de abertura");
   console.log("   poda do histórico   → por tamanho, em grupos, começando por ele");
   console.log("   teto por provedor   → groq lembra", tetos.comGroq.length, "trocas de 10; nvidia lembra", tetos.comNvidia.length);
   console.log("   chamada repetida    → barrada na 3ª, com recado para sair do laço");

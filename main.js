@@ -943,7 +943,23 @@ async function atualizarIndiceMemoria() {
 }
 
 function initBrain() {
-  brain = createBrain(loadConfig(), { prompt: promptDoSistema });
+  const cfg = loadConfig();
+  brain = createBrain(cfg, { prompt: promptDoSistema });
+  if (brain) {
+    // Quem pensa primeiro, e com qual modelo. Sem esta linha o log mostra as
+    // TROCAS de provedor e não o ponto de partida: para saber quem estava na
+    // frente eu tinha de ir ler o config a cada diagnóstico, e numa abertura
+    // sem troca nenhuma não havia como saber.
+    // Só provider e model saem daqui. `etapas` guarda a CHAVE de cada
+    // provedor ao lado, e o log é permanente.
+    const etapas = brain.etapas || [{ provider: cfg.provider, model: brain.model }];
+    const frente = etapas[0];
+    const reserva = etapas.slice(1).map((e) => e.provider);
+    log(
+      `cérebro: ${frente.provider} (${frente.model || "modelo padrão"})` +
+        (reserva.length ? `; reserva: ${reserva.join(" → ")}` : "; sem reserva")
+    );
+  }
   return !!brain;
 }
 
