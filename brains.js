@@ -98,6 +98,11 @@ function montarSystemPrompt({
     // que fosse também adicionado no meu aplicativo Lembretes". O espelho é
     // feito no helper, em código — então aqui é só para ela não tentar fazer de
     // novo nem prometer o que já está feito.
+    // 01/11: ele pediu dia inteiro por padrão em vez de 09:00. O helper já
+    // deduz do formato (data sem hora = dia inteiro), então esta linha serve
+    // para ela não INVENTAR uma hora que ele não disse.
+    "- Hora só quando ele disser a hora. \"Dia 6 tenho o resultado da UEL\" → " +
+      "inicio=\"2026-11-06\", sem hora, e o dia inteiro sai sozinho. Nunca complete com 09:00.",
     "- criar_evento já cria SOZINHO o lembrete no app Lembretes: não chame criar_lembrete_app " +
       "depois de criar evento. Se vier lembrete_erro na resposta, diga a ele em uma frase. " +
       "criar_lembrete_app é para lembrete SEM compromisso (\"me lembra de ligar para a tia\"). " +
@@ -326,7 +331,7 @@ const TETO_POR_PROVEDOR = {
   // (28 ferramentas + o prompt), e o que resta do orçamento de dois pedidos
   // por minuto é isto. Na prática o Groq virou socorro de última hora, sem
   // memória da conversa — e é por isso que ele é o penúltimo da corrente.
-  groq: 2_500,
+  groq: 2_400,
 };
 const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
 

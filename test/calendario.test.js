@@ -308,6 +308,63 @@ const chamadas = () =>
     "senão ela chama criar_lembrete_app depois do evento e cria dois"
   );
 
+  // ---------------- 11. data sem hora é o DIA INTEIRO ----------------------
+  // 01/11: "pedi para mudar a questão de horários para deixar o dia todo
+  // sempre, em vez de sempre que colocar no horário de 09:00". No log das
+  // 20:51 ela criou dez lembretes com "T09:00" porque a hora era dela, não
+  // dele — ele nunca disse hora nenhuma.
+  //
+  // A regra vive no HELPER, deduzida do formato, e não numa nota de memória.
+  // A nota que ela escreveu às 23:19 do dia 31 não era lida em todo pedido: o
+  // índice da memória leva só a linha "quando", e o conteúdo sai por demanda.
+  // Regra que depende de ela decidir consultar não é regra, é sorte.
+  assert.match(
+    swiftLem,
+    /let horaNoTexto = inicioTexto\.contains\("T"\) \|\| inicioTexto\.contains\(":"\)/,
+    "o dia inteiro tem de ser deduzido do formato da data"
+  );
+  assert.match(
+    swiftLem,
+    /let diaInteiro = tem\("dia-inteiro"\) \|\| !horaNoTexto/,
+    "sem hora no texto, o evento é do dia inteiro mesmo sem a flag"
+  );
+
+  // A descrição da ferramenta tem de dizer isso, senão ela completa com 09:00.
+  const defEvento = toolDefinitions.find((t) => t.name === "criar_evento");
+  assert.match(
+    defEvento.input_schema.properties.inicio.description,
+    /dia inteiro/i,
+    "a descrição do início precisa dizer que só a data vira dia inteiro"
+  );
+  assert.doesNotMatch(
+    JSON.stringify(defEvento),
+    /T09:00/,
+    "o exemplo com 09:00 na descrição era de onde ela tirava a hora"
+  );
+
+  // E a regra tem de estar no PROMPT, que é o que ela lê em todo pedido —
+  // não na memória, que ela lê quando decide.
+  assert.match(prompt, /Hora só quando ele disser a hora/, "falta a regra no prompt");
+  assert.match(prompt, /Nunca complete com 09:00/, "e ela precisa ser explícita sobre o 09:00");
+
+  // ---------------- 12. não criar o mesmo lembrete duas vezes --------------
+  // No log de 01/11 ele acabou com dois de cada: às 20:51 ela preencheu os
+  // Lembretes a partir dos lembretes internos (com 09:00), e às 20:58 refez os
+  // eventos como dia inteiro — e cada evento refeito espelhou mais um. As duas
+  // vias estavam certas; faltava uma olhar antes de escrever.
+  assert.match(swiftLem, /ja_existia/, "o lembrete repetido tem de devolver ja_existia");
+  assert.match(
+    swiftLem,
+    /Calendar\.current\.startOfDay/,
+    "a comparação é pelo DIA: 09:00 por uma via e dia inteiro pela outra são o MESMO compromisso"
+  );
+  // E a busca tem de acontecer antes do save, senão a guarda não guarda nada.
+  assert.ok(
+    swiftLem.indexOf("fetchReminders(matching: store.predicateForReminders(in: [listaAlvo]))") <
+      swiftLem.indexOf("try store.save(r, commit: true)"),
+    "a conferência precisa vir ANTES de gravar"
+  );
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");

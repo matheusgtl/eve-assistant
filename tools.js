@@ -380,8 +380,8 @@ const toolDefinitions = [
       type: "object",
       properties: {
         titulo: { type: "string" },
-        inicio: { type: "string", description: "ISO local: 2026-05-02T09:00" },
-        fim: { type: "string", description: "ISO local. Sem ele, dura 1 hora." },
+        inicio: { type: "string", description: "ISO local. Só a data (2026-05-02) = dia inteiro." },
+        fim: { type: "string", description: "ISO local. Só com hora marcada." },
         local: { type: "string" },
         dia_inteiro: { type: "boolean" },
         alarme_minutos: { type: "integer", description: "Aviso N minutos antes." },

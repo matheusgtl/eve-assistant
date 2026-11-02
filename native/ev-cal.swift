@@ -302,6 +302,39 @@ func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
         }
     }
 
+    // JÁ EXISTE UM IGUAL? Então não se cria outro.
+    //
+    // Em 01/11 ele ficou com dois lembretes de cada compromisso: às 20:51 ela
+    // preencheu os Lembretes a partir dos lembretes internos, e às 20:58 refez
+    // os eventos como dia inteiro — e cada evento refeito espelhou mais um.
+    // Nenhuma das duas vias estava errada; faltava uma delas olhar antes.
+    //
+    // A comparação é por título e pelo DIA, não pelo instante: o mesmo
+    // compromisso vira 09:00 por uma via e dia inteiro pela outra, e tratar
+    // isso como dois itens diferentes é exatamente a duplicata que apareceu.
+    let listaAlvo = r.calendar!
+    let espera = DispatchSemaphore(value: 0)
+    var existentes: [EKReminder] = []
+    store.fetchReminders(matching: store.predicateForReminders(in: [listaAlvo])) { achados in
+        existentes = achados ?? []
+        espera.signal()
+    }
+    _ = espera.wait(timeout: .now() + 20)
+
+    let diaAlvo = quando.map { Calendar.current.startOfDay(for: $0) }
+    if let igual = existentes.first(where: { velho in
+        if velho.isCompleted { return false }
+        if (velho.title ?? "") != titulo { return false }
+        let diaVelho = velho.dueDateComponents
+            .flatMap(Calendar.current.date(from:))
+            .map { Calendar.current.startOfDay(for: $0) }
+        return diaVelho == diaAlvo
+    }) {
+        var r = descreverLembrete(igual)
+        r["ja_existia"] = true
+        return r
+    }
+
     do {
         try store.save(r, commit: true)
     } catch {
@@ -344,7 +377,21 @@ case "criar":
     guard let inicio = lerData(inicioTexto) else {
         morrer("não entendi a data \"\(inicioTexto)\"; use 2026-05-02T09:00")
     }
-    let diaInteiro = tem("dia-inteiro")
+    // DATA SEM HORA É O DIA INTEIRO.
+    //
+    // "2026-11-06" quer dizer o dia 6, não meia-noite do dia 6 — e um
+    // compromisso de meia-noite à 1h é o que ninguém pediu nunca. Antes isto
+    // vinha só da flag, então ela tinha de LEMBRAR de mandar --dia-inteiro, e
+    // esquecer significava 09:00 (ou 00:00) em tudo. Pedido dele em 01/11:
+    // "mudar a questão de horários para deixar o dia todo sempre, em vez de
+    // sempre que colocar no horário de 09:00".
+    //
+    // Deduzir do formato é melhor que regra de prompt ou nota na memória: ela
+    // manda a data que ele falou, e o dia inteiro sai sozinho. Hora explícita
+    // ("T14:30") continua sendo hora marcada, que é o que ele quer quando diz
+    // "reunião às duas e meia".
+    let horaNoTexto = inicioTexto.contains("T") || inicioTexto.contains(":")
+    let diaInteiro = tem("dia-inteiro") || !horaNoTexto
 
     var fim: Date
     if let fimTexto = opcao("fim") {
