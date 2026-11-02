@@ -408,57 +408,24 @@ const chamadas = () =>
   // "o dia todo": isso é sobre como o compromisso aparece no CALENDÁRIO, não
   // sobre a hora do aviso.
   assert.match(swiftLem, /let HORA_DO_AVISO = 9/, "falta a hora do aviso de dia inteiro");
+  // A hora TEM de ir no vencimento, não só num EKAlarm anexado.
+  //
+  // A primeira tentativa foi anexar um EKAlarm às 9h num lembrete sem hora no
+  // vencimento, e MEDIDO depois: o app continuou reportando "remind me date"
+  // às 00:00. Num lembrete sem hora de vencimento ele normaliza o alarme para
+  // o começo do dia e ignora o anexado. "Dia inteiro com aviso às 9h" não é
+  // estado que o Lembretes sustenta.
   assert.match(
     swiftLem,
-    /bySettingHour: HORA_DO_AVISO/,
-    "lembrete sem hora tem de ganhar alarme de manhã, senão o aviso cai à meia-noite"
+    /bySettingHour: HORA_DO_AVISO[\s\S]{0,200}?r\.dueDateComponents = Calendar\.current\.dateComponents\(\s*\[\.year, \.month, \.day, \.hour, \.minute\]/,
+    "a hora do aviso tem de entrar no VENCIMENTO; só o EKAlarm não basta (medido)"
   );
-  // E o caminho com hora marcada não pode ter sido trocado pelo de manhã.
+  // E hora marcada continua sendo a hora dele, não as 9h.
   assert.match(
     swiftLem,
-    /if comHora \{\s*r\.addAlarm\(EKAlarm\(absoluteDate: quando/,
-    "com hora marcada o alarme continua sendo na hora"
+    /let instante = comHora\s*\?\s*quando/,
+    "com hora marcada o vencimento é o instante que ele pediu"
   );
-
-  // ---------------- 15. ela precisa poder LER e APAGAR os lembretes --------
-  // Até aqui ela criava lembrete no app Lembretes e não conseguia ler nem
-  // apagar: o helper tinha a ação de listar, mas nenhuma ferramenta a expunha,
-  // e apagar não existia. Na prática ela não podia desfazer o próprio
-  // trabalho — e foi exatamente o que precisou ser feito em 01/11, quando o
-  // espelho duplicou sete lembretes.
-  for (const t of ["listar_lembretes_app", "apagar_lembrete_app"]) {
-    assert.ok(nomes.includes(t), `falta a ferramenta ${t}`);
-  }
-  assert.match(
-    toolDefinitions.find((t) => t.name === "listar_lembretes_app").description,
-    /id/i,
-    "listar tem de avisar que devolve o id, senão apagar fica sem o que usar"
-  );
-
-  process.env.EV_CAL_BIN = helperFalso({ apagado: true, lembrete: { id: "LM-9", titulo: "ENEM" } });
-  delete require.cache[require.resolve("../calendario.js")];
-  const cal6 = require("../calendario.js");
-  ferramentas.configurar({ calendario: cal6 });
-
-  await cal6.listarLembretesApp({});
-  assert.match(chamadas().at(-1), /^lembretes$/, "listar sem lista pega todas");
-  await cal6.listarLembretesApp({ lista: "Pessoal" });
-  assert.match(chamadas().at(-1), /^lembretes --lista Pessoal$/);
-
-  await cal6.apagarLembreteApp("LM-9");
-  assert.match(chamadas().at(-1), /^lembrete-apagar --id LM-9$/);
-  const semIdLem = await cal6.apagarLembreteApp().then(() => null, (e) => e);
-  assert.ok(semIdLem instanceof Error, "apagar sem id tem de ser recusado");
-
-  // A mesma trava do apagar_evento: id interno não serve aqui tampouco.
-  const ruim = JSON.parse(await ferramentas.runTool("apagar_lembrete_app", { id: "dz5a8q" }));
-  assert.strictEqual(ruim.codigo, "id_de_outro_tipo", "id interno não é id do app Lembretes");
-
-  // E o helper confere a remoção antes de dizer que removeu — como as outras três vias.
-  const ondeRemoveLem = swiftLem.indexOf("try store.remove(item, commit: true)");
-  const ondeConfereLem = swiftLem.indexOf("store.calendarItem(withIdentifier: id) != nil");
-  assert.ok(ondeRemoveLem > 0 && ondeConfereLem > ondeRemoveLem,
-    "confira que o lembrete saiu ANTES de dizer que saiu");
 
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");

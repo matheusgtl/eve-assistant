@@ -297,33 +297,31 @@ func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
     if let n = notas, !n.isEmpty { r.notes = n }
 
     if let quando = quando {
-        // O app Lembretes guarda vencimento em DateComponents, não em Date. E
-        // sem a hora ele não notifica: mostra o item no dia e fica calado. Por
-        // isso a hora entra quando existe, e `tem_hora` volta na resposta para
-        // ela não prometer um aviso que não vai soar.
-        var campos: Set<Calendar.Component> = [.year, .month, .day]
-        if comHora { campos.formUnion([.hour, .minute]) }
-        r.dueDateComponents = Calendar.current.dateComponents(campos, from: quando)
+        // O app Lembretes guarda vencimento em DateComponents, não em Date.
+        //
+        // E a HORA TEM DE ESTAR NO VENCIMENTO para ele avisar. Medido em
+        // 01/11: criei os lembretes de dia inteiro anexando um EKAlarm às 9h e
+        // o app continuou reportando "remind me date" às 00:00 — num lembrete
+        // sem hora no vencimento ele normaliza o alarme para o começo do dia e
+        // ignora o alarme anexado. "Dia inteiro com aviso às 9h" não é um
+        // estado que o Lembretes sustenta; a tentativa anterior disto não
+        // funcionou e foi medida, não suposta.
+        //
+        // Então quando o compromisso é de dia inteiro o lembrete vence às 9h.
+        // Isso NÃO contradiz o "dia todo" que ele pediu: aquilo é sobre como o
+        // compromisso aparece no CALENDÁRIO — e o evento continua de dia
+        // inteiro. Aqui é a hora do aviso, e aviso à meia-noite não serve.
+        let instante = comHora
+            ? quando
+            : (Calendar.current.date(
+                bySettingHour: HORA_DO_AVISO, minute: 0, second: 0, of: quando
+              ) ?? quando)
+        r.dueDateComponents = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute], from: instante
+        )
 
-        // O ALARME, e aqui estava um defeito meu de 01/11.
-        //
-        // Com hora marcada o alarme é na hora (menos o desconto pedido). SEM
-        // hora eu não punha alarme nenhum, e os Lembretes puseram o deles: à
-        // MEIA-NOITE. Medido nos lembretes dele — os que o espelho criou têm
-        // "remind me date" às 00:00. Ser acordado à meia-noite para lembrar do
-        // ENEM não é o que ele pediu ao querer "o dia todo".
-        //
-        // "O dia todo" é sobre como o compromisso aparece no CALENDÁRIO, não
-        // sobre a hora do aviso. Então o evento continua de dia inteiro e o
-        // aviso vem de manhã.
         let desconto = (alarmeMinutos ?? 0) * 60
-        if comHora {
-            r.addAlarm(EKAlarm(absoluteDate: quando.addingTimeInterval(-abs(desconto))))
-        } else if let manha = Calendar.current.date(
-            bySettingHour: HORA_DO_AVISO, minute: 0, second: 0, of: quando
-        ) {
-            r.addAlarm(EKAlarm(absoluteDate: manha.addingTimeInterval(-abs(desconto))))
-        }
+        r.addAlarm(EKAlarm(absoluteDate: instante.addingTimeInterval(-abs(desconto))))
     }
 
     // JÁ EXISTE UM IGUAL? Então não se cria outro.
@@ -334,8 +332,8 @@ func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
     // Nenhuma das duas vias estava errada; faltava uma delas olhar antes.
     //
     // A comparação é por título e pelo DIA, não pelo instante: o mesmo
-    // compromisso vira 09:00 por uma via e dia inteiro pela outra, e tratar
-    // isso como dois itens diferentes é exatamente a duplicata que apareceu.
+    // compromisso chega às 09:00 por uma via e às 9h-do-dia-inteiro pela outra,
+    // e tratar isso como dois itens é exatamente a duplicata que apareceu.
     let listaAlvo = r.calendar!
     let espera = DispatchSemaphore(value: 0)
     var existentes: [EKReminder] = []
