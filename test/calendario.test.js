@@ -427,6 +427,37 @@ const chamadas = () =>
     "com hora marcada o vencimento é o instante que ele pediu"
   );
 
+  // ---------------- 16. aviso ANTES do compromisso -------------------------
+  // 02/11: "tenho psicologo as 10am, disparar um alarme 1 hora antes para eu
+  // acordar". O campo alarme_minutos já existia e nada dizia a ela quando usar.
+  //
+  // E o helper passa a RELATAR os alarmes reais, porque duas vezes neste
+  // projeto eu afirmei a hora de um aviso que estava noutra hora. Pedir um
+  // EKAlarm às 9h não é o mesmo que o aviso soar às 9h, e ler de volta é a
+  // única forma de saber. De quebra, isso desmascarou o que me enganou: o
+  // `remind me date` do AppleScript relata o VENCIMENTO, não o alarme.
+  assert.match(swiftLem, /func descreverAlarmes/, "o helper tem de relatar os alarmes reais");
+  assert.match(swiftLem, /"minutos_antes"/, "aviso relativo precisa dizer quantos minutos antes");
+  assert.match(swiftLem, /d\["avisos"\] = avisos/, "e os avisos têm de sair na resposta");
+  // Nos DOIS descritores: evento e lembrete.
+  assert.strictEqual(
+    (swiftLem.match(/let avisos = descreverAlarmes\(/g) || []).length,
+    2,
+    "evento e lembrete, os dois, precisam relatar aviso"
+  );
+
+  const defEv = toolDefinitions.find((t) => t.name === "criar_evento");
+  assert.ok(defEv.input_schema.properties.alarme_minutos, "criar_evento precisa do alarme_minutos");
+  const defLem = toolDefinitions.find((t) => t.name === "criar_lembrete_app");
+  assert.ok(defLem.input_schema.properties.alarme_minutos, "e o lembrete do app também");
+
+  assert.match(prompt, /alarme_minutos no criar_evento/, "falta a regra de quando usar o alarme");
+  assert.match(
+    prompt,
+    /confirme a hora do aviso com ele, não a do compromisso/,
+    "ela tem de confirmar a hora do AVISO, que é a que ele quer saber"
+  );
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");

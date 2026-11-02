@@ -101,6 +101,12 @@ function montarSystemPrompt({
     // 01/11: ele pediu dia inteiro por padrão em vez de 09:00. O helper já
     // deduz do formato (data sem hora = dia inteiro), então esta linha serve
     // para ela não INVENTAR uma hora que ele não disse.
+    // 02/11, pedido dele: "tenho psicologo as 10am, disparar um alarme 1 hora
+    // antes para eu acordar". O campo alarme_minutos já existia e nada dizia a
+    // ela quando usar — então nunca usava.
+    "- Se ele quiser ser avisado ANTES (\"me acorda\", \"me avisa uma hora antes\", " +
+      "\"preciso me preparar\"), ponha alarme_minutos no criar_evento. A resposta traz " +
+      "`avisos`: confirme a hora do aviso com ele, não a do compromisso.",
     "- Hora só quando ele disser a hora. \"Dia 6 tenho o resultado da UEL\" → " +
       "inicio=\"2026-11-06\", sem hora, e o dia inteiro sai sozinho. Nunca complete com 09:00.",
     "- criar_evento já cria SOZINHO o lembrete no app Lembretes: não chame criar_lembrete_app " +
@@ -320,25 +326,57 @@ function tetoDoTpm(provedor, fixoEmTokens) {
   return Math.max(0, Math.floor(sobra * CARACTERES_POR_TOKEN));
 }
 
-const TETO_POR_PROVEDOR = {
-  // = tetoDoTpm("groq", custo fixo). Ver a conta acima. Este número DESCE
-  // quando o prompt ou as ferramentas crescem — foi o que acabou de acontecer
-  // com a regra do PDF: o fixo subiu de 3.138 para 3.189 tokens e o teste de
-  // orçamento acusou na hora, com o número e o que fazer. É o único jeito
-  // honesto: o histórico é o que sobra do orçamento, não uma escolha.
-  // Desce a cada ferramenta ou regra nova, porque é o que SOBRA do minuto do
-  // Groq depois do custo fixo. Em 01/11 o custo fixo chegou a 3.351 tokens
-  // (28 ferramentas + o prompt), e o que resta do orçamento de dois pedidos
-  // por minuto é isto. Na prática o Groq virou socorro de última hora, sem
-  // memória da conversa — e é por isso que ele é o penúltimo da corrente.
-  // 01/11: 2.000. Com 30 ferramentas o custo fixo chegou a 3.480 tokens, e o
-  // que sobra do minuto do Groq é isto — na prática, nada de conversa. Ele é o
-  // sexto de sete na corrente, então só entra quando cinco falharam; a troca
-  // que o aciona já descarta o histórico de qualquer forma. Se um dia o Groq
-  // precisar voltar a lembrar algo, o caminho não é afrouxar este número: é
-  // cortar ferramenta ou pagar o plano dele.
-  groq: 2_000,
-};
+/// O custo fixo de um pedido: o prompt de sistema base mais as definições de
+/// ferramenta. É o que viaja em TODO pedido antes de qualquer conversa.
+///
+/// Calculado uma vez, sob demanda — e não na carga do módulo, porque
+/// montarSystemPrompt e toolDefinitions são definidos abaixo daqui.
+let fixoCache = null;
+function custoFixoEmTokens() {
+  if (fixoCache != null) return fixoCache;
+  const emTokens = (t) => Math.round(String(t).length / CARACTERES_POR_TOKEN);
+  fixoCache =
+    emTokens(montarSystemPrompt()) +
+    emTokens(
+      JSON.stringify(
+        toolDefinitions.map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.input_schema,
+        }))
+      )
+    );
+  return fixoCache;
+}
+
+/// O teto de histórico de cada provedor, DERIVADO do limite dele.
+///
+/// Isto era uma constante que eu reajustava à mão, e reajustei quatro vezes em
+/// dois dias: 14.000 → 3.400 → 3.200 → 2.500 → 2.400 → 2.000 → 1.800. Cada
+/// ferramenta nova e cada linha de prompt mudava o número certo, o teste
+/// acusava, e eu corrigia depois. Número que precisa ser perseguido é número
+/// que devia ser conta — então agora é conta, e o teste confere a conta em vez
+/// de guardar um literal.
+const TETO_POR_PROVEDOR = new Proxy(
+  {},
+  {
+    get(_, provedor) {
+      return typeof provedor === "string" ? tetoDoTpm(provedor, custoFixoEmTokens()) : undefined;
+    },
+    has(_, provedor) {
+      return Object.prototype.hasOwnProperty.call(TPM_POR_PROVEDOR, provedor);
+    },
+    ownKeys() {
+      return Object.keys(TPM_POR_PROVEDOR);
+    },
+    getOwnPropertyDescriptor(_, provedor) {
+      return Object.prototype.hasOwnProperty.call(TPM_POR_PROVEDOR, provedor)
+        ? { configurable: true, enumerable: true, value: tetoDoTpm(provedor, custoFixoEmTokens()) }
+        : undefined;
+    },
+  }
+);
+
 const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
 
 /// Corta o histórico pelo fim, em GRUPOS, até caber no teto.

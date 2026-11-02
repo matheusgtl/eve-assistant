@@ -344,29 +344,49 @@ servidor.listen(0, async () => {
 // fixo para cima. Ele não checa um número bonito; ele refaz a conta com o
 // prompt e as ferramentas DE VERDADE e exige que o teto continue coerente.
 function conferirOrcamentoDoGroq() {
-  const { montarSystemPrompt, TETO_POR_PROVEDOR, TPM_POR_PROVEDOR, PEDIDOS_POR_MINUTO, tetoDoTpm } =
-    require("../brains.js");
+  const {
+    montarSystemPrompt, TETO_POR_PROVEDOR, TPM_POR_PROVEDOR, PEDIDOS_POR_MINUTO, tetoDoTpm,
+  } = require("../brains.js");
   const { toolDefinitions } = require("../tools.js");
 
   const emTokens = (texto) => Math.round(texto.length / 4);
-  const fixo = emTokens(montarSystemPrompt()) + emTokens(JSON.stringify(toolDefinitions));
+  const fixo =
+    emTokens(montarSystemPrompt()) +
+    emTokens(
+      JSON.stringify(
+        toolDefinitions.map((t) => ({
+          name: t.name, description: t.description, parameters: t.input_schema,
+        }))
+      )
+    );
   const tpm = TPM_POR_PROVEDOR.groq;
   assert.strictEqual(tpm, 8_000, "o 429 do Groq diz Limit 8000; se mudou, mude aqui");
+
+  // O teto agora é DERIVADO, então o teste confere a CONTA e não um literal.
+  // Antes ele guardava o número e eu o reajustava à mão a cada ferramenta ou
+  // linha de prompt nova — sete vezes em dois dias. Número que precisa ser
+  // perseguido devia ser conta; virou conta, e aqui se confere que é a certa.
+  assert.strictEqual(
+    TETO_POR_PROVEDOR.groq,
+    tetoDoTpm("groq", fixo),
+    "o teto do groq tem de sair do TPM menos o custo fixo medido"
+  );
 
   const pedido = fixo + emTokens("x".repeat(TETO_POR_PROVEDOR.groq));
   const pedidos = tpm / pedido;
   assert.ok(
     pedidos >= PEDIDOS_POR_MINUTO,
     `no pior caso cabem ${pedidos.toFixed(1)} pedidos no minuto do Groq, e uma pergunta com ` +
-      `ferramenta precisa de ${PEDIDOS_POR_MINUTO}. Custo fixo: ${fixo} tokens. ` +
-      `Aperte TETO_POR_PROVEDOR.groq (hoje ${TETO_POR_PROVEDOR.groq}) ou corte ferramenta.`
+      `ferramenta precisa de ${PEDIDOS_POR_MINUTO}. Custo fixo: ${fixo} tokens.`
   );
 
-  // E o teto configurado não pode estar mais largo do que a conta permite.
+  // E o aperto tem de continuar sendo REAL: se o custo fixo crescer tanto que
+  // não sobre histórico nenhum, isso não é um teto, é um aviso de que o
+  // caminho certo passou a ser cortar ferramenta ou pagar o plano.
   assert.ok(
-    TETO_POR_PROVEDOR.groq <= tetoDoTpm("groq", fixo),
-    `o teto do groq (${TETO_POR_PROVEDOR.groq}) passou do que sobra do TPM ` +
-      `(${tetoDoTpm("groq", fixo)} caracteres)`
+    TETO_POR_PROVEDOR.groq > 0,
+    `o custo fixo (${fixo} tokens) não deixa histórico nenhum no minuto do Groq. ` +
+      "Corte ferramenta ou tire o Groq da corrente."
   );
 
   // Provedor sem TPM declarado não ganha teto apertado à toa.

@@ -237,6 +237,8 @@ func descreverLembrete(_ r: EKReminder) -> [String: Any] {
         d["tem_hora"] = c.hour != nil
     }
     if let n = r.notes, !n.isEmpty { d["notas"] = n }
+    let avisos = descreverAlarmes(r)
+    if !avisos.isEmpty { d["avisos"] = avisos }
     return d
 }
 
@@ -263,6 +265,27 @@ func calendarioDeEscrita(_ nome: String?) -> EKCalendar {
     return primeiro
 }
 
+/// Os avisos de um item, como o EventKit os guarda de verdade.
+///
+/// Isto existe porque em 01/11 eu disse duas vezes que o aviso estava num
+/// horário e ele estava noutro. "Pedi um EKAlarm às 9h" não é o mesmo que "o
+/// aviso vai soar às 9h", e a única forma de saber é ler de volta. Agora quem
+/// chama recebe os alarmes reais e pode dizer a verdade a ele.
+func descreverAlarmes(_ item: EKCalendarItem) -> [[String: Any]] {
+    return (item.alarms ?? []).map { a in
+        var d: [String: Any] = [:]
+        if let abs = a.absoluteDate {
+            d["quando"] = escrever(abs)
+            d["tipo"] = "absoluto"
+        } else {
+            // relativeOffset é negativo para "antes do começo".
+            d["minutos_antes"] = Int((-a.relativeOffset) / 60)
+            d["tipo"] = "relativo"
+        }
+        return d
+    }
+}
+
 func descrever(_ e: EKEvent) -> [String: Any] {
     var d: [String: Any] = [
         "id": e.eventIdentifier ?? "",
@@ -274,6 +297,8 @@ func descrever(_ e: EKEvent) -> [String: Any] {
     if let f = e.endDate { d["fim"] = escrever(f) }
     if let l = e.location, !l.isEmpty { d["local"] = l }
     if let n = e.notes, !n.isEmpty { d["notas"] = n }
+    let avisos = descreverAlarmes(e)
+    if !avisos.isEmpty { d["avisos"] = avisos }
     return d
 }
 
