@@ -360,6 +360,56 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
     fs.rmSync(pastaBin, { recursive: true, force: true });
   }
 
+  // =========================================================================
+  // write_file não escreve no cofre da memória
+  // =========================================================================
+  // 02/11, 18:04, a sequência inteira no log:
+  //
+  //   anotar_memoria · nome="fatos/perfil-matheus" conteudo=<652 caracteres>
+  //   write_file     · filepath="fatos/perfil-matheus.md" content=<3444 car.>
+  //
+  // A trava de perda recusou o anotar_memoria (652 sobre 3.020 bytes) e
+  // devolveu o conteúdo atual. Em vez de regravar com o texto junto, ela
+  // chamou write_file com um caminho RELATIVO — e o resolvePath junta relativo
+  // com HOME, então os 3.527 caracteres foram para
+  // /Users/matheus/fatos/perfil-matheus.md, uma pasta fantasma. O cofre não
+  // mudou e ela respondeu como se tivesse salvo. Pior defeito possível: a
+  // gravação "deu certo" e o dado não existe onde deveria.
+  {
+    const cofre = fs.mkdtempSync(path.join(os.tmpdir(), "eve-vault-"));
+    configurar({ memoria: { pasta: cofre } });
+
+    for (const [caso, filepath] of [
+      ["o caminho relativo que ela usou", "fatos/perfil-matheus.md"],
+      ["processos, também relativo", "processos/regra.md"],
+      ["Conversas", "Conversas/2026-11-02.md"],
+      ["absoluto dentro do cofre", path.join(cofre, "fatos", "x.md")],
+      ["o cofre em si", cofre],
+    ]) {
+      const r = JSON.parse(await runTool("write_file", { filepath, content: "x" }));
+      assert.ok(r.error, `${caso}: tinha de ser recusado (${filepath})`);
+      assert.strictEqual(r.use, "anotar_memoria", `${caso}: tem de apontar a ferramenta certa`);
+      // A mensagem precisa dizer o que fazer depois de uma recusa de perda,
+      // porque foi exatamente aí que ela desviou para o write_file.
+      assert.match(r.error, /chame-o DE NOVO/, `${caso}: falta dizer para regravar`);
+    }
+
+    // E arquivo fora do cofre continua livre: a trava é do cofre, não de .md.
+    const solto = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "eve-livre-")), "nota.md");
+    const ok = JSON.parse(await runTool("write_file", { filepath: solto, content: "livre" }));
+    assert.ok(!ok.error, `arquivo fora do cofre não podia ser recusado: ${ok.error}`);
+    assert.strictEqual(fs.readFileSync(solto, "utf8"), "livre");
+
+    // Sem memória configurada não há cofre, e nada é barrado por engano.
+    configurar({ memoria: null });
+    const semCofre = JSON.parse(await runTool("write_file", { filepath: solto, content: "ainda livre" }));
+    assert.ok(!semCofre.error, "sem cofre configurado, write_file não barra nada");
+
+    fs.rmSync(cofre, { recursive: true, force: true });
+    fs.rmSync(path.dirname(solto), { recursive: true, force: true });
+    configurar({});
+  }
+
   console.log("✓ ferramentas: travas de confirmação, arquivos, lembretes e erros");
   console.log("   ler_pdf 150k  → cortado em", grande.texto.length, "caracteres, com aviso");
   console.log("  ", nomes.length, "ferramentas declaradas");
@@ -367,6 +417,7 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   console.log("   send_message  → needs_confirmation sempre");
   console.log("   sobrescrever  → guarda .bak automático");
   console.log("   read_file     → PDF vira ler_pdf; binário recusado; teto 24k, não 100k");
+  console.log("   write_file    → recusa o cofre e manda usar anotar_memoria");
   console.log("   as", toolDefinitions.length, "definições ≈", tokens, "tokens por pedido",
     `(${porFerramenta.toFixed(0)}/ferramenta)`);
 })();

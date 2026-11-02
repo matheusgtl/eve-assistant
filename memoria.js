@@ -374,8 +374,9 @@ class Memoria {
         return {
           erro:
             `a nota "${arquivo}" tem ${era} caracteres e você mandou ${vaiVirar}: isso APAGA ` +
-            "mais da metade dela. Se é um acréscimo, junte com o que já está lá e grave o " +
-            "texto completo. O conteúdo atual segue abaixo.",
+            "mais da metade dela. Se é um acréscimo, chame anotar_memoria DE NOVO com o " +
+            "texto abaixo mais o seu acréscimo — não use write_file, que não escreve no cofre. " +
+            "O conteúdo atual segue aqui.",
           conteudo_atual: anterior,
         };
       }

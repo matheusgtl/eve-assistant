@@ -185,6 +185,35 @@ function resolvePath(p) {
   return path.isAbsolute(p) ? p : path.join(HOME, p);
 }
 
+/// O cofre é território do anotar_memoria. Escrever nele com write_file é
+/// pular o backup, o frontmatter e o índice — e, pior, pode nem chegar lá.
+///
+/// 02/11, 18:04: a trava de perda recusou um anotar_memoria que apagaria dois
+/// terços de `perfil-matheus`. Em vez de regravar com o texto junto, ela
+/// chamou `write_file` com `filepath: "fatos/perfil-matheus.md"` — relativo.
+/// O resolvePath junta caminho relativo com HOME, então os 3.527 caracteres
+/// foram para `/Users/matheus/fatos/perfil-matheus.md`, uma pasta fantasma. O
+/// cofre não mudou, e ela respondeu como se tivesse salvo.
+function escritaNoCofre(caminho) {
+  const cofre = ctx.memoria?.pasta;
+  if (!cofre) return null;
+  const alvo = path.resolve(caminho);
+  const raiz = path.resolve(cofre);
+  const dentro = alvo === raiz || alvo.startsWith(raiz + path.sep);
+  // "fatos/x.md" e "processos/x.md" caem FORA do cofre quando resolvidos a
+  // partir do HOME, e é justamente o erro que aconteceu: a intenção era o
+  // cofre, o destino não era.
+  const pareceNota = /(^|\/)(fatos|processos|Conversas)\/[^/]+\.md$/.test(caminho);
+  if (!dentro && !pareceNota) return null;
+  return {
+    error:
+      "Não escreva no cofre da memória com write_file: isso pula o backup, o frontmatter e o " +
+      "índice. Para gravar ou atualizar uma nota, use anotar_memoria — e se ele recusou por " +
+      "apagar demais, chame-o DE NOVO com o texto que ele devolveu mais o seu acréscimo.",
+    use: "anotar_memoria",
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Definições — o que o modelo "vê"
 // ---------------------------------------------------------------------------
@@ -690,6 +719,8 @@ const executors = {
   async write_file({ filepath, content }) {
     try {
       const full = resolvePath(filepath);
+      const barrado = escritaNoCofre(full) || escritaNoCofre(String(filepath || ""));
+      if (barrado) return barrado;
       // Sobrescrever algo que já existe é perda de dado: guarda uma cópia .bak.
       let substituiu = false;
       try {
