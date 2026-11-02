@@ -506,8 +506,9 @@ const toolDefinitions = [
       properties: {
         nome: { type: "string" },
         quando: { type: "string", description: "Em que situação consultar. Só esta linha fica no seu contexto." },
-        conteudo: { type: "string", description: "O passo a passo, em markdown." },
+        conteudo: { type: "string", description: "Markdown. Comece com # Título. Cite outras notas com [[nome]]." },
         pasta: { type: "string", enum: ["processos", "fatos"] },
+        relacionado: { type: "array", items: { type: "string" }, description: "Notas ligadas a esta." },
       },
       required: ["nome", "quando", "conteudo"],
     },
@@ -833,10 +834,10 @@ const executors = {
     }
   },
 
-  async anotar_memoria({ nome, quando, conteudo, pasta }) {
+  async anotar_memoria({ nome, quando, conteudo, pasta, relacionado }) {
     if (!ctx.memoria) return { error: "memória não disponível" };
     try {
-      const r = await ctx.memoria.anotar({ nome, quando, conteudo, pasta });
+      const r = await ctx.memoria.anotar({ nome, quando, conteudo, pasta, relacionado });
       if (r.erro) return { error: r.erro };
       return r;
     } catch (err) {

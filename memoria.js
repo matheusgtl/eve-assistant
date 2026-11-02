@@ -96,6 +96,35 @@ function apelido(texto) {
     .slice(0, 60) || "nota";
 }
 
+/// Tira o H1 da frente do conteúdo e devolve os dois separados.
+///
+/// Ela quase sempre escreve um título no começo do conteúdo. Mantendo esse
+/// título E acrescentando `# ${nome}` saíam dois H1 — foi o que aconteceu em
+/// metade das notas do cofre dele. Aproveitar o dela é melhor que descartar:
+/// é um título humano, e o slug não é.
+function separarTitulo(conteudo) {
+  const m = conteudo.match(/^#{1,2}\s+(.+?)\s*\n+([\s\S]*)$/);
+  if (m) return { titulo: m[1].trim(), corpo: m[2].trim() };
+  return { titulo: null, corpo: conteudo };
+}
+
+/// "uso-e-troca-de-agentes" → "Uso e troca de agentes".
+/// Serve de último recurso para o título, quando não há nenhum.
+function humanizar(slug) {
+  const texto = String(slug).replace(/[-_]+/g, " ").trim();
+  return texto ? texto[0].toUpperCase() + texto.slice(1) : "Nota";
+}
+
+/// A seção de links. É o que faz as notas se conversarem no Obsidian — sem ela
+/// o cofre é uma pasta com arquivos, e o grafo não mostra nada.
+function secaoRelacionado(relacionado) {
+  const itens = (Array.isArray(relacionado) ? relacionado : [relacionado])
+    .filter((x) => typeof x === "string" && x.trim())
+    .map((x) => x.trim().replace(/^\[\[|\]\]$/g, ""));
+  if (!itens.length) return [];
+  return ["", "## Relacionado", ...itens.map((i) => `- [[${i}]]`)];
+}
+
 /// Lê o frontmatter YAML simples do topo do arquivo (chave: valor).
 /// Não usamos biblioteca de YAML: o que precisamos é uma linha por chave, e
 /// uma dependência a mais por isso não se paga.
@@ -296,12 +325,28 @@ class Memoria {
   /// Escreve ou atualiza um documento.
   /// Sobrescrever guarda .bak: uma memória apagada por engano é pior que um
   /// arquivo apagado por engano, porque ela some sem ninguém notar na hora.
-  async anotar({ nome, quando, conteudo, pasta = "processos" }) {
+  /// Grava uma nota no cofre, num formato só.
+  ///
+  /// O que estava torto antes, e dá para ver no cofre dele:
+  ///
+  ///   # fatos-perfil-matheus-atualizacao     ← slug como título
+  ///   # Atualizações de perfil - Matheus     ← e o título de verdade embaixo
+  ///
+  /// Dois H1 no mesmo arquivo, porque esta função escrevia `# ${nome}` e ela
+  /// também escrevia um título no conteúdo. E o nome carregava o nome da pasta
+  /// de novo (`fatos/fatos-perfil-matheus`), o que no Obsidian lê como gagueira.
+  ///
+  /// Agora: um H1, humano; o slug não repete a pasta; e a nota pode apontar
+  /// para outras com [[link]], que é o que faz o cofre virar um cofre em vez de
+  /// quinze arquivos soltos.
+  async anotar({ nome, titulo, quando, conteudo, pasta = "processos", relacionado } = {}) {
     if (!nome?.trim()) return { erro: "a nota precisa de nome" };
     if (!conteudo?.trim()) return { erro: "a nota precisa de conteúdo" };
 
     const subpasta = /^fatos/i.test(pasta) ? "fatos" : "processos";
-    const arquivo = path.join(subpasta, apelido(nome) + ".md");
+    // O nome não repete a pasta: "fatos/fatos-perfil" vira "fatos/perfil".
+    const slug = apelido(String(nome).replace(new RegExp(`^${subpasta}[-/\\s]+`, "i"), ""));
+    const arquivo = path.join(subpasta, slug + ".md");
     const caminho = path.join(this.pasta, arquivo);
     await fsp.mkdir(path.dirname(caminho), { recursive: true });
 
@@ -311,16 +356,20 @@ class Memoria {
       await fsp.copyFile(caminho, backup);
     }
 
-    const hoje = new Date().toISOString().slice(0, 10);
+    const { titulo: tituloDoCorpo, corpo } = separarTitulo(conteudo.trim());
+    const cabeca = (titulo || tituloDoCorpo || humanizar(slug)).trim();
+
     const texto = [
       "---",
       `quando: ${(quando || nome).replace(/\n/g, " ").trim()}`,
-      `atualizado: ${hoje}`,
+      `atualizado: ${new Date().toISOString().slice(0, 10)}`,
+      `tags: [${subpasta === "fatos" ? "fato" : "processo"}]`,
       "---",
       "",
-      `# ${nome.trim()}`,
+      `# ${cabeca}`,
       "",
-      conteudo.trim(),
+      corpo,
+      ...secaoRelacionado(relacionado),
       "",
     ].join("\n");
 
@@ -331,6 +380,7 @@ class Memoria {
     return {
       ok: true,
       nome: arquivo.replace(/\.md$/, ""),
+      titulo: cabeca,
       backup: backup ? path.basename(backup) : undefined,
     };
   }

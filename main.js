@@ -33,6 +33,7 @@ const { Skills, PASTA: PASTA_SKILLS } = require("./skills.js");
 const { Agentes } = require("./agentes.js");
 const { lerPdf } = require("./pdf.js");
 const calendario = require("./calendario.js");
+const { Conversas } = require("./conversas.js");
 const web = require("./web.js");
 
 // Fixa o nome ANTES de qualquer getPath: o app empacotado e o `npm start`
@@ -103,6 +104,7 @@ let healthProbe = null;
 let lembretes = null;
 let memoria = null;
 let skills = null;
+let conversas = null;
 let indiceSkills = null;
 let agentes = null;
 // Índice do cofre de .md já cortado no orçamento. Fica aqui, e não é lido na
@@ -877,6 +879,15 @@ function iniciarMemoria() {
   // As skills moram no mesmo cofre, numa pasta à parte — e a memória foi
   // ensinada a ignorar essa pasta, senão cada skill entraria no índice que
   // viaja em toda pergunta.
+  // O diário de conversas mora no mesmo cofre, numa pasta à parte — e com
+  // `quando: nunca` no topo, para conversa salva não entrar no índice que
+  // viaja no contexto dela. Conversa salva é para ELE reler.
+  conversas = new Conversas({
+    pasta: path.join(memoria.pasta, "Conversas"),
+    nomeDela: loadConfig().nome || "E.V.E",
+    onDebug: (msg) => log(msg),
+  });
+
   skills = new Skills({
     pasta: path.join(memoria.pasta, PASTA_SKILLS),
     onDebug: (msg) => log("skills:", msg),
@@ -1095,6 +1106,14 @@ async function ask(userText, canal = "texto") {
   }
   // Fora do mudo, nada de setEstado aqui de propósito: a fala continua na fila
   // depois do ask() retornar.
+
+  // A conversa vai para o cofre AGORA, não ao fechar o app. Salvar no
+  // before-quit perde tudo se o app cair, se a máquina dormir ou se ele
+  // simplesmente nunca mais tocar naquela janela. Reescrever o arquivo da
+  // conversa em andamento custa alguns quilobytes e não perde nada.
+  //
+  // Sem await: ele não precisa esperar o disco para ouvir a resposta.
+  conversas?.salvar(lerHistorico()).catch((err) => log("conversa não salva:", err.message));
 }
 
 // ---------------------------------------------------------------------------
