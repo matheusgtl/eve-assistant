@@ -957,7 +957,12 @@ function initBrain() {
     const reserva = etapas.slice(1).map((e) => e.provider);
     log(
       `cérebro: ${frente.provider} (${frente.model || "modelo padrão"})` +
-        (reserva.length ? `; reserva: ${reserva.join(" → ")}` : "; sem reserva")
+        (reserva.length ? `; reserva: ${reserva.join(" → ")}` : "; sem reserva") +
+        // A segunda voz muda o que ele OUVE, então tem de aparecer no log: sem
+        // isto, "por que ela respondeu assim" não tem resposta no arquivo.
+        (brain.conversa
+          ? `; conversa: ${brain.conversa.provider} (${brain.conversa.model})`
+          : "")
     );
   }
   return !!brain;

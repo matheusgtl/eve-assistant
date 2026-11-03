@@ -77,7 +77,15 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // 30 ferramentas somam 2.316 tokens, ou 77,2 por ferramenta: a média caiu de
   // 79,7, o que diz que as duas novas são mais enxutas que a média. É isso que
   // o teto da média guarda, e é por isso que ele não sobe.
-  assert.ok(tokens < 2350, `as ferramentas somam ~${tokens} tokens (teto: 2350)`);
+  // 03/11: 2.500 para caber o criar_pdf. Ele perguntou se ela criava PDF, ela
+  // disse que não, e estava certa — só lia. 31 ferramentas somam 2.463 tokens,
+  // ou 79,5 por ferramenta: a média SUBIU de 77,2, porque o criar_pdf é mais
+  // caro que a média (122 tokens). Ele carrega o contrato de "Markdown, o
+  // documento inteiro numa chamada só", que é o que impede ela de mandar o
+  // texto em pedaços. Mesmo assim fica abaixo do teto de 80 — e fica porque a
+  // trava pegou a PRIMEIRA versão da descrição, que enumerava cada marca de
+  // Markdown que o modelo já conhece. Cortada em metade, passou.
+  assert.ok(tokens < 2500, `as ferramentas somam ~${tokens} tokens (teto: 2500)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
   // ------------------- 1c. pesquisar não pode abrir aba no navegador
@@ -410,6 +418,53 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
     configurar({});
   }
 
+  // ------------------- criar_pdf: caminho, extensão e sobrescrita
+  // O que a ferramenta resolve antes de chamar o helper é o que erra em
+  // silêncio. "resumo" sem pasta ia direto para o HOME pelo resolvePath — a
+  // mesma armadilha que mandou 3.500 caracteres para uma pasta fantasma.
+  {
+    // A seção do ler_pdf trocou ctx.pdf por um dublê com só lerPdf, e o
+    // configurar mescla em vez de substituir — aqui o módulo de verdade volta.
+    configurar({ pdf: require("../pdf.js") });
+    const pasta = fs.mkdtempSync(path.join(os.tmpdir(), "eve-pdf-tool-"));
+    const alvo = path.join(pasta, "relatorio.pdf");
+
+    const feito = JSON.parse(await runTool("criar_pdf", {
+      caminho: alvo, conteudo: "# Oi\n\nUm parágrafo.", titulo: "Oi",
+    }));
+    assert.ok(!feito.error, `devia ter escrito: ${feito.error}`);
+    assert.strictEqual(feito.paginas, 1);
+    assert.ok(fs.existsSync(alvo), "o arquivo tem de existir no disco");
+    assert.ok(feito.aviso?.includes(alvo), "a resposta precisa dizer o caminho, para ela repassar");
+
+    // Sem extensão, vira .pdf. Sem pasta, vai para ~/Documents e não para o HOME.
+    const semNada = JSON.parse(await runTool("criar_pdf", {
+      caminho: "  ", conteudo: "# x\n\ny",
+    }));
+    assert.ok(!semNada.error, `devia ter escrito: ${semNada.error}`);
+    assert.match(
+      semNada.caminho, /\/Documents\/documento\.pdf$/,
+      `nome vazio tinha de cair em ~/Documents/documento.pdf, caiu em ${semNada.caminho}`
+    );
+    fs.rmSync(semNada.caminho, { force: true });
+
+    // Sobrescrever guarda .bak, igual ao write_file.
+    const denovo = JSON.parse(await runTool("criar_pdf", {
+      caminho: alvo, conteudo: "# Outro\n\nOutro texto.",
+    }));
+    assert.strictEqual(denovo.substituiu, true, "sobrescrita tem de ser anunciada");
+    assert.ok(fs.existsSync(alvo + ".bak"), "e tem de deixar a cópia do anterior");
+
+    // Conteúdo vazio não vira arquivo.
+    const vazio = JSON.parse(await runTool("criar_pdf", {
+      caminho: path.join(pasta, "vazio.pdf"), conteudo: "  \n ",
+    }));
+    assert.ok(vazio.error, "PDF vazio tem de ser recusado");
+    assert.ok(!fs.existsSync(path.join(pasta, "vazio.pdf")), "e não deixar arquivo pela metade");
+
+    fs.rmSync(pasta, { recursive: true, force: true });
+  }
+
   console.log("✓ ferramentas: travas de confirmação, arquivos, lembretes e erros");
   console.log("   ler_pdf 150k  → cortado em", grande.texto.length, "caracteres, com aviso");
   console.log("  ", nomes.length, "ferramentas declaradas");
@@ -418,6 +473,7 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   console.log("   sobrescrever  → guarda .bak automático");
   console.log("   read_file     → PDF vira ler_pdf; binário recusado; teto 24k, não 100k");
   console.log("   write_file    → recusa o cofre e manda usar anotar_memoria");
+  console.log("   criar_pdf     → sem pasta vai pro Documents; nome vazio não vira \".pdf\"");
   console.log("   as", toolDefinitions.length, "definições ≈", tokens, "tokens por pedido",
     `(${porFerramenta.toFixed(0)}/ferramenta)`);
 })();

@@ -340,9 +340,15 @@ assert.match(html, /<script src="interface\.js">/);
 
   // Os três provedores chamam onTool. Se um ficar para trás, o log fica cego
   // justamente no provedor que ele usa (hoje, NVIDIA no formato OpenAI).
+  //
+  // 03/11: são QUATRO. A quarta é o cérebro de duas vozes, que embrulha o
+  // onTool para saber se o turno teve ação — e repassa com os argumentos, que
+  // é o que esta trava existe para garantir. Se a conta cair, algum provedor
+  // perdeu a chamada; se subir sem motivo, apareceu um caminho novo que
+  // ninguém olhou.
   const brains = fs.readFileSync(path.join(__dirname, "..", "brains.js"), "utf8");
   const comArgs = [...brains.matchAll(/onTool\([^)]*,\s*[^)]+\)/g)].length;
-  assert.strictEqual(comArgs, 3, `os 3 provedores têm de passar args (achei ${comArgs})`);
+  assert.strictEqual(comArgs, 4, `os 3 provedores + o roteador têm de passar args (achei ${comArgs})`);
   assert.doesNotMatch(
     brains,
     /onTool\((?:call|chamada)\.name\)/,

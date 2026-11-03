@@ -10,6 +10,9 @@ swiftc -O native/ev-listen.swift -o native/ev-listen \
 echo "› compilando o leitor de PDF (PDFKit + OCR)…"
 swiftc -O native/ev-pdf.swift -o native/ev-pdf
 
+echo "› compilando o criador de PDF (CoreText)…"
+swiftc -O native/ev-pdf-criar.swift -o native/ev-pdf-criar
+
 echo "› compilando o acesso ao Calendário (EventKit)…"
 # O Info.plist embutido não é enfeite: sem NSCalendarsFullAccessUsageDescription
 # o macOS mata o processo na hora de pedir permissão, em vez de mostrar a janela.

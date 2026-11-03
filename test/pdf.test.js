@@ -98,9 +98,102 @@ dados.write(toFile: ${JSON.stringify(destino)}, atomically: true)`
   assert.strictEqual(ehPdf("a/b/c.PDF"), true);
   assert.strictEqual(ehPdf("a/b/c.txt"), false);
 
+  // =====================================================================
+  // 5. ESCREVER PDF — e conferir lendo de volta
+  // =====================================================================
+  // A prova de que um PDF ficou certo não é o arquivo existir nem ter bytes:
+  // é o texto voltar. O leitor desta mesma suíte serve de conferente, então a
+  // ida e a volta se checam uma à outra.
+  const { criarPdf } = require("../pdf.js");
+
+  const MARKDOWN = [
+    "# Relatório de novembro",
+    "",
+    "Parágrafo com **negrito**, *itálico* e `código`, longo o bastante para a linha quebrar e a",
+    "composição ter de decidir onde cortar.",
+    "",
+    "## Uma seção",
+    "",
+    "- primeiro item",
+    "- segundo item bem mais longo, para a segunda linha dele alinhar com o texto e não com a marca",
+    "",
+    "1. numerado um",
+    "2. numerado dois",
+    "",
+    "> Uma citação.",
+    "",
+    "```",
+    "asterisco.cru(2 * 3)",
+    "```",
+    "",
+    "Fim, com um [link](https://exemplo.com).",
+  ].join("\n");
+
+  const escrito = path.join(pasta, "relatorio.pdf");
+  const feito = await criarPdf(escrito, MARKDOWN, { titulo: "Relatório de novembro" });
+  assert.strictEqual(feito.caminho, escrito);
+  assert.strictEqual(feito.paginas, 1);
+  assert.ok(feito.bytes > 1000, "um PDF com uma página de texto não tem 1 KB");
+
+  const devolta = await lerPdf(escrito);
+  assert.strictEqual(devolta.ocr, false, "PDF que nós escrevemos tem camada de texto: OCR nunca");
+  assert.strictEqual(devolta.titulo, "Relatório de novembro", "o título vai nos metadados");
+  for (const esperado of [
+    "Relatório de novembro", "negrito", "itálico", "código",
+    "primeiro item", "numerado dois", "Uma citação", "Fim, com um link",
+  ]) {
+    assert.ok(devolta.texto.includes(esperado), `faltou "${esperado}" no PDF lido de volta`);
+  }
+  // As marcas de Markdown são FORMATO, não texto: se saírem impressas, o
+  // documento virou o código-fonte dele.
+  for (const marca of ["**negrito**", "`código`", "- primeiro", "# Relatório"]) {
+    assert.ok(!devolta.texto.includes(marca), `a marca "${marca}" foi impressa como texto`);
+  }
+  // Dentro de bloco de código o asterisco é asterisco.
+  assert.ok(devolta.texto.includes("2 * 3"), "o asterisco cru do bloco de código tem de sobreviver");
+
+  // ---- paginação: nada pode se perder na virada de página
+  const longo = ["# Longo", ""];
+  for (let i = 1; i <= 40; i++) {
+    longo.push(`## Seção ${i}`, "", "Texto de enchimento repetido. ".repeat(12), "");
+  }
+  const grande = path.join(pasta, "longo.pdf");
+  const feitoGrande = await criarPdf(grande, longo.join("\n"), { titulo: "Longo" });
+  assert.ok(feitoGrande.paginas >= 5, `esperava várias páginas, saíram ${feitoGrande.paginas}`);
+  const lidoGrande = await lerPdf(grande);
+  assert.strictEqual(lidoGrande.paginas, feitoGrande.paginas, "o leitor tem de contar o mesmo");
+  const achadas = [];
+  for (let i = 1; i <= 40; i++) if (lidoGrande.texto.includes(`Seção ${i}`)) achadas.push(i);
+  assert.strictEqual(
+    achadas.length, 40,
+    `a virada de página comeu seções: achei ${achadas.length} de 40`
+  );
+
+  // ---- o que NÃO pode acontecer
+  await assert.rejects(
+    criarPdf(path.join(pasta, "vazio.pdf"), "   \n  "),
+    /vazio/i,
+    "PDF vazio é arquivo inútil com nome bonito: tem de recusar"
+  );
+  assert.ok(
+    !fs.existsSync(path.join(pasta, "vazio.pdf")),
+    "a recusa não pode deixar arquivo pela metade no disco"
+  );
+  await assert.rejects(
+    criarPdf("/pasta/que/nao/existe/e/nao/da/pra/criar/x.pdf", "# oi"),
+    /./,
+    "destino impossível tem de virar erro, não sucesso silencioso"
+  );
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ PDF: camada de texto, OCR em escaneado, página avulsa e erros explicados");
   console.log("   com texto   → PDFKit, sem gastar OCR");
   console.log("   escaneado   → sem OCR não sai nada; com OCR sai o contrato inteiro");
   console.log("   não é PDF   → mensagem que dá para entender");
+  console.log(
+    `   escrever    → ${feito.paginas} página, lida de volta inteira; marca de Markdown não imprime`
+  );
+  console.log(
+    `   paginar     → ${feitoGrande.paginas} páginas, 40 de 40 seções sobreviveram à virada`
+  );
 })();

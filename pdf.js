@@ -21,11 +21,12 @@ const path = require("node:path");
 
 /// O binário fica ao lado do código em desenvolvimento e em Resources/native
 /// quando empacotado — o mesmo arranjo do motor de escuta.
-function caminhoDoHelper() {
-  if (process.env.EV_PDF_BIN) return process.env.EV_PDF_BIN;
+function caminhoDoHelper(nome = "ev-pdf") {
+  const variavel = nome === "ev-pdf" ? process.env.EV_PDF_BIN : process.env.EV_PDF_CRIAR_BIN;
+  if (variavel) return variavel;
   const candidatos = [
-    path.join(__dirname, "native", "ev-pdf"),
-    path.join(process.resourcesPath || "", "native", "ev-pdf"),
+    path.join(__dirname, "native", nome),
+    path.join(process.resourcesPath || "", "native", nome),
   ];
   return candidatos.find((c) => c && fs.existsSync(c)) || candidatos[0];
 }
@@ -73,4 +74,49 @@ function lerPdf(caminho, { pagina = null, maxPaginas = 60, semOcr = false } = {}
 
 const ehPdf = (caminho) => /\.pdf$/i.test(caminho || "");
 
-module.exports = { lerPdf, ehPdf, caminhoDoHelper };
+const PRAZO_ESCRITA = 30_000; // compor é rápido; 30s cobre documento de 100 páginas
+
+/// Escreve um PDF a partir de texto em Markdown e devolve
+/// { caminho, paginas, bytes }.
+///
+/// O conteúdo vai pela ENTRADA PADRÃO do helper, nunca por argumento: a lista
+/// de argumentos tem limite de tamanho no sistema, e documento é justamente o
+/// caso em que o texto é grande. Um relatório de dez páginas estouraria.
+function criarPdf(caminho, conteudo, { titulo = "", semNumero = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const bin = caminhoDoHelper("ev-pdf-criar");
+    if (!fs.existsSync(bin)) {
+      const err = new Error("o criador de PDF nativo não está compilado (rode `npm run native`)");
+      err.semHelper = true;
+      return reject(err);
+    }
+    if (!conteudo?.trim()) return reject(new Error("não vou escrever um PDF vazio"));
+
+    const alvo = caminho.startsWith("~") ? path.join(os.homedir(), caminho.slice(1)) : caminho;
+    const args = ["--saida", alvo];
+    if (titulo) args.push("--titulo", titulo);
+    if (semNumero) args.push("--sem-numero");
+
+    const filho = execFile(
+      bin, args, { timeout: PRAZO_ESCRITA, maxBuffer: 1024 * 1024 },
+      (erro, saida) => {
+        let dados = null;
+        try {
+          dados = JSON.parse(saida);
+        } catch {}
+        if (dados?.erro) return reject(new Error(dados.erro));
+        if (erro) {
+          return reject(new Error(
+            erro.killed ? "o PDF demorou demais para ser escrito" : erro.message
+          ));
+        }
+        if (!dados) return reject(new Error("não consegui entender a resposta do criador de PDF"));
+        resolve(dados);
+      }
+    );
+    filho.stdin.on("error", () => {}); // o helper pode morrer antes de ler tudo
+    filho.stdin.end(conteudo, "utf8");
+  });
+}
+
+module.exports = { lerPdf, criarPdf, ehPdf, caminhoDoHelper };

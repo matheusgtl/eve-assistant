@@ -21,6 +21,7 @@ build/icon.iconset/
 # cada compilação só engorda o histórico.
 native/ev-listen
 native/ev-pdf
+native/ev-pdf-criar
 native/ev-cal
 
 # Cópias que o empacotamento deixa na raiz. O app carrega renderer/index.html

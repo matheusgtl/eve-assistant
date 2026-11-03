@@ -53,10 +53,33 @@ function montarSystemPrompt({
     "- Sempre em português do Brasil, na primeira pessoa.",
     `- ${ESTILOS[estilo] || ESTILOS.doce}`,
     `- Quando escrever seu próprio nome em algo que vai ser falado, escreva "${pronuncia}" para a voz sair certa.`,
+    // Medido em 03/11: soltando o tamanho da resposta, ela respondeu "Sinto
+    // isso, amiga" a um desabafo dele. O prompt inteiro já fala dele como
+    // "ele", mas o modelo escorrega no vocativo, que é justamente a palavra
+    // que a voz lê em primeiro lugar.
+    ...(dono ? [`- O ${dono} é homem: trate no masculino, e no vocativo use o nome dele.`] : []),
     canal === "texto"
       ? "- Esta mensagem chegou por texto: pode usar quebras de linha e listas curtas. Nada de markdown pesado nem blocos de código gigantes."
       : "- Esta mensagem chegou por voz e sua resposta vai ser falada em voz alta: fale como uma pessoa fala. Sem markdown, sem listas, sem emojis, sem ler código caractere por caractere.",
-    "- Seja concisa. Uma ou duas frases resolvem quase tudo; só alongue se ele pedir detalhe.",
+    // 02/11 ele pediu uma conversa "mais fluida e normal, menos curta e
+    // robótica". A regra que estava aqui era "uma ou duas frases resolvem
+    // quase tudo" — e resolviam: medi 119 caracteres por resposta, que é uma
+    // frase. Ela não era seca de personalidade, era seca porque eu mandei.
+    //
+    // O que substitui não é "escreva mais": é CONVERSAR. Resposta curta
+    // continua certa para pergunta curta; o que mudou é que assunto puxado
+    // merece assunto de volta.
+    "- Converse, não responda em telegrama. Pergunta direta pede resposta direta; quando ele " +
+      "puxa assunto ou pergunta o que você acha, comente e puxe o fio — o que o assunto pedir.",
+    "- Fale como gente: \"pra\", \"tá\", \"né\". Sem abrir com \"Claro!\", sem repetir a " +
+      "pergunta, sem fechar com \"precisa de mais alguma coisa?\".",
+    // Esta regra é o freio da de cima, e nasceu medindo: quando soltei o
+    // tamanho da resposta, ela encheu o espaço INVENTANDO intimidade — "você
+    // só saiu faz quinze minutinhos", "aquele vídeo de alongamento que você
+    // guardou". Nada disso ela sabia. Conversa fluida não é conversa inventada:
+    // o que ela sabe dele está na memória e no histórico, e o resto se pergunta.
+    "- Conversar não é inventar. Nunca finja lembrar do que ele não disse e não está na sua " +
+      "memória — \"aquele lugar que você gosta\", hora ou nome que você não tem. PERGUNTE.",
     proativa
       ? "- Tenha iniciativa: quando notar algo útil, sugira — em uma frase, no fim, nunca em sermão."
       : "- Não ofereça sugestões não pedidas. Responda o que foi perguntado e pare."
@@ -127,6 +150,11 @@ function montarSystemPrompt({
     "- PDF é ler_pdf, nunca read_file: o texto de um PDF não sai como texto cru. " +
       "read_file é para arquivo de texto (código, .md, .txt, .json). Imagem, zip, .docx " +
       "e programa não se leem com read_file nenhum.",
+    // 02/11: ele perguntou se ela criava PDF e ela disse que não — e estava
+    // certa, a ferramenta não existia. Existe agora, então o que importa é ela
+    // não escrever um .md chamando de PDF, nem pedir o texto em pedaços.
+    "- Pediu um PDF? É criar_pdf, conteúdo em Markdown, o documento INTEIRO numa chamada só. " +
+      "Depois diga onde salvou e quantas páginas saíram.",
     // 02/11: ela respondeu uma lista de lembretes em tabela Markdown, e na tela
     // dele saiu "| 06/11, 09:00 | Resultado 1ª fase UEL |". Você é uma VOZ:
     // isso vai ser LIDO EM VOZ ALTA, e pipe não se fala.
@@ -1615,9 +1643,14 @@ async function checkOpenAI(provider, apiKey) {
 }
 
 class OpenAIBrain {
-  constructor({ apiKey, model, prompt, provider }) {
+  /// `semFerramentas` é a voz de conversa: o mesmo cérebro, sem as 30
+  /// definições no pedido. Não é economia de enfeite — são 2.463 dos 3.921
+  /// tokens fixos, e é o que faz o Groq caber em cinco perguntas por minuto
+  /// em vez de duas.
+  constructor({ apiKey, model, prompt, provider, semFerramentas = false }) {
     const def = PROVEDORES[provider];
     if (!def) throw new Error(`provedor desconhecido: ${provider}`);
+    this.semFerramentas = semFerramentas;
     this.provider = provider;
     this.def = def;
     this.apiKey = apiKey;
@@ -1783,7 +1816,7 @@ class OpenAIBrain {
       const { texto, chamadas, uso, limites } = await this.gerarComModeloValido(
         (corpoDoPedido = {
           messages: [{ role: "system", content: this.prompt({ canal }) }, ...this.messages],
-          tools: ferramentasOpenAI(),
+          ...(this.semFerramentas ? {} : { tools: ferramentasOpenAI() }),
           temperature: 0.6,
           max_tokens: canal === "texto" ? 2048 : 1024,
         }),
@@ -2075,6 +2108,173 @@ function modeloCombina(provedor, modelo) {
   return !doGoogle && !daAnthropic;
 }
 
+// ===========================================================================
+// Duas vozes: uma que AGE, uma que CONVERSA
+// ===========================================================================
+/// Nenhum modelo grátis dele faz as duas coisas bem.
+///
+/// Medido em 02 e 03/11. O `nemotron-3.5-lightning` (nvidia) é o único rápido
+/// com folga de limite e acerta a ferramenta — mas vazou a identidade de
+/// treino em 10 de 12 perguntas sobre ela mesma ("fui treinado por
+/// pesquisadores da NVIDIA") e nenhuma mudança de prompt move isso: regra no
+/// fim do prompt 6/9, no topo 6/9, exemplo no histórico 10/12. O
+/// `qwen3.8-27b` (groq) vazou 0 de 6, responde em 704ms e soa humano — mas com
+/// as 30 ferramentas no pedido bateu 429 no terceiro pedido, porque o teto do
+/// Groq é 8.000 tokens por minuto e as ferramentas sozinhas custam 2.463.
+///
+/// A ideia dele era rotear ANTES: conversa no modelo bom de conversa, ação no
+/// bom de ação. Medi isso com uma ferramenta única de socorro e não passa: o
+/// qwen escalou certo em calendário e pesquisa (4/4), mas em "me faz um pdf" e
+/// "como tá o meu computador?" respondeu sozinha — 1 erro em 5 pedidos de
+/// ação, e o erro é ela afirmar que fez o que não fez. É o defeito que a
+/// gente passou dias caçando; não vale 700ms.
+///
+/// Então a ordem é a inversa, e aí fica seguro por construção: quem decide
+/// ferramenta é SEMPRE o cérebro de ação, com as 30 na mão. Se ele chamou
+/// alguma, a resposta é dele — ele tem o resultado, a voz de conversa não. Se
+/// ele não chamou nada, o turno era conversa, a resposta dele é descartada e
+/// quem escreve é a voz boa.
+///
+/// O preço está na primeira palavra de um turno de conversa: ela sai depois do
+/// tempo de decisão da ação mais a resposta da conversa, uns 1,3s em vez de
+/// 560ms. Turno com ferramenta não muda em nada.
+class CerebroDeDuasVozes {
+  constructor({ acao, conversa, onDebug }) {
+    this.acao = acao;
+    this.conversa = conversa;
+    this.onDebug = onDebug || (() => {});
+  }
+
+  // A identidade visível é a do cérebro de ação: é ele que manda no turno, e é
+  // o que o log de abertura e o painel de uso mostram.
+  // A corrente não tem `provider` nem `model` próprios: ela tem `etapas` e o
+  // degrau atual. Os dois casos precisam responder, porque é daqui que saem o
+  // log de abertura e o painel de uso.
+  get provider() { return this.acao.provider || this.acao.etapas?.[0]?.provider; }
+  get model() { return this.acao.model || this.acao.cerebro?.model || this.acao.etapas?.[0]?.model; }
+  get etapas() { return this.acao.etapas; }
+  get provedorAtivo() { return this.acao.provedorAtivo || this.acao.provider; }
+
+  reset() {
+    this.acao.reset?.();
+    this.conversa.reset?.();
+  }
+
+  cancelar() {
+    this.acao.cancelar?.();
+    this.conversa.cancelar?.();
+  }
+
+  /// O histórico de CONVERSA: só o que foi dito, sem chamada de ferramenta nem
+  /// resultado. A voz de conversa não tem as ferramentas, então um `tool_calls`
+  /// no histórico dela seria uma referência a algo que ela não conhece — e o
+  /// `role: "tool"` órfão faz a API recusar o pedido inteiro.
+  historicoDeTexto() {
+    const mensagens = this.acao.cerebro?.messages || this.acao.messages || [];
+    return mensagens
+      .filter(
+        (m) =>
+          (m.role === "user" || m.role === "assistant") &&
+          !m.tool_calls &&
+          typeof m.content === "string" &&
+          m.content.trim()
+      )
+      .map((m) => ({ role: m.role, content: m.content }));
+  }
+
+  /// Onde o cérebro de ação guarda o histórico. Com a corrente no meio é o
+  /// cérebro do degrau atual; sozinho, é ele mesmo.
+  get mensagensDaAcao() {
+    return this.acao.cerebro?.messages || this.acao.messages || null;
+  }
+
+  async ask(userText, opcoes) {
+    const { onSay, onTool, anexo } = opcoes;
+
+    // Montado ANTES: o ask da ação vai empurrar a pergunta no histórico dela.
+    const antes = this.historicoDeTexto();
+
+    const guardado = [];
+    let agiu = false;
+
+    // O que ela diz ANTES de chamar a ferramenta é fala legítima — "deixa eu
+    // ver aqui". Fica guardado só até a primeira ferramenta aparecer; aí sai
+    // na ordem, porque nesse ponto já se sabe que o turno é de ação.
+    const falar = (t) => {
+      if (agiu) onSay(t);
+      else guardado.push(t);
+    };
+    const usarFerramenta = (nome, args) => {
+      if (!agiu) {
+        agiu = true;
+        for (const t of guardado) onSay(t);
+        guardado.length = 0;
+      }
+      onTool(nome, args);
+    };
+
+    await this.acao.ask(userText, { ...opcoes, onSay: falar, onTool: usarFerramenta });
+
+    // Turno de ação: a voz da ação fica, porque só ela viu o resultado.
+    if (agiu) return;
+
+    // Anexo não atravessa: a voz de conversa é escolhida por conversar, não
+    // por ler imagem nem PDF, e mandar um anexo que ela não entende troca uma
+    // resposta boa por um erro.
+    if (anexo) {
+      for (const t of guardado) onSay(t);
+      return;
+    }
+
+    const mensagens = this.mensagensDaAcao;
+    const descartada = mensagens?.length ? mensagens.pop() : null;
+
+    try {
+      this.conversa.messages = antes;
+      await this.conversa.ask(userText, opcoes);
+      // O que foi dito volta para o histórico da ação, senão o turno seguinte
+      // com ferramenta não sabe do que se estava falando.
+      const ultima = this.conversa.messages[this.conversa.messages.length - 1];
+      if (mensagens && ultima?.role === "assistant" && ultima.content) mensagens.push(ultima);
+      else if (mensagens && descartada) mensagens.push(descartada);
+    } catch (err) {
+      // A voz de conversa é a do Groq, e o Groq seca: 8.000 tokens por minuto
+      // dão umas cinco perguntas. Quando ela seca, a resposta que a ação já
+      // tinha pronta serve — pior a conversa ficar muda.
+      this.onDebug(`voz de conversa secou (${err.message}); fica a resposta da ação`);
+      if (mensagens && descartada) mensagens.push(descartada);
+      if (guardado.length) for (const t of guardado) onSay(t);
+      else onSay(descartada?.content || "Não consegui responder agora.");
+    }
+  }
+}
+
+/// O modelo de conversa padrão por provedor. Só entram os que vazaram ZERO na
+/// medição de 03/11; o número ao lado é a latência medida sem ferramentas.
+const VOZ_DE_CONVERSA = {
+  groq: "qwen/qwen3.8-27b", //   704ms, 0/6 de vazamento — o melhor dos dois
+  mistral: "ministral-8b-latest", // 2375ms, 0/6
+  nvidia: "nvidia/nemotron-3.5-bolt-e4b", // 2600ms, 0/6
+};
+
+/// Quem conversa, dado o que ele tem de chave. A ordem é a da medição, e o
+/// provedor da conversa NUNCA pode ser o mesmo da ação: seriam duas chamadas
+/// no mesmo balde de limite, e o balde é justamente o que estoura.
+function escolherVozDeConversa(config, providerDaAcao) {
+  if (config.conversaProvider === "nenhum") return null;
+  const preferido = config.conversaProvider;
+  const ordem = preferido ? [preferido] : ["groq", "mistral", "nvidia"];
+  for (const p of ordem) {
+    if (p === providerDaAcao) continue;
+    const key = chaveDe(config, p);
+    if (!key) continue;
+    const model = (preferido && config.conversaModel) || VOZ_DE_CONVERSA[p];
+    if (!model) continue;
+    return { provider: p, key, model };
+  }
+  return null;
+}
+
 function createBrain(config = {}, { prompt } = {}) {
   const principal = config.provider || detectProvider(process.env.ANTHROPIC_API_KEY || config.apiKey || "");
   const ordem = [principal, ...ORDEM_RESERVA.filter((p) => p !== principal)].filter(Boolean);
@@ -2108,11 +2308,27 @@ function createBrain(config = {}, { prompt } = {}) {
   }
 
   if (!etapas.length) return null;
-  if (etapas.length === 1) {
-    const { provider, key, model } = etapas[0];
-    return construir(provider, { key, model, prompt });
-  }
-  return new CadeiaDeCerebros(etapas, { prompt });
+
+  const acao =
+    etapas.length === 1
+      ? construir(etapas[0].provider, { ...etapas[0], prompt })
+      : new CadeiaDeCerebros(etapas, { prompt });
+
+  // A voz de conversa só entra se houver chave de OUTRO provedor para ela: no
+  // mesmo provedor da ação seriam duas chamadas no mesmo balde de limite.
+  const voz = escolherVozDeConversa(config, etapas[0].provider);
+  if (!voz) return acao;
+
+  return new CerebroDeDuasVozes({
+    acao,
+    conversa: new OpenAIBrain({
+      provider: voz.provider,
+      apiKey: voz.key,
+      model: voz.model,
+      prompt,
+      semFerramentas: true,
+    }),
+  });
 }
 
 module.exports = {

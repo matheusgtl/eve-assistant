@@ -378,6 +378,21 @@ const toolDefinitions = [
       required: ["caminho"],
     },
   },
+  {
+    name: "criar_pdf",
+    description:
+      "Escreve um PDF no disco, com tipografia e paginação. Conteúdo em Markdown, o " +
+      "documento inteiro numa chamada só. Nunca salve .md ou .txt e chame de PDF.",
+    input_schema: {
+      type: "object",
+      properties: {
+        caminho: { type: "string", description: "Termina em .pdf; sem pasta vai para ~/Documents." },
+        conteudo: { type: "string", description: "O documento em Markdown." },
+        titulo: { type: "string" },
+      },
+      required: ["caminho", "conteudo"],
+    },
+  },
 
   // ---------------- internet ----------------
   {
@@ -902,6 +917,48 @@ const executors = {
             "a chamada sem mudar nada, o resultado vai ser este mesmo."
           : undefined,
         texto,
+      };
+    } catch (err) {
+      return { error: err.message };
+    }
+  },
+
+  async criar_pdf({ caminho, conteudo, titulo }) {
+    if (!conteudo?.trim()) {
+      return { error: "o conteúdo chegou vazio: escreva o documento antes de salvá-lo" };
+    }
+
+    // "relatorio" vira "~/Documents/relatorio.pdf". Sem isto o resolvePath
+    // joga caminho relativo direto no HOME, que foi como 3.500 caracteres
+    // acabaram numa pasta fantasma em 02/11 — mesma armadilha, outra porta.
+    // Apara ANTES de escolher o padrão: com `caminho: "  "` o `||` via uma
+    // string verdadeira, aparava para vazio e somava ".pdf" — o arquivo saía
+    // chamado ".pdf", oculto, no Documents.
+    let pedido = String(caminho || "").trim() || "documento";
+    if (!/\.pdf$/i.test(pedido)) pedido += ".pdf";
+    if (!pedido.startsWith("~") && !path.isAbsolute(pedido) && !pedido.includes("/")) {
+      pedido = path.join("~", "Documents", pedido);
+    }
+    const full = resolvePath(pedido);
+
+    try {
+      // Sobrescrever é perda de dado: guarda a cópia, como o write_file.
+      let substituiu = false;
+      try {
+        await fs.access(full);
+        await fs.copyFile(full, full + ".bak");
+        substituiu = true;
+      } catch {}
+
+      const r = await ctx.pdf.criarPdf(full, conteudo, { titulo: titulo || "" });
+      return {
+        caminho: r.caminho,
+        paginas: r.paginas,
+        bytes: r.bytes,
+        substituiu: substituiu || undefined,
+        backup: substituiu ? full + ".bak" : undefined,
+        // Ela dizia "salvei o PDF" sem dizer ONDE, e ele tinha de procurar.
+        aviso: `Diga a ele o caminho (${r.caminho}) e quantas páginas saíram.`,
       };
     } catch (err) {
       return { error: err.message };

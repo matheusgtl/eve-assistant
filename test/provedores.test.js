@@ -146,6 +146,12 @@ servidor.listen(0, async () => {
   const { createBrain, PROVEDORES } = require("../brains.js");
   const base_ops = { onDebug: () => {}, onModel: () => {} };
 
+  // Estes testes são da CORRENTE. Desde 03/11 duas chaves também ligam a
+  // SEGUNDA VOZ, o cérebro de conversa (ver duas-vozes.test.js) — que embrulha
+  // a corrente e responderia no lugar dela nos turnos sem ferramenta. Aqui o
+  // que está sob teste é a corrente, então ela é pedida pura.
+  const correnteDe = (cfg) => createBrain({ ...cfg, conversaProvider: "nenhum" });
+
   // ------------------------------------------- 1. catálogo de provedores
   for (const p of ["groq", "mistral", "cerebras", "openrouter"]) {
     assert.ok(PROVEDORES[p]?.modelo, `${p}: falta modelo padrão`);
@@ -211,7 +217,7 @@ servidor.listen(0, async () => {
   recebidos.length = 0;
   const ditos2 = [];
   const trocas = [];
-  const cadeia = createBrain({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
+  const cadeia = correnteDe({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
   assert.strictEqual(cadeia.constructor.name, "CadeiaDeCerebros");
   assert.deepStrictEqual(cadeia.etapas.map((e) => e.provider), ["groq", "mistral"]);
 
@@ -234,7 +240,7 @@ servidor.listen(0, async () => {
   cenario = "falou-e-quebrou";
   recebidos.length = 0;
   const ditos3 = [];
-  const cadeia2 = createBrain({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
+  const cadeia2 = correnteDe({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
   let estourou = null;
   try {
     await cadeia2.ask("oi", { ...base_ops, onSay: (t) => ditos3.push(t), onTool: () => {} });
@@ -253,7 +259,7 @@ servidor.listen(0, async () => {
   recebidos.length = 0;
   const ditos4 = [];
   const trocas4 = [];
-  const cadeia3 = createBrain({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
+  const cadeia3 = correnteDe({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
   await cadeia3.ask("como está meu sistema?", {
     ...base_ops,
     onSay: (t) => ditos4.push(t),
@@ -274,7 +280,7 @@ servidor.listen(0, async () => {
   cenario = "so-pensou";
   recebidos.length = 0;
   const ditos5 = [];
-  const cadeia4 = createBrain({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
+  const cadeia4 = correnteDe({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
   await cadeia4.ask("pensa aí", { ...base_ops, onSay: (t) => ditos5.push(t), onTool: () => {} });
 
   const falaInteira5 = ditos5.join(" ");
@@ -324,7 +330,7 @@ servidor.listen(0, async () => {
   const ditos6 = [];
   const trocas6 = [];
   const modelos6 = [];
-  const cadeia5 = createBrain({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
+  const cadeia5 = correnteDe({ provider: "groq", groqKey: "gsk_x", mistralKey: "m_x" });
   await cadeia5.ask("abre o YouTube", {
     ...base_ops,
     onSay: (t) => ditos6.push(t),
