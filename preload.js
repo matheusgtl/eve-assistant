@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("ev", {
   debug: (msg) => ipcRenderer.invoke("ev:debug", msg),
   metricsNow: () => ipcRenderer.invoke("ev:metrics-now"),
   openExternal: (url) => ipcRenderer.invoke("ev:open-external", url),
+  // Cartão de arquivo no chat: só abre o que ela mesma criou (ver main.js).
+  openFile: (caminho) => ipcRenderer.invoke("ev:file-open", caminho),
+  saveFileAs: (caminho) => ipcRenderer.invoke("ev:file-save-as", caminho),
 
   // --- configuração ---
   getConfig: () => ipcRenderer.invoke("ev:get-config"),
@@ -65,6 +68,7 @@ contextBridge.exposeInMainWorld("ev", {
       agents: "ev:agents",
       mic: "ev:mic",
       attachment: "ev:attachment",
+      arquivo: "ev:arquivo",
     };
     const canal = canais[evento];
     if (canal) ipcRenderer.on(canal, (_e, payload) => handler(payload));

@@ -304,6 +304,34 @@ function lerHistorico() {
   }
 }
 
+/// Arquivos que ELA criou e que a interface pode abrir ou copiar.
+///
+/// Os botões do cartão mandam um caminho de volta para cá, e o caminho vem da
+/// interface. Sem esta lista, qualquer coisa que conseguisse falar com a
+/// interface pediria "abra /qualquer/coisa" e o processo principal abriria —
+/// a lista transforma "abrir arquivo" em "abrir o arquivo que ela fez".
+const arquivosLiberados = new Set();
+
+function liberarArquivo(caminho) {
+  if (caminho) arquivosLiberados.add(path.resolve(caminho));
+}
+
+function arquivoLiberado(caminho) {
+  const alvo = path.resolve(String(caminho || ""));
+  if (!arquivosLiberados.has(alvo)) return { erro: "esse arquivo não foi criado por ela" };
+  if (!fs.existsSync(alvo)) return { erro: "o arquivo não está mais nesse lugar (foi movido ou apagado)" };
+  return { alvo };
+}
+
+/// Um arquivo novo entra no histórico como item próprio: é o que faz o cartão
+/// voltar quando ele fecha e abre o app, em vez de sumir com a sessão.
+function anotarArquivo(arquivo) {
+  liberarArquivo(arquivo.caminho);
+  anotar("eve", `📎 ${arquivo.nome}`, { arquivo });
+  send("ev:arquivo", arquivo);
+  log("arquivo criado:", arquivo.caminho, `${arquivo.paginas || "?"} página(s)`, `${arquivo.bytes || 0} bytes`);
+}
+
 function anotar(quem, texto, extra = {}) {
   if (!texto) return;
   const item = { quem, texto, hora: new Date().toISOString(), ...extra };
@@ -1380,7 +1408,12 @@ app.whenReady().then(() => {
 
   // As ferramentas precisam de lembretes, notificação e da chave do Gemini
   // (a pesquisa na web usa a mesma chave do cérebro).
+  // Os cartões que já estão no histórico continuam abrindo depois de reabrir
+  // o app: a lista de liberados nasce do que foi gravado.
+  for (const item of lerHistorico()) liberarArquivo(item.arquivo?.caminho);
+
   ferramentas.configurar({
+    onArquivo: anotarArquivo,
     lembretes,
     memoria,
     skills,
@@ -1496,6 +1529,37 @@ ipcMain.handle("ev:mic", (_e, acao) => mic(acao));
 ipcMain.handle("ev:type", (_e, texto) => ask(String(texto || "").trim(), "texto"));
 ipcMain.handle("ev:debug", (_e, msg) => log("interface:", msg));
 ipcMain.handle("ev:metrics-now", () => amostrarPainel());
+// Os botões do cartão de arquivo no chat.
+ipcMain.handle("ev:file-open", async (_e, caminho) => {
+  const { alvo, erro } = arquivoLiberado(caminho);
+  if (erro) return { ok: false, erro };
+  // openPath devolve "" no sucesso e a mensagem de erro no fracasso.
+  const falha = await shell.openPath(alvo);
+  return falha ? { ok: false, erro: falha } : { ok: true };
+});
+
+/// "Baixar" é salvar uma CÓPIA onde ele escolher, começando pelos Downloads.
+/// O original fica onde ela gravou: é o caminho que ela disse em voz alta, e
+/// movê-lo faria a frase dela virar mentira.
+ipcMain.handle("ev:file-save-as", async (_e, caminho) => {
+  const { alvo, erro } = arquivoLiberado(caminho);
+  if (erro) return { ok: false, erro };
+  const { canceled, filePath } = await dialog.showSaveDialog(win, {
+    title: "Salvar uma cópia",
+    defaultPath: path.join(app.getPath("downloads"), path.basename(alvo)),
+    // Da extensão, e não "PDF" fixo: o cartão serve a qualquer arquivo que ela crie.
+    filters: [{ name: path.extname(alvo).slice(1).toUpperCase() || "Arquivo", extensions: [path.extname(alvo).slice(1) || "*"] }],
+  });
+  if (canceled || !filePath) return { ok: false, cancelado: true };
+  try {
+    if (path.resolve(filePath) !== alvo) await fs.promises.copyFile(alvo, filePath);
+    shell.showItemInFolder(filePath);
+    return { ok: true, caminho: filePath };
+  } catch (err) {
+    return { ok: false, erro: err.message };
+  }
+});
+
 ipcMain.handle("ev:open-external", (_e, url) => {
   if (/^https?:\/\//i.test(url)) shell.openExternal(url);
 });

@@ -56,8 +56,13 @@ function juntar(antes, novo) {
 /// O histórico cru (uma entrada por fragmento) vira turnos de conversa.
 function emTurnos(itens) {
   const turnos = [];
-  for (const item of itens) {
+  for (let item of itens) {
     const quem = item.quem === "voce" ? "voce" : "eve";
+    // Arquivo criado vira parágrafo próprio com o caminho: no diário, um
+    // "📎 relatorio.pdf" colado no meio da frase dela não diz onde está.
+    if (item.arquivo?.caminho) {
+      item = { ...item, texto: `\n\n📎 ${item.arquivo.nome} — ${item.arquivo.caminho}\n\n` };
+    }
     const ultimo = turnos[turnos.length - 1];
     // Fala dele nunca se junta: cada pergunta é uma pergunta. Dela, sim.
     if (ultimo && ultimo.quem === quem && quem === "eve") {

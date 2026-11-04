@@ -267,6 +267,40 @@
   .linha-log.erro .quem, .linha-log.erro .txt { color: var(--erro); }
   .linha-log.lembrete .quem, .linha-log.lembrete .txt { color: var(--meio); }
   .linha-log .ferr { color: var(--fraco); font-size: 11px; font-family: var(--mono); display: block; padding-left: 10px; }
+  /* Cartão do arquivo que ela criou: o mesmo desenho dos anexos, com o ícone
+     do tipo à esquerda e as duas ações à direita. Baixar é a ação principal
+     — é o que ele pediu — e leva a cor de destaque. */
+  .linha-log .arquivo {
+    display: flex; align-items: center; gap: 10px;
+    margin: 8px 0 4px; padding: 8px 10px; max-width: 420px;
+    background: var(--painel); border: 1px solid var(--borda); border-radius: 6px;
+    font-family: var(--texto-fonte);
+  }
+  .arquivo-icone {
+    flex: none; width: 34px; height: 40px; border-radius: 4px;
+    display: grid; place-items: center;
+    font: 600 10px/1 var(--mono); letter-spacing: .06em;
+    color: var(--ac); border: 1px solid color-mix(in srgb, var(--ac) 45%, transparent);
+    background: color-mix(in srgb, var(--ac) 9%, transparent);
+  }
+  .arquivo-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .arquivo-nome {
+    color: var(--texto); font-size: 13px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .arquivo-meta { color: var(--fraco); font-size: 11.5px; }
+  .arquivo-acoes { flex: none; display: flex; gap: 6px; }
+  .arquivo-botao {
+    font: 500 12px/1 var(--texto-fonte); padding: 7px 11px; border-radius: 4px;
+    cursor: pointer; border: 1px solid var(--borda); background: transparent; color: var(--texto);
+  }
+  .arquivo-botao.primario {
+    border-color: var(--ac); color: var(--fundo); background: var(--ac);
+  }
+  .arquivo-botao:hover { filter: brightness(1.12); }
+  .arquivo-botao:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
+  .arquivo-botao:disabled { opacity: .55; cursor: progress; }
+
   .linha-log code {
     background: var(--fundo); border: 1px solid var(--borda); border-radius: 2px; padding: 0 3px;
   }

@@ -44,6 +44,10 @@ let ctx = {
   conversa: null, // { historico(), pasta() } — para salvar_conversa
   modelo: () => null,
   onDebug: () => {},
+  // Arquivo que ela criou para ele (hoje, PDF). O app mostra um cartão no chat
+  // com Abrir e Baixar — sem isto ela dizia "salvei em ~/Documents/x.pdf" e
+  // ele tinha de ir procurar no Finder.
+  onArquivo: () => {},
   web: require("./web.js"),
   pdf: require("./pdf.js"),
   sistema: require("./sistema.js"),
@@ -951,6 +955,13 @@ const executors = {
       } catch {}
 
       const r = await ctx.pdf.criarPdf(full, conteudo, { titulo: titulo || "" });
+      ctx.onArquivo({
+        tipo: "pdf",
+        caminho: r.caminho,
+        nome: path.basename(r.caminho),
+        paginas: r.paginas,
+        bytes: r.bytes,
+      });
       return {
         caminho: r.caminho,
         paginas: r.paginas,

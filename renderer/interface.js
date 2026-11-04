@@ -530,6 +530,75 @@ function mostrarFerramenta(nome) {
   rolar();
 }
 
+/// "30838" → "30 KB". Tamanho é para ele saber se dá para mandar no WhatsApp,
+/// não para contar byte.
+function tamanhoLegivel(bytes) {
+  const b = Number(bytes) || 0;
+  if (b < 1024) return `${b} B`;
+  if (b < 1024 * 1024) return `${Math.round(b / 1024)} KB`;
+  return `${(b / 1024 / 1024).toFixed(1).replace(".", ",")} MB`;
+}
+
+/// O cartão do arquivo que ela criou, dentro da bolha da resposta dela: ícone,
+/// nome, páginas e tamanho, e os botões Abrir e Baixar. Sem ele, "salvei em
+/// ~/Documents/relatorio.pdf" mandava ele procurar o arquivo no Finder.
+function mostrarArquivo(arquivo) {
+  if (!arquivo?.caminho) return;
+  const alvo = ultimaLinhaEve || registrar({ quem: "eve", texto: "" });
+
+  const cartao = document.createElement("div");
+  cartao.className = "arquivo";
+
+  const icone = document.createElement("span");
+  icone.className = "arquivo-icone";
+  icone.textContent = (arquivo.tipo || "arq").toUpperCase();
+  icone.setAttribute("aria-hidden", "true");
+
+  const info = document.createElement("span");
+  info.className = "arquivo-info";
+  const nome = document.createElement("span");
+  nome.className = "arquivo-nome";
+  nome.textContent = arquivo.nome || arquivo.caminho.split("/").pop();
+  nome.title = arquivo.caminho;
+  const meta = document.createElement("span");
+  meta.className = "arquivo-meta";
+  const paginas = arquivo.paginas ? `${arquivo.paginas} página${arquivo.paginas === 1 ? "" : "s"} · ` : "";
+  meta.textContent = paginas + tamanhoLegivel(arquivo.bytes);
+  info.append(nome, meta);
+
+  // O resultado de cada botão vira linha de sistema: arquivo movido ou apagado
+  // depois de criado é o caso comum, e falhar calado parece botão quebrado.
+  const botao = (rotulo, classe, acao) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "arquivo-botao " + classe;
+    b.textContent = rotulo;
+    b.setAttribute("aria-label", `${rotulo} ${nome.textContent}`);
+    b.addEventListener("click", async () => {
+      b.disabled = true;
+      try {
+        const r = await acao(arquivo.caminho);
+        if (r?.ok && r.caminho) registrarSistema(`cópia salva em ${r.caminho}`);
+        else if (r && !r.ok && !r.cancelado) registrarSistema(`não consegui: ${r.erro}`);
+      } finally {
+        b.disabled = false;
+      }
+    });
+    return b;
+  };
+
+  const acoes = document.createElement("span");
+  acoes.className = "arquivo-acoes";
+  acoes.append(
+    botao("Abrir", "secundario", window.ev.openFile),
+    botao("Baixar", "primario", window.ev.saveFileAs)
+  );
+
+  cartao.append(icone, info, acoes);
+  alvo.appendChild(cartao);
+  rolar();
+}
+
 function setEstado(s, rotulo) {
   estado = s;
   // "pensando" e "falando" geram nível sozinhos: religar o laço aqui é o que
@@ -625,6 +694,12 @@ window.ev.on("history", (itens) => {
   roloEl.textContent = "";
   ultimaLinhaEve = null;
   for (const i of itens) {
+    // O item do arquivo carrega o cartão, não texto: o "📎 nome" gravado junto
+    // é para o diário e para quem ler o historico.json à mão.
+    if (i.arquivo) {
+      mostrarArquivo(i.arquivo);
+      continue;
+    }
     registrar({
       quem: i.quem === "voce" ? "voce" : "eve",
       texto: i.texto,
@@ -666,6 +741,7 @@ window.ev.on("message", ({ quem, texto, lembrete, anexo }) => {
 });
 
 window.ev.on("tool", ({ name }) => mostrarFerramenta(name));
+window.ev.on("arquivo", (arquivo) => mostrarArquivo(arquivo));
 window.ev.on("error", ({ message }) => registrar({ quem: "eve", texto: message, classe: "erro" }));
 window.ev.on("notice", ({ message }) => registrarSistema(message));
 window.ev.on("metrics", mostrarMetricas);
