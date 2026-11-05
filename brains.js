@@ -153,7 +153,11 @@ function montarSystemPrompt({
     // 02/11: ele perguntou se ela criava PDF e ela disse que não — e estava
     // certa, a ferramenta não existia. Existe agora, então o que importa é ela
     // não escrever um .md chamando de PDF, nem pedir o texto em pedaços.
+    // 04/11: PDF sobre o grupo de carros saiu com "também é baixista da
+    // Nicolly Sena" e "projeto DevMotors" — puxados do perfil só para encher —
+    // e assinado "por Ivi". Documento é só sobre o que ele pediu.
     "- Pediu um PDF? É criar_pdf, conteúdo em Markdown, o documento INTEIRO numa chamada só. " +
+      "Só o assunto pedido: nada do perfil dele que não seja sobre isso, sem rodapé nem assinatura. " +
       "Depois diga onde salvou e quantas páginas saíram.",
     // 02/11: ela respondeu uma lista de lembretes em tabela Markdown, e na tela
     // dele saiu "| 06/11, 09:00 | Resultado 1ª fase UEL |". Você é uma VOZ:
