@@ -286,21 +286,59 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
     // =======================================================================
     // Em 02/11 ela pôs [[hortencia-barbosa-leote]] dentro do arquivo
     // hortencia-barbosa-leote.md, em três notas diferentes.
-    await mem.anotar({
+    await mem.anotar({ nome: "outra-nota", quando: "x", conteudo: "# Outra\n\ntexto", pasta: "fatos" });
+    const sozinha = await mem.anotar({
       nome: "sozinha",
       quando: "x",
       conteudo: "# Sozinha\n\ntexto",
       pasta: "fatos",
-      relacionado: ["sozinha", "fatos/sozinha", "outra-nota", "outra-nota"],
+      relacionado: ["sozinha", "fatos/sozinha", "outra-nota", "Outra Nota", "fantasma"],
     });
     const texto = fs.readFileSync(path.join(cofre, "fatos", "sozinha.md"), "utf8");
     assert.doesNotMatch(texto, /\[\[(fatos\/)?sozinha\]\]/, "autolink tem de ser descartado");
-    assert.match(texto, /\[\[outra-nota\]\]/, "e o link de verdade fica");
+    assert.match(texto, /\[\[fatos\/outra-nota\]\]/, "e o link de verdade fica, sempre com a pasta");
     assert.strictEqual(
-      (texto.match(/\[\[outra-nota\]\]/g) || []).length,
+      (texto.match(/outra-nota\]\]/g) || []).length,
       1,
-      "link repetido entra uma vez só"
+      "link repetido (com e sem pasta, com espaço) entra uma vez só"
     );
+
+    // 04/11: link para nota que não existe vira nó fantasma no grafo. Não
+    // entra, e ela fica sabendo, para criar a nota se for o caso.
+    assert.doesNotMatch(texto, /fantasma/, "link para nota inexistente não entra");
+    assert.match(sozinha.links_sem_nota || "", /fantasma/, "e ela é avisada");
+
+    // A ligação de volta: a outra nota passa a apontar para esta.
+    const outra = fs.readFileSync(path.join(cofre, "fatos", "outra-nota.md"), "utf8");
+    assert.match(outra, /## Relacionado\n- \[\[fatos\/sozinha\]\]/, "a ligação vale nos dois sentidos");
+    assert.deepStrictEqual(sozinha.ligacao_de_volta, ["fatos/outra-nota"]);
+
+    // Uma seção só, mesmo quando ela escreve a seção no conteúdo E manda relacionado.
+    await mem.anotar({
+      nome: "sozinha",
+      quando: "x",
+      conteudo: "# Sozinha\n\ntexto novo\n\n## Relacionado\n- [[outra-nota]]",
+      pasta: "fatos",
+      relacionado: ["outra-nota"],
+    });
+    const reescrita = fs.readFileSync(path.join(cofre, "fatos", "sozinha.md"), "utf8");
+    assert.strictEqual((reescrita.match(/## Relacionado/g) || []).length, 1, "uma seção Relacionado só");
+    // Reescrever sem citar a ligação não a desfaz.
+    await mem.anotar({ nome: "sozinha", quando: "x", conteudo: "# Sozinha\n\ntexto de novo", pasta: "fatos" });
+    assert.match(
+      fs.readFileSync(path.join(cofre, "fatos", "sozinha.md"), "utf8"),
+      /\[\[fatos\/outra-nota\]\]/,
+      "reescrever a nota não a desliga do resto do cofre"
+    );
+    // A outra nota não ganha a mesma linha duas vezes.
+    assert.strictEqual(
+      (fs.readFileSync(path.join(cofre, "fatos", "outra-nota.md"), "utf8").match(/sozinha\]\]/g) || []).length,
+      1,
+      "ligação de volta não se repete"
+    );
+    // E quem consulta fica sabendo para onde a nota aponta.
+    const lida = await mem.consultar("sozinha");
+    assert.deepStrictEqual(lida.ligadas, ["fatos/outra-nota"], "consultar diz as notas ligadas");
 
     // E o padrão: um H1 só, humano, mesmo quando ela manda título no conteúdo.
     assert.strictEqual((texto.match(/^# /gm) || []).length, 1, "um H1 por nota");

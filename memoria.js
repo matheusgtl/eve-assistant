@@ -83,7 +83,7 @@ const MAPA = "MEMORIA.md"; // mapa gerado, para navegar no Obsidian
 // cada conversa salva entraria no índice que viaja em toda pergunta — e o
 // índice tem orçamento (TETO_INDICE). Uma semana de conversas salvas expulsaria
 // os fatos dela do próprio contexto.
-const FORA_DA_MEMORIA = new Set(["skills", "conversas"]);
+const FORA_DA_MEMORIA = new Set(["skills", "conversas", "gastos"]);
 
 /// Nome de arquivo seguro, sem acento e sem espaço, preservando a legibilidade.
 function apelido(texto) {
@@ -146,18 +146,56 @@ function humanizar(slug) {
 }
 
 /// A seção de links. É o que faz as notas se conversarem no Obsidian — sem ela
-/// o cofre é uma pasta com arquivos, e o grafo não mostra nada.
+/// o cofre é uma pasta com arquivos, e o grafo não mostra nada. Recebe nomes
+/// já resolvidos (`fatos/x`), e escreve sempre com a pasta: em 02/11 o cofre
+/// tinha `[[perfil-matheus]]` numa nota e `[[fatos/perfil-matheus]]` na
+/// outra, e ninguém sabia dizer qual era o certo.
 function secaoRelacionado(relacionado, proprioSlug) {
   const itens = [...new Set(
     (Array.isArray(relacionado) ? relacionado : [relacionado])
       .filter((x) => typeof x === "string" && x.trim())
-      .map((x) => x.trim().replace(/^\[\[|\]\]$/g, ""))
+      .map((x) => limparLink(x))
       // Link para si mesma não é link. Em 02/11 ela pôs
       // [[hortencia-barbosa-leote]] dentro de hortencia-barbosa-leote.md.
-      .filter((x) => x.replace(/^(fatos|processos)\//, "") !== proprioSlug)
+      .filter((x) => path.basename(x) !== proprioSlug)
   )];
   if (!itens.length) return [];
   return ["", "## Relacionado", ...itens.map((i) => `- [[${i}]]`)];
+}
+
+/// "[[fatos/x|apelido]]", "[[x#seção]]", "x.md" → "fatos/x" ou "x".
+function limparLink(bruto) {
+  return String(bruto).trim()
+    .replace(/^\[\[|\]\]$/g, "")
+    .split("|")[0].split("#")[0]
+    .replace(/\.md$/, "")
+    .trim();
+}
+
+/// Tira a seção "## Relacionado" do corpo e devolve os links que estavam nela.
+///
+/// Ela escreve essa seção no conteúdo E manda `relacionado` — saíam duas
+/// seções iguais no fim da nota. Agora a seção é uma só, e quem a escreve é o
+/// anotar, juntando as duas fontes.
+function extrairRelacionado(corpo) {
+  const m = corpo.match(/(^|\n)#{2,3}\s+Relacionad[oa]s?\s*\n([\s\S]*?)(?=\n#{1,3}\s|$)/i);
+  if (!m) return { corpo, links: [] };
+  const links = [...m[2].matchAll(/\[\[([^\]]+)\]\]/g)].map((x) => limparLink(x[1]));
+  return { corpo: (corpo.slice(0, m.index) + corpo.slice(m.index + m[0].length)).trim(), links };
+}
+
+/// Um link aponta para uma nota que EXISTE? Devolve o nome com pasta, ou null.
+/// Link para nota que não existe vira nó fantasma no grafo do Obsidian — e
+/// quase sempre é o modelo errando o nome de uma que existe.
+function resolverLink(link, itens) {
+  const pedido = limparLink(link).toLowerCase();
+  if (!pedido) return null;
+  const base = path.basename(pedido);
+  const alvo =
+    itens.find((i) => i.nome.toLowerCase() === pedido) ||
+    itens.find((i) => path.basename(i.nome).toLowerCase() === base) ||
+    itens.find((i) => path.basename(i.nome).toLowerCase() === apelido(base));
+  return alvo ? alvo.nome : null;
 }
 
 /// Lê o frontmatter YAML simples do topo do arquivo (chave: valor).
@@ -349,9 +387,18 @@ class Memoria {
 
     const bruto = await fsp.readFile(path.join(this.pasta, alvo.nome + ".md"), "utf8");
     const { dados, corpo } = lerFrontmatter(bruto);
+    // As notas ligadas a esta, para ela saber o que abrir em seguida sem
+    // adivinhar nome: o perfil aponta para a Hortência, a Hortência para a
+    // igreja, e é seguindo isso que o cofre vira um cérebro e não uma gaveta.
+    const ligadas = [...new Set(
+      [...corpo.matchAll(/\[\[([^\]]+)\]\]/g)]
+        .map((x) => resolverLink(x[1], itens))
+        .filter((n) => n && n !== alvo.nome)
+    )];
     return {
       nome: alvo.nome,
       quando: dados.quando || alvo.quando,
+      ligadas: ligadas.length ? ligadas : undefined,
       conteudo: corpo.trim().slice(0, LIMITE_LEITURA),
       truncado: corpo.length > LIMITE_LEITURA || undefined,
     };
@@ -424,8 +471,28 @@ class Memoria {
       await fsp.copyFile(caminho, backup);
     }
 
-    const { titulo: tituloDoCorpo, corpo } = separarTitulo(conteudo.trim());
+    const { titulo: tituloDoCorpo, corpo: corpoComLinks } = separarTitulo(conteudo.trim());
     const cabeca = (titulo || tituloDoCorpo || humanizar(slug)).trim();
+
+    // Os links vêm de três lugares e viram UMA seção: o `relacionado` da
+    // chamada, a seção que ela escreveu no conteúdo, e os que a nota já tinha
+    // — reescrever a nota inteira para corrigir uma linha não pode desligá-la
+    // do resto do cofre. Só fica o que aponta para nota que existe.
+    const { corpo, links: doCorpo } = extrairRelacionado(corpoComLinks);
+    const deAntes = anterior !== null ? extrairRelacionado(lerFrontmatter(anterior).corpo).links : [];
+    const pedidos = [
+      ...(Array.isArray(relacionado) ? relacionado : relacionado ? [relacionado] : []),
+      ...doCorpo,
+      ...deAntes,
+    ].filter((x) => typeof x === "string" && x.trim());
+    const itens = await this.indice();
+    const proprio = `${subpasta}/${slug}`;
+    const ligadas = [], semNota = [];
+    for (const pedido of pedidos) {
+      const nome = resolverLink(pedido, itens);
+      if (!nome) semNota.push(limparLink(pedido));
+      else if (nome !== proprio && !ligadas.includes(nome)) ligadas.push(nome);
+    }
 
     const texto = [
       "---",
@@ -437,11 +504,12 @@ class Memoria {
       `# ${cabeca}`,
       "",
       corpo,
-      ...secaoRelacionado(relacionado, slug),
+      ...secaoRelacionado(ligadas, slug),
       "",
     ].join("\n");
 
     await fsp.writeFile(caminho, texto);
+    const devolvidas = await this.ligarDeVolta(proprio, ligadas);
     this.cache = null;
     await this.gerarMapa();
     this.onDebug(`memória anotada: ${arquivo}${backup ? " (com backup)" : ""}`);
@@ -450,7 +518,43 @@ class Memoria {
       nome: arquivo.replace(/\.md$/, ""),
       titulo: cabeca,
       backup: backup ? path.basename(backup) : undefined,
+      ligada_a: ligadas.length ? ligadas : undefined,
+      ligacao_de_volta: devolvidas.length ? devolvidas : undefined,
+      links_sem_nota: semNota.length
+        ? `${[...new Set(semNota)].join(", ")}: não existe nota com esse nome, então não liguei. ` +
+          "Se a pessoa ou o assunto merece nota própria, crie e ligue."
+        : undefined,
     };
+  }
+
+  /// Link nos dois sentidos. Quando a nota da igreja aponta para a Hortência,
+  /// a da Hortência passa a apontar para a igreja — sem isso, quem abre a
+  /// Hortência não fica sabendo que existe a outra, e o grafo só tem setas que
+  /// saem das notas novas. Só ACRESCENTA uma linha na seção Relacionado da
+  /// outra nota; o texto dela não é tocado.
+  async ligarDeVolta(proprio, ligadas) {
+    const feitas = [];
+    for (const outra of ligadas) {
+      const arquivo = path.join(this.pasta, outra + ".md");
+      try {
+        const texto = await fsp.readFile(arquivo, "utf8");
+        const jaTem = [...texto.matchAll(/\[\[([^\]]+)\]\]/g)]
+          .some((x) => path.basename(limparLink(x[1])) === path.basename(proprio));
+        if (jaTem) continue;
+        const linha = `- [[${proprio}]]`;
+        const secao = texto.match(/\n#{2,3}\s+Relacionad[oa]s?\s*\n([\s\S]*?)(?=\n#{1,3}\s|$)/i);
+        let novo;
+        if (secao) {
+          const fim = secao.index + secao[0].length;
+          novo = texto.slice(0, fim).replace(/\s*$/, "") + "\n" + linha + "\n" + texto.slice(fim).replace(/^\s*\n/, "");
+        } else {
+          novo = texto.replace(/\s*$/, "") + "\n\n## Relacionado\n" + linha + "\n";
+        }
+        await fsp.writeFile(arquivo, novo);
+        feitas.push(outra);
+      } catch {}
+    }
+    return feitas;
   }
 
   /// Mapa com links do Obsidian, para VOCÊ navegar. É gerado, não é a verdade:

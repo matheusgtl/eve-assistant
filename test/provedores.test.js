@@ -509,22 +509,36 @@ function conferirOrcamentoDoGroq() {
     "o teto do groq tem de sair do TPM menos o custo fixo medido"
   );
 
-  const pedido = fixo + emTokens("x".repeat(TETO_POR_PROVEDOR.groq));
-  const pedidos = tpm / pedido;
-  assert.ok(
-    pedidos >= PEDIDOS_POR_MINUTO,
-    `no pior caso cabem ${pedidos.toFixed(1)} pedidos no minuto do Groq, e uma pergunta com ` +
-      `ferramenta precisa de ${PEDIDOS_POR_MINUTO}. Custo fixo: ${fixo} tokens.`
-  );
+  // 04/11: com 34 ferramentas (controle de gastos) o fixo COM ferramentas
+  // passou de 4.000 tokens — dois pedidos já não cabem no minuto do Groq, e o
+  // teto derivado vai a zero. A saída que este teste sempre pediu ("corte
+  // ferramenta ou tire o Groq da corrente") foi a segunda: o Groq sai da
+  // RESERVA da ação quando não cabe, e fica com o trabalho que cabe nele, a
+  // voz de conversa, que não leva ferramenta nenhuma.
+  const { tetoDe, createBrain } = require("../brains.js");
+  if (TETO_POR_PROVEDOR.groq > 0) {
+    const pedido = fixo + emTokens("x".repeat(TETO_POR_PROVEDOR.groq));
+    assert.ok(tpm / pedido >= PEDIDOS_POR_MINUTO, `cabem ${(tpm / pedido).toFixed(1)} pedidos com ferramentas`);
+  } else {
+    const cerebro = createBrain({ provider: "nvidia", nvidiaKey: "k", groqKey: "k", mistralKey: "k", conversaProvider: "nenhum" });
+    const provedores = (cerebro.etapas || [cerebro]).map((e) => e.provider);
+    assert.ok(
+      !provedores.includes("groq"),
+      `o Groq com ferramentas não cabe no minuto (fixo ${fixo} tokens) e mesmo assim está na reserva da ação: ${provedores.join(" → ")}`
+    );
+  }
 
-  // E o aperto tem de continuar sendo REAL: se o custo fixo crescer tanto que
-  // não sobre histórico nenhum, isso não é um teto, é um aviso de que o
-  // caminho certo passou a ser cortar ferramenta ou pagar o plano.
+  // A voz de conversa: só o prompt. Ela PRECISA de histórico — é ela que
+  // tem de lembrar da frase anterior para soar como conversa.
+  const fixoConversa = emTokens(montarSystemPrompt());
+  const tetoConversa = tetoDe("groq", false);
+  assert.strictEqual(tetoConversa, tetoDoTpm("groq", fixoConversa), "teto da conversa = TPM menos só o prompt");
   assert.ok(
-    TETO_POR_PROVEDOR.groq > 0,
-    `o custo fixo (${fixo} tokens) não deixa histórico nenhum no minuto do Groq. ` +
-      "Corte ferramenta ou tire o Groq da corrente."
+    tetoConversa >= 6_000,
+    `a voz de conversa no Groq fica com ${tetoConversa} caracteres de histórico — pouco para conversar`
   );
+  const pedidoConversa = fixoConversa + emTokens("x".repeat(tetoConversa));
+  assert.ok(tpm / pedidoConversa >= PEDIDOS_POR_MINUTO, "dois turnos de conversa cabem no minuto");
 
   // Provedor sem TPM declarado não ganha teto apertado à toa.
   assert.strictEqual(tetoDoTpm("nvidia", fixo), null, "nvidia não declara TPM: sem teto derivado");
@@ -547,7 +561,7 @@ function conferirOrcamentoDoGroq() {
   return {
     fixo,
     teto: TETO_POR_PROVEDOR.groq,
-    pedidos: pedidos.toFixed(1),
+    pedidos: (tpm / pedidoConversa).toFixed(1) + " (conversa)",
     reserva: ORDEM_RESERVA.slice(0, 3).join(" → "),
   };
 }

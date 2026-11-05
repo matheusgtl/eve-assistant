@@ -156,6 +156,9 @@ function montarSystemPrompt({
     // 04/11: PDF sobre o grupo de carros saiu com "também é baixista da
     // Nicolly Sena" e "projeto DevMotors" — puxados do perfil só para encher —
     // e assinado "por Ivi". Documento é só sobre o que ele pediu.
+    // 04/11: controle de gastos. A soma é do código; ela só lança e lê.
+    "- Ele contou que gastou, pagou ou recebeu? registrar_gasto na hora. Perguntou quanto " +
+      "gastou? consultar_gastos — nunca some de cabeça. Faltou o valor, pergunte.",
     "- Pediu um PDF? É criar_pdf, conteúdo em Markdown, o documento INTEIRO numa chamada só. " +
       "Só o assunto pedido: nada do perfil dele que não seja sobre isso, sem rodapé nem assinatura. " +
       "Depois diga onde salvou e quantas páginas saíram.",
@@ -226,7 +229,14 @@ function montarSystemPrompt({
       "Ele te ensinou um processo, corrigiu seu jeito de fazer algo, ou contou um fato que " +
         "vale para depois? Chame anotar_memoria na hora, sem pedir licença. Se já existe um " +
         "documento sobre aquilo, reescreva o documento inteiro com a versão corrigida, com o " +
-        "mesmo nome — guardo uma cópia do anterior sozinho."
+        "mesmo nome — guardo uma cópia do anterior sozinho.",
+      // 04/11: o perfil dele tinha "Acréscimo de 02/11" colado no fim, com
+      // "não é músico profissional" embaixo de "músico da Nicolly", e o
+      // relacionamento com a Hortência misturado aos dados dele. Uma nota
+      // com as duas versões é uma nota que mente metade das vezes.
+      "Uma nota, um assunto: pessoa, grupo ou lugar ganha nota própria, e o perfil dele só " +
+        "aponta para ela. Corrigiu algo? Troque a frase velha — não cole \"Acréscimo de\" no " +
+        "fim. Ligue as notas pelo relacionado; a ligação de volta eu faço."
     );
   }
 
@@ -446,9 +456,18 @@ function tetoDoTpm(provedor, fixoEmTokens) {
 /// Calculado uma vez, sob demanda — e não na carga do módulo, porque
 /// montarSystemPrompt e toolDefinitions são definidos abaixo daqui.
 let fixoCache = null;
-function custoFixoEmTokens() {
-  if (fixoCache != null) return fixoCache;
+let fixoSemFerramentasCache = null;
+function custoFixoEmTokens(comFerramentas = true) {
   const emTokens = (t) => Math.round(String(t).length / CARACTERES_POR_TOKEN);
+  // A voz de conversa não leva ferramenta nenhuma: o fixo dela é só o prompt.
+  // 04/11: ela usava o mesmo teto da ação, com as 34 ferramentas na conta, e
+  // sobravam ~300 caracteres de histórico — conversava sem lembrar da frase
+  // anterior, justamente a parte que devia soar natural.
+  if (!comFerramentas) {
+    if (fixoSemFerramentasCache == null) fixoSemFerramentasCache = emTokens(montarSystemPrompt());
+    return fixoSemFerramentasCache;
+  }
+  if (fixoCache != null) return fixoCache;
   fixoCache =
     emTokens(montarSystemPrompt()) +
     emTokens(
@@ -491,7 +510,10 @@ const TETO_POR_PROVEDOR = new Proxy(
   }
 );
 
-const tetoDe = (provedor) => TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO;
+const tetoDe = (provedor, comFerramentas = true) =>
+  comFerramentas
+    ? TETO_POR_PROVEDOR[provedor] ?? TETO_HISTORICO
+    : tetoDoTpm(provedor, custoFixoEmTokens(false)) ?? TETO_HISTORICO;
 
 /// Corta o histórico pelo fim, em GRUPOS, até caber no teto.
 ///
@@ -1812,7 +1834,7 @@ class OpenAIBrain {
   async ask(userText, { onSay, onTool, onDebug, canal, anexo, onModeloProvedor, onUso }) {
     this.abortador = new AbortController();
     this.messages.push({ role: "user", content: conteudoOpenAI(userText, anexo) });
-    this.messages = podarHistorico(this.messages, FORMATO_OPENAI, tetoDe(this.provider));
+    this.messages = podarHistorico(this.messages, FORMATO_OPENAI, tetoDe(this.provider, !this.semFerramentas));
     const rodar = guardaDeRepeticao();
 
     for (let turn = 0; turn < MAX_TURNS; turn++) {
@@ -2305,7 +2327,7 @@ function createBrain(config = {}, { prompt } = {}) {
     return modeloCombina(p, config.model) ? config.model : undefined;
   };
 
-  const etapas = [];
+  let etapas = [];
   for (const provider of ordem) {
     const key = chaveDe(config, provider);
     if (key) etapas.push({ provider, key, model: modeloDe(provider) || undefined });
@@ -2313,14 +2335,26 @@ function createBrain(config = {}, { prompt } = {}) {
 
   if (!etapas.length) return null;
 
+  // A voz de conversa só entra se houver chave de OUTRO provedor para ela: no
+  // mesmo provedor da ação seriam duas chamadas no mesmo balde de limite.
+  const voz = escolherVozDeConversa(config, etapas[0].provider);
+
+  // Duas saídas da RESERVA da ação (o principal fica sempre):
+  //  - o provedor que já é a voz de conversa — mesmo balde, a ação gastaria o
+  //    minuto que a conversa precisa;
+  //  - o provedor em que um pedido com ferramentas não cabe duas vezes no
+  //    minuto (teto de histórico zero). 04/11: com 34 ferramentas o Groq leva
+  //    4.235 tokens por pedido contra 8.000 por minuto; uma rodada de
+  //    ferramenta é 429 garantido, e a troca no meio descarta o histórico.
+  etapas = etapas.filter(
+    (e, i) => i === 0 || (e.provider !== voz?.provider && tetoDe(e.provider) !== 0)
+  );
+
   const acao =
     etapas.length === 1
       ? construir(etapas[0].provider, { ...etapas[0], prompt })
       : new CadeiaDeCerebros(etapas, { prompt });
 
-  // A voz de conversa só entra se houver chave de OUTRO provedor para ela: no
-  // mesmo provedor da ação seriam duas chamadas no mesmo balde de limite.
-  const voz = escolherVozDeConversa(config, etapas[0].provider);
   if (!voz) return acao;
 
   return new CerebroDeDuasVozes({

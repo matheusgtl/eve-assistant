@@ -29,6 +29,7 @@ const HOME = os.homedir();
 
 // Mesma regra de nome de arquivo da memória: sem acento, sem espaço, legível.
 const { apelido: apelidoDeArquivo } = require("./memoria.js");
+const { Gastos, CATEGORIAS } = require("./gastos.js");
 
 // Contexto injetado pelo main.js: lembretes, chave do Gemini, notificações.
 // Fica aqui para as ferramentas não precisarem conhecer o Electron.
@@ -52,6 +53,14 @@ let ctx = {
   pdf: require("./pdf.js"),
   sistema: require("./sistema.js"),
 };
+
+/// O livro de gastos mora no cofre, ao lado da memória: `Gastos/AAAA-MM.md`.
+/// `ctx.gastos` existe para os testes apontarem para uma pasta temporária.
+function livroDeGastos() {
+  if (ctx.gastos) return ctx.gastos;
+  const pasta = ctx.memoria?.pasta;
+  return pasta ? new Gastos({ pasta, onDebug: ctx.onDebug }) : null;
+}
 
 function configurar(novo) {
   ctx = { ...ctx, ...novo };
@@ -396,6 +405,44 @@ const toolDefinitions = [
       },
       required: ["caminho", "conteudo"],
     },
+  },
+
+  // ---------------- dinheiro ----------------
+  // 04/11: ele pediu controle de gastos. A soma é do código (gastos.js), não
+  // dela: conta de dinheiro errada dita com confiança é pior que nenhuma.
+  {
+    name: "registrar_gasto",
+    description: "Lança um gasto dele; dinheiro que entrou é categoria Entrada. Sem data, é hoje.",
+    input_schema: {
+      type: "object",
+      properties: {
+        valor: { type: "number" },
+        descricao: { type: "string" },
+        categoria: { type: "string", enum: [...CATEGORIAS, "Entrada"] },
+        data: { type: "string", description: "AAAA-MM-DD." },
+        pagamento: { type: "string" },
+      },
+      required: ["valor", "descricao"],
+    },
+  },
+  {
+    name: "consultar_gastos",
+    description: "Totais e lançamentos; sem período, o mês atual.",
+    input_schema: {
+      type: "object",
+      properties: {
+        mes: { type: "string", description: "AAAA-MM" },
+        de: { type: "string" },
+        ate: { type: "string" },
+        categoria: { type: "string" },
+        busca: { type: "string" },
+      },
+    },
+  },
+  {
+    name: "apagar_gasto",
+    description: "Tira um lançamento pelo id (corrigir = apagar e lançar de novo).",
+    input_schema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
   },
 
   // ---------------- internet ----------------
@@ -922,6 +969,38 @@ const executors = {
           : undefined,
         texto,
       };
+    } catch (err) {
+      return { error: err.message };
+    }
+  },
+
+  async registrar_gasto(args) {
+    const livro = livroDeGastos();
+    if (!livro) return { error: "o cofre da memória não está disponível" };
+    try {
+      const r = await livro.registrar(args);
+      return r.erro ? { error: r.erro } : r;
+    } catch (err) {
+      return { error: err.message };
+    }
+  },
+
+  async consultar_gastos(args) {
+    const livro = livroDeGastos();
+    if (!livro) return { error: "o cofre da memória não está disponível" };
+    try {
+      return await livro.consultar(args || {});
+    } catch (err) {
+      return { error: err.message };
+    }
+  },
+
+  async apagar_gasto(args) {
+    const livro = livroDeGastos();
+    if (!livro) return { error: "o cofre da memória não está disponível" };
+    try {
+      const r = await livro.apagar(args);
+      return r.erro ? { error: r.erro } : r;
     } catch (err) {
       return { error: err.message };
     }

@@ -211,7 +211,7 @@ function conferirModeloHerdado({ createBrain, modeloCombina }) {
   // E numa corrente de verdade (mais de um provedor com chave), cada etapa
   // carrega o modelo DELA — era esse o caso real do log.
   const corrente = createBrain(
-    { provider: "groq", groqKey: "g", nvidiaKey: "n", groqModel: "openai/gpt-oss-120b", model: "gemini-3.6-flash" },
+    { provider: "groq", groqKey: "g", nvidiaKey: "n", groqModel: "openai/gpt-oss-120b", model: "gemini-3.6-flash", conversaProvider: "nenhum" },
     { prompt: () => "x" }
   );
   assert.strictEqual(corrente.etapas[0].provider, "groq");

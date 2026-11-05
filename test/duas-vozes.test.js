@@ -105,10 +105,18 @@ servidor.listen(0, async () => {
     "OpenAIBrain",
     "groq na ação não pode virar groq na conversa também"
   );
+  // `nenhum` desliga a segunda voz. Sobra só o mistral: o groq também não
+  // entra na reserva da ação, porque com as ferramentas ele não cabe duas
+  // vezes no minuto (04/11, 34 ferramentas).
+  assert.notStrictEqual(montar({ conversaProvider: "nenhum" }).constructor.name, "CerebroDeDuasVozes", "`nenhum` desliga a segunda voz");
+  // E a voz de conversa não fica também na reserva da ação: mesmo balde.
+  const comReserva = createBrain({ provider: "nvidia", nvidiaKey: "n", mistralKey: "m", groqKey: "g" });
+  assert.strictEqual(comReserva.conversa.provider, "groq");
+  assert.deepStrictEqual(comReserva.etapas.map((e) => e.provider), ["nvidia", "mistral"]);
   assert.strictEqual(
-    montar({ conversaProvider: "nenhum" }).constructor.name,
-    "CadeiaDeCerebros",
-    "`nenhum` desliga a segunda voz"
+    montar({ conversaProvider: "nenhum" }).provider,
+    "mistral",
+    "sem a conversa, a ação é o mistral sozinho"
   );
 
   // ------------------------- 2. turno SEM ferramenta → a conversa responde

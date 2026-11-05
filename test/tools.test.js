@@ -85,7 +85,13 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // texto em pedaços. Mesmo assim fica abaixo do teto de 80 — e fica porque a
   // trava pegou a PRIMEIRA versão da descrição, que enumerava cada marca de
   // Markdown que o modelo já conhece. Cortada em metade, passou.
-  assert.ok(tokens < 2500, `as ferramentas somam ~${tokens} tokens (teto: 2500)`);
+  // 04/11: 2.750 para caber o controle de gastos (registrar_gasto,
+  // consultar_gastos, apagar_gasto). 34 ferramentas somam 2.713 tokens, 79,8
+  // por ferramenta. O caro é a lista fechada de categorias no registrar — ela
+  // é o que impede "comida", "lanche" e "restaurante" de virarem três linhas no
+  // resumo do mês. Para caber na média, `entrada` deixou de ser um booleano e
+  // virou a categoria "Entrada", e o "nunca some de cabeça" foi para o prompt.
+  assert.ok(tokens < 2750, `as ferramentas somam ~${tokens} tokens (teto: 2750)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
   // ------------------- 1c. pesquisar não pode abrir aba no navegador
