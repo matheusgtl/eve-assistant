@@ -88,6 +88,16 @@ const { Memoria } = require("../memoria.js");
   assert.ok((await livro.registrar({ valor: 10, descricao: " " }, agora)).erro);
   assert.ok((await livro.registrar({ valor: 10, descricao: "x", data: "semana passada" }, agora)).erro);
 
+  // 05/11: o livro é do que JÁ aconteceu. Ela lançou estimativas do mês e o
+  // salário do dia 20 no dia 4, e o mês abriu com R$ 659 que ele não gastou.
+  const futuro = await livro.registrar({ valor: 409.88, descricao: "salário", categoria: "Entrada", data: "2026-11-20" }, agora);
+  assert.match(futuro.erro || "", /ainda não chegou[\s\S]*financas-do-matheus/, "data futura é plano, e ela é mandada para a nota");
+  const estimativa = await livro.registrar({ valor: 30, descricao: "Lazer - cinema (estimativa mês)", categoria: "Lazer" }, agora);
+  assert.match(estimativa.erro || "", /é plano/, "estimativa não entra no livro");
+  assert.ok((await livro.registrar({ valor: 30, descricao: "média de mercado", categoria: "Mercado" }, agora)).erro);
+  assert.ok((await livro.registrar({ valor: 327.64, descricao: "Fatura Nubank (vence dia 13)", categoria: "Contas" }, agora)).ok,
+    "fatura PAGA com o vencimento na descrição é gasto de verdade");
+
   // ------------------------------------------------ 6. pelas ferramentas
   // O livro mora no cofre da memória, e a pasta Gastos não entra no índice:
   // cada mês viraria uma linha que viaja em toda pergunta.

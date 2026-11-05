@@ -91,7 +91,11 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // é o que impede "comida", "lanche" e "restaurante" de virarem três linhas no
   // resumo do mês. Para caber na média, `entrada` deixou de ser um booleano e
   // virou a categoria "Entrada", e o "nunca some de cabeça" foi para o prompt.
-  assert.ok(tokens < 2750, `as ferramentas somam ~${tokens} tokens (teto: 2750)`);
+  // 05/11: 2.800 para caber o calcular. Ela errou duas somas num plano de mês
+  // para ele guardar dinheiro (41,25 + 90,42 virou 138,67), e o erro desceu a
+  // tabela inteira. 35 ferramentas, 2.775 tokens, 79,3 por ferramenta — a
+  // média CAIU, porque o calcular é menor que a média.
+  assert.ok(tokens < 2800, `as ferramentas somam ~${tokens} tokens (teto: 2800)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
   // ------------------- 1c. pesquisar não pode abrir aba no navegador

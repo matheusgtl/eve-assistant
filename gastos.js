@@ -210,6 +210,20 @@ class Gastos {
     const dia = dataDe(data, agora);
     if (!dia) return { erro: `data ilegível: "${data}". Use AAAA-MM-DD.` };
 
+    // O livro é do que JÁ aconteceu. 04/11: ela lançou "cinema (estimativa
+    // mês)", "remédios (estimativa)", o salário do dia 20 no dia 4 e a fatura
+    // que ele ia pagar no dia seguinte — o mês abriu com R$ 659 "gastos" que
+    // ele não tinha gastado. Plano tem lugar: a nota das finanças.
+    const ONDE_VAI_O_PLANO =
+      "Plano, estimativa e conta a pagar vão em fatos/financas-do-matheus (anotar_memoria). " +
+      "Lance aqui no dia em que ele disser que pagou ou recebeu.";
+    if (dia > hoje(agora)) {
+      return { erro: `${dia} ainda não chegou: isso não aconteceu ainda. ${ONDE_VAI_O_PLANO}` };
+    }
+    if (/estimativ|previs[aã]o|previsto|m[eé]dia|planejad|or[cç]amento|vai pagar|a pagar\b/i.test(desc)) {
+      return { erro: `"${desc}" é plano, não gasto feito. ${ONDE_VAI_O_PLANO}` };
+    }
+
     const mes = dia.slice(0, 7);
     const itens = await this.lerMes(mes);
     const usados = new Set(itens.map((i) => i.id));

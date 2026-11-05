@@ -30,6 +30,7 @@ const HOME = os.homedir();
 // Mesma regra de nome de arquivo da memória: sem acento, sem espaço, legível.
 const { apelido: apelidoDeArquivo } = require("./memoria.js");
 const { Gastos, CATEGORIAS } = require("./gastos.js");
+const { calcular: calcularConta } = require("./calculo.js");
 
 // Contexto injetado pelo main.js: lembretes, chave do Gemini, notificações.
 // Fica aqui para as ferramentas não precisarem conhecer o Electron.
@@ -59,7 +60,10 @@ let ctx = {
 function livroDeGastos() {
   if (ctx.gastos) return ctx.gastos;
   const pasta = ctx.memoria?.pasta;
-  return pasta ? new Gastos({ pasta, onDebug: ctx.onDebug }) : null;
+  // O log vai com o rótulo da memória: o `ctx.onDebug` é o da web, e
+  // "web: gasto registrado" mandava procurar o problema no lugar errado.
+  const onDebug = ctx.memoria?.onDebug || ctx.onDebug;
+  return pasta ? new Gastos({ pasta, onDebug }) : null;
 }
 
 function configurar(novo) {
@@ -438,6 +442,11 @@ const toolDefinitions = [
         busca: { type: "string" },
       },
     },
+  },
+  {
+    name: "calcular",
+    description: "Faz conta exata. Conta de dinheiro é sempre aqui. Linhas com rótulo: \"sobra = 409,88 - 327,64; total = sobra + 90\".",
+    input_schema: { type: "object", properties: { conta: { type: "string" } }, required: ["conta"] },
   },
   {
     name: "apagar_gasto",
@@ -993,6 +1002,11 @@ const executors = {
     } catch (err) {
       return { error: err.message };
     }
+  },
+
+  async calcular({ conta }) {
+    const r = calcularConta(conta);
+    return r.erro ? { error: r.erro, feitas: r.feitas } : r;
   },
 
   async apagar_gasto(args) {
