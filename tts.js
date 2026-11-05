@@ -81,7 +81,7 @@ const VELOCIDADE_MAX = 1.2;
 const velocidadeValida = (v) =>
   Math.min(VELOCIDADE_MAX, Math.max(VELOCIDADE_MIN, Number(v) || 1));
 
-async function sintetizarEleven(texto, { apiKey, voiceId, rapido, velocidade }) {
+async function sintetizarEleven(texto, { apiKey, voiceId, rapido, velocidade, anterior = "" }) {
   // optimize_streaming_latency=3 corta parte do processamento do servidor antes
   // de começar a devolver áudio. Como agora a fala vai frase a frase, esse
   // atraso inicial acontece várias vezes por resposta — vale cada milissegundo.
@@ -101,10 +101,18 @@ async function sintetizarEleven(texto, { apiKey, voiceId, rapido, velocidade }) 
         // para aquele trecho sair com sotaque inglês e o seguinte voltar ao
         // português. Com language_code não há o que detectar.
         language_code: "pt",
+        // A fala vai frase a frase, e cada frase era gerada sem saber da
+        // anterior: a entonação recomeçava do zero em cada uma, e a resposta
+        // soava como frases soltas coladas. `previous_text` é o jeito da
+        // própria ElevenLabs de dar continuidade entre pedidos.
+        ...(anterior ? { previous_text: String(anterior).slice(-300) } : {}),
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
-          style: 0.2,
+          // 05/11: era 0,2. O "style" exagera o jeito do locutor original —
+          // e as vozes da conta são todas inglesas, então exagerava o sotaque
+          // inglês. A ElevenLabs recomenda 0.
+          style: 0,
           use_speaker_boost: true,
           speed: velocidadeValida(velocidade),
         },

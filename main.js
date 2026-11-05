@@ -156,6 +156,7 @@ let anexoPendente = null; // arquivo que vai junto com a próxima mensagem
 const filaFala = [];
 let tocando = false;
 let sessaoFala = 0;      // muda ao interromper: áudio atrasado é descartado
+let ultimaFalada = { sessao: -1, texto: "" };
 let preparoAdiantado = null; // {texto, promessa} — próximo áudio já sendo gerado
 
 // ---------------------------------------------------------------------------
@@ -389,6 +390,8 @@ function temConteudo(texto) {
   return /[\p{L}\p{N}]/u.test(String(texto || ""));
 }
 
+const { numerosParaFala } = require("./falaNumeros.js");
+
 function limparParaFala(texto) {
   return String(texto || "")
     .replace(/```[\s\S]*?```/g, " … o código está na tela … ")
@@ -400,7 +403,10 @@ function limparParaFala(texto) {
     .replace(/^#{1,6}\s*/gm, "")
     .replace(/[*_#>|]/g, " ")
     .replace(/\s{2,}/g, " ")
-    .trim();
+    .trim()
+    // Por último, com o texto já limpo: "R$ 327,64" vira "trezentos e vinte e
+    // sete reais e sessenta e quatro centavos" (ver falaNumeros.js).
+    .replace(/[\s\S]+/, (t) => numerosParaFala(t));
 }
 
 function vozAtual() {
@@ -438,7 +444,7 @@ function speak(texto) {
 
 /// Gera (ou escolhe) o áudio de uma fala. Devolve o caminho de um MP3 quando a
 /// ElevenLabs está em uso, ou null para falar pelo `say` do macOS.
-async function prepararAudio(texto, cfg) {
+async function prepararAudio(texto, cfg, anterior = "") {
   if (!(cfg.tts === "elevenlabs" && cfg.elevenKey && cfg.elevenVoiceId)) return null;
 
   const mp3 = await sintetizarEleven(texto, {
@@ -446,6 +452,7 @@ async function prepararAudio(texto, cfg) {
     voiceId: cfg.elevenVoiceId,
     rapido: !!cfg.elevenRapido,
     velocidade: cfg.elevenVelocidade,
+    anterior,
   });
   const arquivo = path.join(os.tmpdir(), `eve-fala-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.mp3`);
   fs.writeFileSync(arquivo, mp3);
@@ -517,14 +524,21 @@ async function avisoDaVoz(err, cfg) {
 
   // Enquanto este pedaço toca, o próximo já está sendo gerado. É o que tira o
   // silêncio entre uma frase e outra quando a voz é da ElevenLabs.
+  // A frase anterior DESTA resposta vai junto, para a entonação continuar de
+  // onde parou em vez de recomeçar a cada frase.
+  const anterior = ultimaFalada.sessao === sessao ? ultimaFalada.texto : "";
   let promessa = null;
   if (preparoAdiantado && preparoAdiantado.texto === texto) promessa = preparoAdiantado.promessa;
   preparoAdiantado = null;
-  if (!promessa) promessa = prepararAudio(texto, cfg);
 
   let arquivo = null;
   try {
-    arquivo = await promessa;
+    if (promessa) arquivo = await promessa;
+    // 05/11: o adiantado que falhava virava `null` em silêncio, e a frase
+    // saía na voz do macOS no meio de uma resposta na voz da ElevenLabs —
+    // "meio português, meio americano". Falhou adiantado: tenta de novo agora,
+    // e só cai para o macOS se falhar outra vez, com o motivo no log.
+    if (!arquivo) arquivo = await prepararAudio(texto, cfg, anterior);
   } catch (err) {
     log("elevenlabs falhou:", err.status || "", err.message, "→ voz do macOS");
     if (!avisouReserva) {
@@ -534,9 +548,16 @@ async function avisoDaVoz(err, cfg) {
   }
   if (sessao !== sessaoFala) return; // interrompida enquanto gerava
 
+  ultimaFalada = { sessao, texto };
   if (filaFala.length) {
     const seguinte = filaFala[0];
-    preparoAdiantado = { texto: seguinte, promessa: prepararAudio(seguinte, cfg).catch(() => null) };
+    preparoAdiantado = {
+      texto: seguinte,
+      promessa: prepararAudio(seguinte, cfg, texto).catch((err) => {
+        log("elevenlabs falhou ao adiantar:", err.status || "", err.message, "— tento de novo na hora");
+        return null;
+      }),
+    };
   }
 
   if (arquivo) await tocarArquivo(arquivo, sessao);
