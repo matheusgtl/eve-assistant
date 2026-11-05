@@ -2164,6 +2164,67 @@ function modeloCombina(provedor, modelo) {
 /// O preço está na primeira palavra de um turno de conversa: ela sai depois do
 /// tempo de decisão da ação mais a resposta da conversa, uns 1,3s em vez de
 /// 560ms. Turno com ferramenta não muda em nada.
+/// Chamada de ferramenta escrita como TEXTO. A voz de conversa não tem
+/// ferramentas, mas sabe que elas existem (o prompt é o mesmo), e às vezes
+/// "chama" uma assim mesmo — no formato do treino dela. 04/11, 23:17: ele
+/// pediu ajuda com o controle de gastos e o chat mostrou, cru:
+///   <tool_call> <function=consultar_memoria> <parameter=slug> ...
+const MARCAS_DE_FERRAMENTA = ["<tool_call", "<function=", "<|tool_call", "[TOOL_CALLS]"];
+
+/// Filtra a fala da voz de conversa enquanto ela chega. O texto passa direto
+/// até aparecer um `<` ou `[` que PODE ser começo de marca; aí segura só esse
+/// pedaço até saber. Confirmada a marca, nada dali em diante sai na tela.
+function filtroDeFerramenta(onSay) {
+  let pendente = "";
+  let pegou = null;
+  const ehMarca = (t) => MARCAS_DE_FERRAMENTA.find((m) => t.startsWith(m));
+  const podeSer = (t) => MARCAS_DE_FERRAMENTA.some((m) => m.startsWith(t));
+  return {
+    say(t) {
+      if (pegou !== null) { pegou += t; return; }
+      pendente += t;
+      for (;;) {
+        const i = pendente.search(/[<[]/);
+        if (i < 0) { if (pendente) onSay(pendente); pendente = ""; return; }
+        const resto = pendente.slice(i);
+        if (ehMarca(resto)) {
+          const antes = pendente.slice(0, i);
+          if (antes.trim()) onSay(antes);
+          pegou = resto;
+          pendente = "";
+          return;
+        }
+        if (podeSer(resto)) {
+          // Ainda não dá para saber: solta o que vem antes e espera o resto.
+          if (i > 0) { onSay(pendente.slice(0, i)); pendente = resto; }
+          return;
+        }
+        onSay(pendente.slice(0, i + 1));
+        pendente = pendente.slice(i + 1);
+      }
+    },
+    fim() {
+      if (pegou === null && pendente) onSay(pendente);
+      pendente = "";
+    },
+    get pegou() { return pegou; },
+  };
+}
+
+/// O que a voz de conversa tentou chamar, em linguagem de gente, para
+/// repassar à voz que age: "consultar_memoria(fatos/financas-do-matheus)".
+function ferramentasPedidas(texto) {
+  const pedidas = [];
+  for (const bloco of String(texto).split(/<function=/).slice(1)) {
+    const nome = bloco.match(/^([\w-]+)/)?.[1];
+    if (!nome) continue;
+    const valores = [...bloco.matchAll(/<parameter=[^>]*>\s*([\s\S]*?)\s*<\/parameter>/g)].map((m) => m[1].trim());
+    pedidas.push(`${nome}(${valores.join(", ")})`);
+  }
+  for (const m of String(texto).matchAll(/"name"\s*:\s*"([\w-]+)"/g)) pedidas.push(m[1]);
+  return [...new Set(pedidas)];
+}
+
 class CerebroDeDuasVozes {
   constructor({ acao, conversa, onDebug }) {
     this.acao = acao;
@@ -2257,7 +2318,21 @@ class CerebroDeDuasVozes {
 
     try {
       this.conversa.messages = antes;
-      await this.conversa.ask(userText, opcoes);
+      const filtro = filtroDeFerramenta(onSay);
+      await this.conversa.ask(userText, { ...opcoes, onSay: filtro.say });
+      filtro.fim();
+
+      // A conversa quis uma ferramenta: o turno é de AÇÃO, e quem age errou
+      // ao responder sem nenhuma. Volta para ela, agora dizendo o que a
+      // conversa ia chamar — a conversa não executa nada, mas acertou o que
+      // o pedido precisava.
+      if (filtro.pegou !== null) {
+        const pedidas = ferramentasPedidas(filtro.pegou);
+        this.onDebug(`voz de conversa pediu ferramenta (${pedidas.join("; ") || "?"}); volta para a ação`);
+        await this.agirDeNovo(userText, pedidas, opcoes, mensagens, descartada);
+        return;
+      }
+
       // O que foi dito volta para o histórico da ação, senão o turno seguinte
       // com ferramenta não sabe do que se estava falando.
       const ultima = this.conversa.messages[this.conversa.messages.length - 1];
@@ -2272,6 +2347,26 @@ class CerebroDeDuasVozes {
       if (guardado.length) for (const t of guardado) onSay(t);
       else onSay(descartada?.content || "Não consegui responder agora.");
     }
+  }
+
+  /// Segunda chance da ação, com a dica do que usar. A pergunta dele sai do
+  /// histórico e entra de novo COM a dica; depois a dica sai, para o
+  /// histórico guardar o que ele disse e não o bilhete interno.
+  async agirDeNovo(userText, pedidas, opcoes, mensagens, descartada) {
+    if (mensagens?.length && mensagens[mensagens.length - 1].role === "user") mensagens.pop();
+    const dica =
+      "\n\n(Nota interna, não é dele: responder isto exige ferramenta" +
+      (pedidas.length ? ` — por exemplo ${pedidas.join(", ")}` : "") +
+      ". Chame antes de responder; não diga que vai olhar sem olhar.)";
+    try {
+      await this.acao.ask(userText + dica, opcoes);
+    } catch (err) {
+      this.onDebug(`a ação também falhou na segunda chance (${err.message})`);
+      opcoes.onSay(descartada?.content || "Não consegui responder agora.");
+    }
+    const lista = this.mensagensDaAcao || [];
+    const daPergunta = lista.findLast?.((m) => m.role === "user" && typeof m.content === "string" && m.content.endsWith(dica));
+    if (daPergunta) daPergunta.content = daPergunta.content.slice(0, -dica.length);
   }
 }
 
@@ -2370,6 +2465,9 @@ function createBrain(config = {}, { prompt } = {}) {
 }
 
 module.exports = {
+  CerebroDeDuasVozes,
+  filtroDeFerramenta,
+  ferramentasPedidas,
   createBrain,
   podarHistorico,
   guardaDeRepeticao,

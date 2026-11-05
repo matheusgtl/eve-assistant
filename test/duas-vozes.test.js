@@ -49,11 +49,23 @@ const servidor = http.createServer((req, res) => {
         res.setHeader("content-type", "application/json");
         return res.end(JSON.stringify({ error: { message: "Rate limit reached" } }));
       }
+      if (cenario === "conversa-quer-ferramenta") {
+        // O que saiu cru no chat em 04/11, 23:17 — picado no meio da marca,
+        // como o stream de verdade pica.
+        return sse(res, [
+          delta({ content: "Vou dar uma olhada no que já está anotado. <tool" }),
+          delta({ content: "_call>\n<function=consultar_memoria>\n<parameter=slug>\n" }),
+          delta({ content: "fatos/financas-do-matheus\n</parameter>\n</function>\n</tool_call>" }),
+        ]);
+      }
       return sse(res, [delta({ content: "Que bom te ver. " }), delta({ content: "Como foi o dia?" })]);
     }
 
+    const ultimaDele = [...(pedido.messages || [])].reverse().find((m) => m.role === "user");
+    const comDica = /Nota interna/.test(ultimaDele?.content || "");
+
     // ---- a ação chama ferramenta e depois responde com o resultado
-    if (cenario === "acao") {
+    if (cenario === "acao" || (cenario === "conversa-quer-ferramenta" && comDica)) {
       const jaTemResultado = (pedido.messages || []).some((m) => m.role === "tool");
       if (!jaTemResultado) {
         return sse(res, [
@@ -226,7 +238,41 @@ servidor.listen(0, async () => {
   );
   assert.ok(ditos4.join(" ").trim().length > 0, "e ela responde algo");
 
+  // ------------- 7. a conversa "chama" ferramenta em texto → volta para a ação
+  // 04/11, 23:17: o chat mostrou <tool_call><function=consultar_memoria>...
+  // cru, e nada foi consultado. A marca não pode aparecer, e o turno tem de
+  // virar ação de verdade, com a dica do que a conversa queria.
+  cenario = "conversa-quer-ferramenta";
+  recebidos.length = 0;
+  const ditos5 = [];
+  const usadas5 = [];
+  const b5 = montar();
+  await b5.ask("me ajuda com o controle de gastos?", {
+    ...ops, onSay: (t) => ditos5.push(t), onTool: (n) => usadas5.push(n),
+  });
+  const fala5 = ditos5.join("");
+  assert.ok(!/<tool|<function|<parameter|tool_call>/.test(fala5), `a marca vazou para a tela: ${fala5}`);
+  assert.ok(/Vou dar uma olhada/.test(fala5), "a frase antes da marca é fala legítima e sai");
+  assert.deepStrictEqual(usadas5, ["system_status"], "a ação, na segunda chance, usou a ferramenta");
+  assert.ok(/12% de CPU/.test(fala5), "e a resposta é a dela, com o resultado");
+  assert.deepStrictEqual(recebidos.map((r) => r.qual), ["acao", "conversa", "acao", "acao"]);
+  const segunda = recebidos[2].pedido.messages.filter((m) => m.role === "user");
+  assert.strictEqual(segunda.length, 1, "a pergunta entra uma vez só na segunda chance, não duplicada");
+  assert.match(segunda[0].content, /consultar_memoria\(fatos\/financas-do-matheus\)/, "com o que a conversa queria chamar");
+  const historico = (b5.mensagensDaAcao || []).filter((m) => m.role === "user");
+  assert.ok(historico.every((m) => !/Nota interna/.test(m.content)), "a dica sai do histórico depois");
+
+  // O filtro não come texto normal com < ou [.
+  const { filtroDeFerramenta } = require("../brains.js");
+  const saida = [];
+  const f = filtroDeFerramenta((t) => saida.push(t));
+  for (const pedaco of ["2 < 3 e [link](x) ", "e <b>negrito</b> ", "fim <"]) f.say(pedaco);
+  f.fim();
+  assert.strictEqual(saida.join(""), "2 < 3 e [link](x) e <b>negrito</b> fim <");
+  assert.strictEqual(f.pegou, null);
+
   console.log("✓ duas vozes: a ação decide a ferramenta, a conversa escreve o resto");
+  console.log("   conversa escreve <tool_call> → some da tela, e a ação age de novo com a dica");
   console.log("   sem ferramenta → fala a conversa; a resposta da ação (que vaza) é descartada");
   console.log("   com ferramenta → fala a ação, e o \"deixa eu ver\" sai antes, na ordem");
   console.log("   pedido da conversa → sem as 30 ferramentas: 1.458 tokens em vez de 3.921");
