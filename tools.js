@@ -416,13 +416,13 @@ const toolDefinitions = [
   // dela: conta de dinheiro errada dita com confiança é pior que nenhuma.
   {
     name: "registrar_gasto",
-    description: "Lança um gasto dele; dinheiro que entrou é categoria Entrada. Sem data, é hoje.",
+    description: "Lança gasto dele; dinheiro que entrou é Entrada; \"tenho X na conta\" é Saldo. Sem data, é hoje.",
     input_schema: {
       type: "object",
       properties: {
         valor: { type: "number" },
         descricao: { type: "string" },
-        categoria: { type: "string", enum: [...CATEGORIAS, "Entrada"] },
+        categoria: { type: "string", enum: [...CATEGORIAS, "Entrada", "Saldo"] },
         data: { type: "string", description: "AAAA-MM-DD." },
         pagamento: { type: "string" },
       },

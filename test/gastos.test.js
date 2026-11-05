@@ -47,7 +47,7 @@ const { Memoria } = require("../memoria.js");
   assert.strictEqual(nov.lancamentos, 4);
   assert.strictEqual(nov.gastos, "R$ 200,00", "32,50 + 150 + 17,50 — a soma é do código");
   assert.strictEqual(nov.entradas, "R$ 2.000,00");
-  assert.strictEqual(nov.saldo, "R$ 1.800,00");
+  assert.strictEqual(nov.entradas_menos_gastos, "R$ 1.800,00");
   assert.deepStrictEqual(
     nov.por_categoria.map((c) => c.categoria),
     ["Carro", "Alimentação"],
@@ -97,6 +97,26 @@ const { Memoria } = require("../memoria.js");
   assert.ok((await livro.registrar({ valor: 30, descricao: "média de mercado", categoria: "Mercado" }, agora)).erro);
   assert.ok((await livro.registrar({ valor: 327.64, descricao: "Fatura Nubank (vence dia 13)", categoria: "Contas" }, agora)).ok,
     "fatura PAGA com o vencimento na descrição é gasto de verdade");
+
+  // 05/11: "quanto tenho na conta agora?" — ela leu o saldo do LIVRO
+  // (R$ 409,88 de um salário que não tinha caído). O saldo da conta parte do
+  // último que ele informou, e só o que sai da conta conta.
+  const conta = new Gastos({ pasta: fs.mkdtempSync(path.join(os.tmpdir(), "ev-conta-")) });
+  const dia5 = new Date(2026, 10, 5, 19, 20);
+  assert.match((await conta.consultar({}, dia5)).saldo_em_conta, /pergunte quanto ele tem/, "sem partida, ela pergunta");
+  await conta.registrar({ valor: 50, descricao: "antes do saldo", categoria: "Lazer", data: "2026-11-04" }, dia5);
+  await conta.registrar({ valor: 90.42, categoria: "Saldo", data: "2026-11-04" }, dia5);
+  await conta.registrar({ valor: 10, descricao: "Pix de um amigo", categoria: "Entrada" }, dia5);
+  await conta.registrar({ valor: 25, descricao: "almoço", categoria: "Alimentação", pagamento: "Alelo" }, dia5);
+  await conta.registrar({ valor: 40, descricao: "tênis", categoria: "Compras", pagamento: "crédito Nubank" }, dia5);
+  await conta.registrar({ valor: 5, descricao: "pão", categoria: "Mercado", pagamento: "Pix" }, dia5);
+  const agoraNaConta = await conta.consultar({}, dia5);
+  assert.strictEqual(agoraNaConta.saldo_em_conta.valor, "R$ 95,42", "90,42 + 10 − 5; Alelo, crédito e o gasto de antes não contam");
+  assert.strictEqual(agoraNaConta.gastos, "R$ 120,00", "o Saldo não é gasto: 50 + 25 + 40 + 5");
+  assert.strictEqual(agoraNaConta.entradas, "R$ 10,00", "nem entrada");
+  assert.ok(!("saldo" in agoraNaConta), "o campo ambíguo `saldo` não volta");
+  await conta.registrar({ valor: 100, categoria: "Saldo" }, dia5);
+  assert.strictEqual((await conta.consultar({}, dia5)).saldo_em_conta.valor, "R$ 100,00", "o último saldo informado manda");
 
   // ------------------------------------------------ 6. pelas ferramentas
   // O livro mora no cofre da memória, e a pasta Gastos não entra no índice:

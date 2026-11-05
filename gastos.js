@@ -24,6 +24,15 @@ const CATEGORIAS = [
   "Saúde", "Lazer", "Compras", "Assinaturas", "Educação", "Igreja", "Outros",
 ];
 const ENTRADA = "Entrada";
+// "Saldo" não é gasto nem entrada: é ele dizendo quanto TEM na conta naquele
+// momento. 05/11: ele perguntou "quanto tenho na conta agora?" e ela leu o
+// saldo do livro (entradas menos gastos lançados, R$ 409,88 de um salário que
+// nem tinha caído). O livro não sabia o ponto de partida. Agora sabe: o último
+// Saldo informado, mais o que entrou e saiu DA CONTA depois dele.
+const SALDO = "Saldo";
+// Pago no Alelo ou no crédito não sai da conta corrente: o Alelo é outro
+// cartão, e a compra no crédito só sai quando a fatura for paga.
+const FORA_DA_CONTA = /alelo|vale|cr[eé]dito|cart[aã]o/i;
 
 const SINONIMOS = {
   comida: "Alimentação", restaurante: "Alimentação", lanche: "Alimentação",
@@ -51,6 +60,7 @@ const semAcento = (t) =>
 function categoriaDe(bruta, entrada) {
   if (entrada) return ENTRADA;
   const chave = semAcento(bruta);
+  if (chave === "saldo") return SALDO;
   if (!chave) return "Outros";
   const exata = CATEGORIAS.find((c) => semAcento(c) === chave);
   if (exata) return exata;
@@ -160,7 +170,9 @@ class Gastos {
     await fsp.mkdir(this.pasta, { recursive: true });
     const [ano, m] = mes.split("-");
     const nomeMes = `${MESES[Number(m) - 1]} de ${ano}`;
-    itens = [...itens].sort((a, b) => a.data.localeCompare(b.data) || a.id.localeCompare(b.id));
+    // Só por data, e estável: no mesmo dia vale a ordem em que foi lançado.
+    // É ela que diz se um gasto veio antes ou depois do Saldo daquele dia.
+    itens = [...itens].sort((a, b) => a.data.localeCompare(b.data));
     const r = resumir(itens);
 
     const linhas = [
@@ -204,8 +216,10 @@ class Gastos {
     // chama o módulo direto.
     entrada = entrada || semAcento(categoria) === semAcento(ENTRADA);
     const v = valorDe(valor);
-    if (!Number.isFinite(v) || v === 0) return { erro: `valor ilegível: "${valor}". Pergunte quanto foi.` };
-    const desc = limparCelula(descricao);
+    const ehSaldo = semAcento(categoria) === "saldo";
+    if (ehSaldo && Number.isFinite(v)) entrada = false;
+    if (!Number.isFinite(v) || (v === 0 && !ehSaldo)) return { erro: `valor ilegível: "${valor}". Pergunte quanto foi.` };
+    const desc = limparCelula(descricao) || (ehSaldo ? "saldo da conta informado por ele" : "");
     if (!desc) return { erro: "falta dizer com o quê foi o gasto" };
     const dia = dataDe(data, agora);
     if (!dia) return { erro: `data ilegível: "${data}". Use AAAA-MM-DD.` };
@@ -242,6 +256,10 @@ class Gastos {
     itens.push(item);
     await this.gravarMes(mes, itens);
     const r = resumir(itens);
+    if (ehSaldo) {
+      this.onDebug(`saldo da conta registrado: ${id} ${reais(item.centavos)} em ${dia}`);
+      return { ok: true, id, registrado: `saldo da conta: ${reais(item.centavos)} em ${dia}` };
+    }
     this.onDebug(`gasto registrado: ${id} ${reais(item.centavos)} ${item.categoria} (${desc})`);
     return {
       ok: true,
@@ -285,7 +303,9 @@ class Gastos {
       lancamentos: itens.length,
       gastos: reais(r.gastos),
       entradas: reais(r.entradas),
-      saldo: reais(r.entradas - r.gastos),
+      // NÃO é o saldo da conta: é a diferença do que foi lançado no período.
+      entradas_menos_gastos: reais(r.entradas - r.gastos),
+      saldo_em_conta: await this.saldoEmConta(agora),
       por_categoria: r.porCategoria.map((c) => ({ categoria: c.categoria, total: reais(c.centavos), qtd: c.qtd })),
       itens: itens.slice(0, LIMITE).map((i) => ({
         id: i.id, data: i.data, valor: reais(i.centavos), categoria: i.categoria,
@@ -293,6 +313,34 @@ class Gastos {
       })),
       mais: itens.length > LIMITE ? itens.length - LIMITE : undefined,
       vazio: itens.length ? undefined : "nenhum lançamento neste período — não invente valores",
+    };
+  }
+
+  /// Quanto ele tem na conta corrente agora: o último Saldo que ele informou,
+  /// mais as entradas, menos os gastos que saíram da conta depois dele.
+  async saldoEmConta(agora) {
+    const todos = [];
+    for (const m of await this.meses()) todos.push(...(await this.lerMes(m)));
+    const ate = hoje(agora);
+    const linha = todos.filter((i) => i.data <= ate);
+    let k = -1;
+    for (let j = 0; j < linha.length; j++) if (linha[j].categoria === SALDO) k = j;
+    if (k < 0) {
+      return "sem ponto de partida: pergunte quanto ele tem na conta agora e lance com a categoria Saldo";
+    }
+    const base = linha[k];
+    let c = base.centavos;
+    const contados = [];
+    for (const i of linha.slice(k + 1)) {
+      if (i.categoria === SALDO) continue;
+      if (FORA_DA_CONTA.test(i.pagamento || "")) continue;
+      c += i.entrada ? i.centavos : -i.centavos;
+      contados.push(`${i.entrada ? "+" : "−"}${reais(i.centavos).replace("R$ ", "")} ${i.descricao}`);
+    }
+    return {
+      valor: reais(c),
+      como: `${reais(base.centavos)} informados em ${base.data}` + (contados.length ? `, ${contados.join(", ")}` : ", sem movimento depois"),
+      aviso: "Só conta o que foi lançado. Alelo e crédito não saem da conta.",
     };
   }
 
@@ -315,6 +363,7 @@ function resumir(itens) {
   let gastos = 0, entradas = 0;
   const mapa = new Map();
   for (const i of itens) {
+    if (i.categoria === SALDO) continue;
     if (i.entrada) { entradas += i.centavos; continue; }
     gastos += i.centavos;
     const c = mapa.get(i.categoria) || { categoria: i.categoria, centavos: 0, qtd: 0 };
