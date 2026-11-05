@@ -400,3 +400,42 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
 
   fs.rmSync(cofre, { recursive: true, force: true });
 })();
+
+// ---------------------------------------------------------------------------
+// 05/11: as notas do assunto entram sozinhas — ela não abriu a de finanças
+// para responder sobre a fatura que estava anotada.
+// ---------------------------------------------------------------------------
+(async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { Memoria } = require("../memoria.js");
+  const cofre = fs.mkdtempSync(path.join(os.tmpdir(), "ev-relevantes-"));
+  const mem = new Memoria({ pasta: cofre });
+  await mem.anotar({ nome: "financas", pasta: "fatos", quando: "quando ele falar de dinheiro, fatura, Nubank ou quanto vai sobrar", conteudo: "# Finanças\n\nFatura do Nubank: R$ 327,64, vence dia 13." });
+  await mem.anotar({ nome: "igreja", pasta: "fatos", quando: "quando ele falar da igreja ou do culto", conteudo: "# Igreja\n\nCulto domingo às 19h." });
+  await mem.anotar({ nome: "gastos", pasta: "processos", quando: "ele contar que gastou ou pagou algo", conteudo: "# Gastos\n\nLance com registrar_gasto." });
+
+  const fatura = await mem.relevantes("assim que eu pagar a minha fatura, quanto vai sobrar?");
+  assert.strictEqual(fatura[0]?.nome, "fatos/financas", "a pergunta da fatura abre a nota das finanças");
+  assert.match(fatura[0].conteudo, /327,64/, "com o conteúdo, não só o nome");
+  assert.doesNotMatch(fatura[0].conteudo, /^---/, "sem frontmatter");
+  assert.ok(!fatura.some((n) => n.nome === "fatos/igreja"), "nota de outro assunto não entra");
+
+  assert.deepStrictEqual((await mem.relevantes("gastei 30 no ifood")).map((n) => n.nome)[0], "processos/gastos",
+    "gastei/gastou/gastos caem na mesma raiz");
+  assert.deepStrictEqual(await mem.relevantes("oi, tudo bem?"), [], "conversa à toa não abre nada");
+
+  // Continuação sem palavra própria: ficam as do turno anterior.
+  const seguinte = await mem.relevantes("e aí?", { anteriores: ["fatos/financas"] });
+  assert.deepStrictEqual(seguinte.map((n) => n.nome), ["fatos/financas"], "a pergunta de continuação herda as notas");
+
+  // Orçamento total: nota gigante é cortada no fim de uma linha.
+  await mem.anotar({ nome: "grande", pasta: "fatos", quando: "fatura enorme", conteudo: "# Grande\n\n" + "linha da fatura\n".repeat(500) });
+  const grande = await mem.relevantes("fatura", { orcamento: 1000 });
+  const total = grande.reduce((n, x) => n + x.conteudo.length, 0);
+  assert.ok(total <= 1100, `o orçamento é do total: ${total}`);
+
+  fs.rmSync(cofre, { recursive: true, force: true });
+  console.log("✓ memória: as notas do assunto entram já lidas; conversa à toa não abre nada");
+})().catch((e) => { console.error(e); process.exit(1); });

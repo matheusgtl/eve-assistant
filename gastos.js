@@ -109,6 +109,18 @@ function dataDe(bruta, agora) {
   return null;
 }
 
+/// "hoje (05/11)", "ontem (04/11)", "em 02/11". 05/11: ela leu 2026-11-05 e
+/// disse "ontem (5/11)" no próprio dia 5 — data crua deixa a conta com ela.
+function quandoFoi(data, agora) {
+  const d = `${data.slice(8, 10)}/${data.slice(5, 7)}`;
+  const h = hoje(agora);
+  if (data === h) return `hoje (${d})`;
+  const ontem = new Date((agora || new Date()).getTime());
+  ontem.setDate(ontem.getDate() - 1);
+  if (data === hoje(ontem)) return `ontem (${d})`;
+  return `em ${d}`;
+}
+
 const limparCelula = (t) => String(t ?? "").replace(/\|/g, "/").replace(/\s+/g, " ").trim();
 
 class Gastos {
@@ -335,11 +347,11 @@ class Gastos {
       if (i.categoria === SALDO) continue;
       if (FORA_DA_CONTA.test(i.pagamento || "")) continue;
       c += i.entrada ? i.centavos : -i.centavos;
-      contados.push(`${i.entrada ? "+" : "−"}${reais(i.centavos).replace("R$ ", "")} ${i.descricao}`);
+      contados.push(`${i.entrada ? "+" : "−"}${reais(i.centavos).replace("R$ ", "")} ${i.descricao} (${quandoFoi(i.data, agora)})`);
     }
     return {
       valor: reais(c),
-      como: `${reais(base.centavos)} informados em ${base.data}` + (contados.length ? `, ${contados.join(", ")}` : ", sem movimento depois"),
+      como: `${reais(base.centavos)} informados ${quandoFoi(base.data, agora)}` + (contados.length ? `, ${contados.join(", ")}` : ", sem movimento depois"),
       aviso: "Só conta o que foi lançado. Alelo e crédito não saem da conta.",
     };
   }

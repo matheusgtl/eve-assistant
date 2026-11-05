@@ -198,6 +198,34 @@ function resolverLink(link, itens) {
   return alvo ? alvo.nome : null;
 }
 
+// Quanto texto de notas entra sozinho no prompt a cada pergunta. É caro: vai
+// em todo pedido daquele turno. 3.000 caracteres são ~750 tokens — cabe a
+// nota de finanças inteira e um pedaço de outra.
+const TETO_NOTAS_ABERTAS = 3_000;
+
+// Palavras que aparecem em qualquer pergunta e não dizem o assunto.
+const VAZIAS = new Set(
+  ("aqui agora ainda algo alguma algum assim aquele aquela cada coisa como comigo " +
+    "consegue contigo depois desde disso disto entao esse essa esta este estou estava " +
+    "fazer fale falar fala gente hoje isso isto mais mesmo minha minhas muito nada " +
+    "nossa nosso onde ontem outro outra para pela pelo pode porque porfavor pois pouco " +
+    "quando quanto quantos quero qual quem sabe sempre seja seus suas sobre tambem " +
+    "tenho tem tinha todo toda tudo voce vamos vai vou voces amanha favor dela dele " +
+    "deles elas eles pfv voltar sera seria").split(" ")
+);
+
+/// "Fatura do Nubank, quanto vai sobrar?" → ["fatu", "nuba", "sobr"]. Raiz de 4
+/// letras porque "gastei", "gastou" e "gastos" têm de cair na mesma.
+function raizesDe(texto) {
+  return [...new Set(
+    String(texto || "")
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
+      .match(/[a-z0-9]+/g) || []
+  )]
+    .filter((p) => p.length >= 4 && !VAZIAS.has(p))
+    .map((p) => p.slice(0, 4));
+}
+
 /// Lê o frontmatter YAML simples do topo do arquivo (chave: valor).
 /// Não usamos biblioteca de YAML: o que precisamos é uma linha por chave, e
 /// uma dependência a mais por isso não se paga.
@@ -364,6 +392,61 @@ class Memoria {
       tamanho += linha.length + 1;
     }
     return { linhas, total: itens.length, cortados: itens.length - linhas.length };
+  }
+
+  /// As notas que tratam do assunto da pergunta, JÁ LIDAS, para entrarem no
+  /// prompt sem depender de ela decidir abrir.
+  ///
+  /// 05/11, 19:55: "assim que eu pagar a minha fatura, quanto vai sobrar?" —
+  /// e ela respondeu "sem lançamentos de fatura ainda, me diga o valor". O
+  /// valor (R$ 327,64), o dia e o plano inteiro estavam em
+  /// fatos/financas-do-matheus, cujo `quando:` diz "fatura". O índice estava no
+  /// prompt; ela simplesmente não abriu. Pedir no prompt "LEIA antes" não
+  /// bastou — então quem abre agora é o código.
+  ///
+  /// A escolha é por palavras: cada palavra da pergunta (sem acento, raiz de 5
+  /// letras) vale 3 se aparece no `quando:` ou no título, 1 se aparece no
+  /// corpo. Pergunta de continuação ("e aí, quanto sobra?") quase não tem
+  /// palavra própria — aí ficam as notas do turno anterior.
+  async relevantes(pergunta, { anteriores = [], maximo = 2, orcamento = TETO_NOTAS_ABERTAS } = {}) {
+    const raizes = raizesDe(pergunta);
+    const itens = await this.indice();
+    const pontuadas = [];
+    for (const item of itens) {
+      let bruto;
+      try {
+        bruto = await fsp.readFile(path.join(this.pasta, item.nome + ".md"), "utf8");
+      } catch {
+        continue;
+      }
+      const { corpo } = lerFrontmatter(bruto);
+      const limpo = extrairRelacionado(corpo).corpo.trim();
+      const forte = new Set(raizesDe(`${item.quando} ${path.basename(item.nome)} ${(limpo.match(/^#\s+(.+)$/m) || [])[1] || ""}`));
+      const fraco = new Set(raizesDe(limpo));
+      let pontos = 0;
+      for (const r of raizes) pontos += forte.has(r) ? 3 : fraco.has(r) ? 1 : 0;
+      pontuadas.push({ nome: item.nome, pontos, conteudo: limpo });
+    }
+    pontuadas.sort((a, b) => b.pontos - a.pontos);
+    let escolhidas = pontuadas.filter((p) => p.pontos >= 3).slice(0, maximo);
+    if (!escolhidas.length && anteriores.length) {
+      escolhidas = pontuadas.filter((p) => anteriores.includes(p.nome)).slice(0, maximo);
+    }
+    // O orçamento é em caracteres e é TOTAL: a segunda nota recebe o que a
+    // primeira deixou, cortada no fim de uma linha.
+    const saida = [];
+    let resta = orcamento;
+    for (const p of escolhidas) {
+      if (resta < 300) break;
+      let texto = p.conteudo;
+      if (texto.length > resta) {
+        texto = texto.slice(0, resta);
+        texto = texto.slice(0, Math.max(texto.lastIndexOf("\n"), 200)) + "\n[…]";
+      }
+      resta -= texto.length;
+      saida.push({ nome: p.nome, conteudo: texto, pontos: p.pontos });
+    }
+    return saida;
   }
 
   /// Lê um documento. Aceita o nome com ou sem pasta e com ou sem .md, porque
@@ -601,4 +684,6 @@ module.exports = {
   cofreDoObsidian,
   TETO_INDICE,
   FORA_DA_MEMORIA,
+  TETO_NOTAS_ABERTAS,
+  raizesDe,
 };

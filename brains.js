@@ -35,6 +35,8 @@ function montarSystemPrompt({
   lembretes = [],
   memoria = null, // { linhas, total, cortados } — o índice do cofre de .md
   skills = null,  // { linhas, total, cortados } — os comandos que ele criou
+  notasAbertas = [], // [{ nome, conteudo }] — notas do assunto, já lidas pelo código
+  conversaAnterior = [], // [{ quem, texto, hora }] — o fim da sessão anterior
   agora = new Date(),
 } = {}) {
   const dataHora = agora.toLocaleString("pt-BR", {
@@ -240,6 +242,41 @@ function montarSystemPrompt({
       "Uma nota, um assunto: pessoa, grupo ou lugar ganha nota própria, e o perfil dele só " +
         "aponta para ela. Corrigiu algo? Troque a frase velha — não cole \"Acréscimo de\" no " +
         "fim. Ligue as notas pelo relacionado; a ligação de volta eu faço."
+    );
+  }
+
+  // As notas do assunto, já abertas. 05/11: ela tinha o índice e não abriu a
+  // nota de finanças para responder sobre a fatura — perguntou a ele o valor
+  // que estava anotado. Abrir passou a ser do código (memoria.relevantes).
+  // E o aviso de não puxar assunto vem junto: a escolha é por palavra, e uma
+  // nota pode entrar por engano — foi puxar a Nicolly num PDF sobre carros
+  // que ele reclamou em 04/11.
+  if (notasAbertas.length) {
+    partes.push(
+      "",
+      "JÁ ABERTO DA SUA MEMÓRIA PARA ESTA PERGUNTA",
+      "Isto é o que você anotou sobre o assunto, lido agora. Responda com base nisto antes de " +
+        "perguntar a ele algo que já está aqui. Use só o que a pergunta pede: nunca traga um " +
+        "assunto destas notas que ele não puxou.",
+      ...notasAbertas.flatMap((n) => ["", `=== ${n.nome} ===`, n.conteudo])
+    );
+  }
+
+  // O fim da conversa anterior. O histórico do modelo começa vazio a cada vez
+  // que ele abre o app; 05/11: "você não guardou o que conversamos ontem?",
+  // e ela, sem nada, inventou "os 8 lançamentos de ontem estão lá".
+  if (conversaAnterior.length) {
+    const quando = (h) => {
+      const d = new Date(h);
+      return Number.isNaN(d.getTime())
+        ? ""
+        : d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    };
+    partes.push(
+      "",
+      "A ÚLTIMA CONVERSA DE VOCÊS (antes de ele fechar o app)",
+      "Serve para continuar o assunto se ele voltar nele. Não resuma isto sem ele pedir.",
+      ...conversaAnterior.map((t) => `- ${quando(t.hora)} ${t.quem === "voce" ? "ele" : "você"}: ${t.texto}`)
     );
   }
 
@@ -460,6 +497,11 @@ function tetoDoTpm(provedor, fixoEmTokens) {
 /// montarSystemPrompt e toolDefinitions são definidos abaixo daqui.
 let fixoCache = null;
 let fixoSemFerramentasCache = null;
+// O que entra no prompt POR PERGUNTA e não aparece no prompt base: as notas
+// abertas sozinhas (até 3.000 caracteres) e o fim da conversa anterior (até
+// 1.500). Fica reservado no custo fixo, senão o teto do Groq contaria com um
+// espaço de histórico que essas duas coisas já ocuparam.
+const RESERVA_CONTEXTO_EM_TOKENS = Math.round((3_000 + 1_500 + 200) / 4);
 function custoFixoEmTokens(comFerramentas = true) {
   const emTokens = (t) => Math.round(String(t).length / CARACTERES_POR_TOKEN);
   // A voz de conversa não leva ferramenta nenhuma: o fixo dela é só o prompt.
@@ -467,7 +509,7 @@ function custoFixoEmTokens(comFerramentas = true) {
   // sobravam ~300 caracteres de histórico — conversava sem lembrar da frase
   // anterior, justamente a parte que devia soar natural.
   if (!comFerramentas) {
-    if (fixoSemFerramentasCache == null) fixoSemFerramentasCache = emTokens(montarSystemPrompt());
+    if (fixoSemFerramentasCache == null) fixoSemFerramentasCache = emTokens(montarSystemPrompt()) + RESERVA_CONTEXTO_EM_TOKENS;
     return fixoSemFerramentasCache;
   }
   if (fixoCache != null) return fixoCache;
@@ -481,7 +523,8 @@ function custoFixoEmTokens(comFerramentas = true) {
           parameters: t.input_schema,
         }))
       )
-    );
+    ) +
+    RESERVA_CONTEXTO_EM_TOKENS;
   return fixoCache;
 }
 
@@ -2482,6 +2525,7 @@ module.exports = {
   FORMATO_CLAUDE,
   TETO_HISTORICO,
   TETO_POR_PROVEDOR,
+  RESERVA_CONTEXTO_EM_TOKENS,
   TPM_POR_PROVEDOR,
   PEDIDOS_POR_MINUTO,
   tetoDoTpm,

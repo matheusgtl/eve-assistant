@@ -483,6 +483,7 @@ async function conferirBuscaReescrita() {
 function conferirOrcamentoDoGroq() {
   const {
     montarSystemPrompt, TETO_POR_PROVEDOR, TPM_POR_PROVEDOR, PEDIDOS_POR_MINUTO, tetoDoTpm,
+    RESERVA_CONTEXTO_EM_TOKENS,
   } = require("../brains.js");
   const { toolDefinitions } = require("../tools.js");
 
@@ -495,7 +496,10 @@ function conferirOrcamentoDoGroq() {
           name: t.name, description: t.description, parameters: t.input_schema,
         }))
       )
-    );
+    ) +
+    // 05/11: as notas abertas sozinhas e o fim da conversa anterior entram por
+    // pergunta; o teto reserva o lugar delas.
+    RESERVA_CONTEXTO_EM_TOKENS;
   const tpm = TPM_POR_PROVEDOR.groq;
   assert.strictEqual(tpm, 8_000, "o 429 do Groq diz Limit 8000; se mudou, mude aqui");
 
@@ -530,11 +534,14 @@ function conferirOrcamentoDoGroq() {
 
   // A voz de conversa: só o prompt. Ela PRECISA de histórico — é ela que
   // tem de lembrar da frase anterior para soar como conversa.
-  const fixoConversa = emTokens(montarSystemPrompt());
+  const fixoConversa = emTokens(montarSystemPrompt()) + RESERVA_CONTEXTO_EM_TOKENS;
   const tetoConversa = tetoDe("groq", false);
-  assert.strictEqual(tetoConversa, tetoDoTpm("groq", fixoConversa), "teto da conversa = TPM menos só o prompt");
+  assert.strictEqual(tetoConversa, tetoDoTpm("groq", fixoConversa), "teto da conversa = TPM menos o prompt e a reserva");
+  // 05/11: desceu de 6.000 para 4.000 caracteres. A troca é deliberada: até
+  // 4.700 caracteres de notas e da conversa anterior entram sozinhos, e eles
+  // valem mais que as frases mais antigas do histórico desta sessão.
   assert.ok(
-    tetoConversa >= 6_000,
+    tetoConversa >= 4_000,
     `a voz de conversa no Groq fica com ${tetoConversa} caracteres de histórico — pouco para conversar`
   );
   const pedidoConversa = fixoConversa + emTokens("x".repeat(tetoConversa));

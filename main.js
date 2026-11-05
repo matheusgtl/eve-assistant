@@ -110,6 +110,39 @@ let agentes = null;
 // Índice do cofre de .md já cortado no orçamento. Fica aqui, e não é lido na
 // hora, porque o prompt é montado dentro do pedido — ver atualizarIndiceMemoria.
 let indiceMemoria = null;
+// As notas do assunto da pergunta, já lidas (memoria.relevantes). Ficam de um
+// turno para o outro: a pergunta de continuação usa as do turno anterior.
+let notasAbertas = [];
+// Quando esta sessão começou: o que o histórico tem de antes disso é a
+// conversa anterior, que entra no prompt para ela não começar do zero.
+const INICIO_DA_SESSAO = Date.now();
+
+/// O fim da conversa anterior, para o prompt. Só texto (cartão de arquivo não
+/// conta), só das últimas 48 horas, e no máximo 1.500 caracteres — contados de
+/// trás para frente, porque o que importa é onde a conversa PAROU.
+function conversaAnterior() {
+  const limite = INICIO_DA_SESSAO - 48 * 3600 * 1000;
+  const turnos = lerHistorico().filter((i) => {
+    const t = new Date(i.hora).getTime();
+    return (i.quem === "voce" || i.quem === "eve") && !i.arquivo && t < INICIO_DA_SESSAO && t > limite;
+  });
+  const saida = [];
+  let resta = 1_500;
+  for (const t of turnos.reverse()) {
+    let texto = String(t.texto || "")
+      .replace(/^\s*\|.*$/gm, "")     // tabela não cabe aqui
+      .replace(/^\s*-{3,}\s*$/gm, "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!texto) continue;
+    if (texto.length > 300) texto = texto.slice(0, 300) + "…";
+    if (texto.length > resta) break;
+    resta -= texto.length;
+    saida.unshift({ quem: t.quem, texto, hora: t.hora });
+    if (saida.length >= 10) break;
+  }
+  return saida;
+}
 let painelTimer = null;
 let ultimaAmostra = null;
 
@@ -887,6 +920,8 @@ function promptDoSistema({ canal } = {}) {
     lembretes: lembretes ? lembretes.listar().slice(0, 8) : [],
     memoria: indiceMemoria,
     skills: indiceSkills,
+    notasAbertas,
+    conversaAnterior: conversaAnterior(),
     agora: new Date(),
   });
 }
@@ -1051,6 +1086,16 @@ async function ask(userText, canal = "texto") {
   // nota no Obsidian enquanto isso. Reler antes de montar o prompt é o que faz
   // as duas coisas aparecerem sem nenhum passo de sincronização.
   await atualizarIndiceMemoria();
+  // As notas do assunto entram já lidas: esperar que ela decida abrir falhou
+  // (05/11, a fatura que estava anotada e ela perguntou o valor).
+  if (memoria) {
+    try {
+      notasAbertas = await memoria.relevantes(userText, { anteriores: notasAbertas.map((n) => n.nome) });
+      if (notasAbertas.length) log("memória: abertas para esta pergunta:", notasAbertas.map((n) => n.nome).join(", "));
+    } catch (err) {
+      log("memória: não consegui escolher as notas:", err.message);
+    }
+  }
   // Uma skill escrita no Obsidian agora mesmo já vale nesta pergunta: reler é
   // o que dispensa qualquer passo de sincronização (e reiniciar o app).
   await atualizarIndiceSkills();
