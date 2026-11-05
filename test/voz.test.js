@@ -103,6 +103,9 @@ servidor.listen(0, async () => {
     nome: "Sarah",
     descricao: "female · brazilian · calm",
     previewUrl: "http://exemplo/preview.mp3",
+    // categoria e idioma decidem o que a lista mostra (vozesUsaveis).
+    categoria: null,
+    idioma: null,
   });
   assert.strictEqual(vozes[1].previewUrl, null, "voz sem amostra não quebra a lista");
   assert.strictEqual(pedidos[0].chave, "chave-teste", "a chave vai no cabeçalho xi-api-key");
