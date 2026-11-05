@@ -24,3 +24,16 @@ assert.strictEqual(f("sem número nenhum"), "sem número nenhum");
 assert.strictEqual(f("99:99"), "noventa e nove:noventa e nove", "hora impossível não vira hora");
 
 console.log("✓ fala de números: R$ 327,64 → trezentos e vinte e sete reais e sessenta e quatro centavos");
+
+// Lista de vozes: no grátis, a da biblioteca some; português vem primeiro.
+const { vozesUsaveis } = require("../tts.js");
+const lista = [
+  { nome: "Alice", categoria: "premade", idioma: "en" },
+  { nome: "Raquel", categoria: "professional", idioma: "pt" },
+  { nome: "E.V.E", categoria: "generated", idioma: "pt" },
+];
+const gratis = vozesUsaveis(lista, "free");
+assert.deepStrictEqual(gratis.vozes.map((v) => v.nome), ["E.V.E", "Alice"], "05/11: a Raquel dava 402 no grátis");
+assert.deepStrictEqual(gratis.ocultas, ["Raquel"]);
+assert.deepStrictEqual(vozesUsaveis(lista, "starter").vozes.map((v) => v.nome), ["Raquel", "E.V.E", "Alice"], "no pago ela volta");
+console.log("✓ vozes: biblioteca some no plano grátis; as em português vêm primeiro");

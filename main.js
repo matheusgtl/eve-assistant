@@ -19,6 +19,7 @@ const readline = require("node:readline");
 const { createBrain, detectProvider, checkGemini, checkOpenAI, montarSystemPrompt, ORDEM_RESERVA } = require("./brains.js");
 const {
   listarVozesEleven,
+  vozesUsaveis,
   cotaEleven,
   sintetizarEleven,
   baixarPreview,
@@ -1958,11 +1959,15 @@ ipcMain.handle("ev:eleven-connect", async (_e, key) => {
   const chave = (key || "").trim() || loadConfig().elevenKey || "";
   if (!chave) return { ok: false, erro: "Cole a chave da ElevenLabs." };
   try {
-    const [vozes, cota] = await Promise.all([listarVozesEleven(chave), cotaEleven(chave)]);
+    const [todas, cota] = await Promise.all([listarVozesEleven(chave), cotaEleven(chave)]);
+    const { vozes, ocultas } = vozesUsaveis(todas, cota?.plano);
     const cfg = loadConfig();
     cfg.elevenKey = chave;
     saveConfig(cfg);
-    log("elevenlabs conectada:", vozes.length, "vozes");
+    log(
+      "elevenlabs conectada:", vozes.length, "vozes" +
+        (ocultas.length ? ` (fora da lista, precisam de plano pago: ${ocultas.join(", ")})` : "")
+    );
     return { ok: true, vozes, cota };
   } catch (err) {
     log("elevenlabs recusou a chave:", err.status || "", err.message);

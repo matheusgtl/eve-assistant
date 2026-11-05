@@ -52,7 +52,24 @@ async function listarVozesEleven(apiKey) {
       .filter(Boolean)
       .join(" · "),
     previewUrl: v.preview_url || null,
+    categoria: v.category || null,
+    idioma: v.labels?.language || null,
   }));
+}
+
+/// O que a lista de vozes mostra. Duas regras, as duas de 05/11:
+///  - no plano grátis, voz da biblioteca (categoria "professional", que é como
+///    a voz adicionada da biblioteca volta na conta) não funciona pela API —
+///    ele escolheu a Raquel, ouviu 402 e a fala caiu na voz do macOS. Some da
+///    lista em vez de parecer quebrada;
+///  - voz em português vem primeiro: as inglesas falam português com sotaque.
+function vozesUsaveis(vozes, plano) {
+  const gratis = !plano || /free/i.test(plano);
+  const bloqueadas = gratis ? vozes.filter((v) => v.categoria === "professional") : [];
+  const usaveis = vozes
+    .filter((v) => !bloqueadas.includes(v))
+    .sort((a, b) => (b.idioma === "pt") - (a.idioma === "pt"));
+  return { vozes: usaveis, ocultas: bloqueadas.map((v) => v.nome) };
 }
 
 /// Quanto ainda resta da cota gratuita do mês.
@@ -176,6 +193,7 @@ function explicarErroEleven(err) {
 
 module.exports = {
   listarVozesEleven,
+  vozesUsaveis,
   cotaEleven,
   sintetizarEleven,
   baixarPreview,
