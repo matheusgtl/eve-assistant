@@ -416,7 +416,7 @@ const toolDefinitions = [
   // dela: conta de dinheiro errada dita com confiança é pior que nenhuma.
   {
     name: "registrar_gasto",
-    description: "Lança gasto dele; dinheiro que entrou é Entrada; \"tenho X na conta\" é Saldo. Sem data, é hoje.",
+    description: "Lança gasto; o que entrou é Entrada; \"tenho X na conta\" é Saldo. Sem data, hoje.",
     input_schema: {
       type: "object",
       properties: {
@@ -431,10 +431,11 @@ const toolDefinitions = [
   },
   {
     name: "consultar_gastos",
-    description: "Totais e lançamentos; sem período, o mês atual.",
+    description: "Totais, lançamentos e saldo da conta; sem período, o mês atual.",
     input_schema: {
       type: "object",
       properties: {
+        vai_pagar: { type: "array", items: { type: "number" }, description: "Devolve quanto sobra." },
         mes: { type: "string", description: "AAAA-MM" },
         de: { type: "string" },
         ate: { type: "string" },
@@ -445,7 +446,7 @@ const toolDefinitions = [
   },
   {
     name: "calcular",
-    description: "Faz conta exata. Conta de dinheiro é sempre aqui. Linhas com rótulo: \"sobra = 409,88 - 327,64; total = sobra + 90\".",
+    description: "Conta exata; dinheiro é sempre aqui. Linhas com rótulo: \"a = 10 * 3; b = a - 5\".",
     input_schema: { type: "object", properties: { conta: { type: "string" } }, required: ["conta"] },
   },
   {

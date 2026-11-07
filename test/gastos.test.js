@@ -124,6 +124,22 @@ const { Memoria } = require("../memoria.js");
   assert.match(pago.lembrar || "", /R\$ 53,50/, "10% de 534,96 é 53,50 (ela tinha escrito 53,49)");
   assert.strictEqual((await conta.registrar({ valor: 5, descricao: "pão", categoria: "Mercado" }, dia5)).lembrar, undefined, "gasto não lembra dízimo");
 
+  // 07/11: "quanto sobra depois de pagar a fatura?" — ela somou o salário
+  // ao saldo que já o tinha e disse R$ 653,70. A conta agora vem pronta.
+  const real = new Gastos({ pasta: fs.mkdtempSync(path.join(os.tmpdir(), "ev-sobra-")) });
+  const dia7 = new Date(2026, 10, 7, 13, 53);
+  await real.registrar({ valor: 90.42, categoria: "Saldo", data: "2026-11-04" }, dia7);
+  await real.registrar({ valor: 10, descricao: "Pix de amigo", categoria: "Entrada", data: "2026-11-05" }, dia7);
+  await real.registrar({ valor: 534.96, descricao: "pagamento", categoria: "Entrada", data: "2026-11-06" }, dia7);
+  await real.registrar({ valor: 53.5, descricao: "dízimo", categoria: "Igreja", data: "2026-11-06" }, dia7);
+  for (const v of [10, 22, 20]) await real.registrar({ valor: v, descricao: "pix", categoria: "Outros", pagamento: "Pix" }, dia7);
+  const sobra = (await real.consultar({ vai_pagar: [327.64] }, dia7)).quanto_sobra;
+  assert.strictEqual(sobra.valor, "R$ 202,24", "529,88 − 327,64; não os 653,70 que ela disse");
+  assert.match(sobra.conta, /R\$ 529,88 na conta − R\$ 327,64 = R\$ 202,24/);
+  const falta = (await real.consultar({ vai_pagar: [600] }, dia7)).quanto_sobra;
+  assert.match(falta.aviso, /NÃO FECHA/, "quando não fecha, ela é avisada");
+  assert.strictEqual((await real.consultar({}, dia7)).quanto_sobra, undefined, "sem vai_pagar, nada");
+
   // ------------------------------------------------ 6. pelas ferramentas
   // O livro mora no cofre da memória, e a pasta Gastos não entra no índice:
   // cada mês viraria uma linha que viaja em toda pergunta.

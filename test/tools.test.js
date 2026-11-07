@@ -95,6 +95,8 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // para ele guardar dinheiro (41,25 + 90,42 virou 138,67), e o erro desceu a
   // tabela inteira. 35 ferramentas, 2.775 tokens, 79,3 por ferramenta — a
   // média CAIU, porque o calcular é menor que a média.
+  // 07/11: o vai_pagar do consultar_gastos coube sem subir o teto — as
+  // descrições do registrar e do calcular encolheram para abrir o espaço.
   assert.ok(tokens < 2800, `as ferramentas somam ~${tokens} tokens (teto: 2800)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 

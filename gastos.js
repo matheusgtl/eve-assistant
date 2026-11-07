@@ -296,7 +296,7 @@ class Gastos {
   }
 
   /// O período padrão é o mês corrente; `de`/`ate` cruzam meses.
-  async consultar({ mes, de, ate, categoria, busca } = {}, agora) {
+  async consultar({ mes, de, ate, categoria, busca, vai_pagar } = {}, agora) {
     let inicio, fim;
     if (de || ate) {
       inicio = dataDe(de, agora) || "0000-00-00";
@@ -320,6 +320,7 @@ class Gastos {
       .sort((a, b) => b.data.localeCompare(a.data));
 
     const r = resumir(itens);
+    const saldo = await this.saldoEmConta(agora);
     const LIMITE = 30;
     return {
       periodo: `${inicio} a ${fim}`,
@@ -328,7 +329,8 @@ class Gastos {
       entradas: reais(r.entradas),
       // NÃO é o saldo da conta: é a diferença do que foi lançado no período.
       entradas_menos_gastos: reais(r.entradas - r.gastos),
-      saldo_em_conta: await this.saldoEmConta(agora),
+      saldo_em_conta: saldo,
+      quanto_sobra: await this.quantoSobra(saldo, vai_pagar),
       por_categoria: r.porCategoria.map((c) => ({ categoria: c.categoria, total: reais(c.centavos), qtd: c.qtd })),
       itens: itens.slice(0, LIMITE).map((i) => ({
         id: i.id, data: i.data, valor: reais(i.centavos), categoria: i.categoria,
@@ -368,6 +370,34 @@ class Gastos {
       aviso:
         "Este saldo JÁ inclui tudo o que entrou e saiu (salário, dízimo, Pix, gastos). Para " +
         "\"quanto sobra depois de pagar X\": este valor menos X, e nada mais. Alelo e crédito não saem da conta.",
+    };
+  }
+
+  /// "Quanto sobra depois de pagar a fatura?" — a conta inteira, feita aqui.
+  ///
+  /// 07/11, duas vezes no mesmo dia: com a calculadora na mão ela montou a
+  /// conta errada. Primeiro "salário − dízimo − fatura − 30" e depois somou o
+  /// saldo, que já tinha o salário dentro: "sobram R$ 653,70" de uma conta com
+  /// 529,88. A calculadora acertou a soma; o erro era a FÓRMULA. Então a
+  /// fórmula saiu da mão dela: o saldo vem do livro, ela só diz o que ainda vai
+  /// sair, e o número final vem pronto.
+  async quantoSobra(saldo, vaiPagar) {
+    const lista = (Array.isArray(vaiPagar) ? vaiPagar : vaiPagar != null ? [vaiPagar] : [])
+      .map((v) => centavos(Math.abs(valorDe(v))))
+      .filter((c) => Number.isFinite(c) && c > 0);
+    if (!lista.length) return undefined;
+    if (typeof saldo !== "object") {
+      return "sem saldo de partida: pergunte quanto ele tem na conta agora e lance com a categoria Saldo";
+    }
+    const agoraC = centavos(valorDe(saldo.valor));
+    const sai = lista.reduce((a, b) => a + b, 0);
+    const fica = agoraC - sai;
+    return {
+      valor: reais(fica),
+      conta: `${reais(agoraC)} na conta − ${lista.map((c) => reais(c)).join(" − ")} = ${reais(fica)}`,
+      aviso:
+        "Este é o número final: diga este, sem refazer a conta e sem somar salário ou dízimo, que já estão no saldo." +
+        (fica < 0 ? " NÃO FECHA: falta dinheiro — diga quanto falta." : ""),
     };
   }
 
