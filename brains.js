@@ -2271,6 +2271,48 @@ function ferramentasPedidas(texto) {
   return [...new Set(pedidas)];
 }
 
+/// Frase normalizada para comparar repetição: sem acento, sem pontuação.
+const normalFrase = (t) =>
+  String(t).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/// Corta laço de repetição. 07/11, 13:36: a voz de conversa (sem
+/// ferramentas) respondeu "Deixa eu ver o saldo atual da conta…" mais de
+/// VINTE vezes seguidas, cada uma com palavras um pouco diferentes, e nada
+/// foi consultado. Frase que repete (igual, ou com 65% das palavras em
+/// comum) não sai; a segunda repetição chama `aoLaco`.
+function guardaDeLaco(onSay, aoLaco) {
+  const ditas = [];
+  let repeticoes = 0;
+  let cortado = false;
+  const parecidas = (a, b) => {
+    // Lista de lançamentos ("10 pago hoje para o amigo", "20 pago hoje para
+    // o amigo…") parece repetição e não é: números diferentes, frases diferentes.
+    if ((a.match(/\d+/g) || []).join() !== (b.match(/\d+/g) || []).join()) return false;
+    const A = new Set(a.split(" ")), B = new Set(b.split(" "));
+    const comum = [...A].filter((x) => B.has(x)).length;
+    return comum / Math.max(A.size, B.size) >= 0.65;
+  };
+  return {
+    say(t) {
+      if (cortado) return;
+      const n = normalFrase(t);
+      if (n.length >= 12 && ditas.some((d) => d === n || parecidas(d, n))) {
+        repeticoes++;
+        if (repeticoes >= 2) { cortado = true; aoLaco(); }
+        return;
+      }
+      if (n) ditas.push(n);
+      onSay(t);
+    },
+    get cortado() { return cortado; },
+  };
+}
+
+/// "Deixa eu ver o saldo", "vou consultar os gastos": a voz de conversa
+/// prometendo uma consulta que ela não tem como fazer.
+const PROMETE_CONSULTA =
+  /\b(?:deixa eu|deixe-me|vou|j[aá] vou|preciso)\s+(?:ver|consultar|checar|conferir|olhar|verificar|calcular|buscar|pesquisar|abrir|anotar|lan[cç]ar|registrar)\b/i;
+
 class CerebroDeDuasVozes {
   constructor({ acao, conversa, onDebug }) {
     this.acao = acao;
@@ -2364,17 +2406,27 @@ class CerebroDeDuasVozes {
 
     try {
       this.conversa.messages = antes;
-      const filtro = filtroDeFerramenta(onSay);
-      await this.conversa.ask(userText, { ...opcoes, onSay: filtro.say });
+      let falado = "";
+      const laco = guardaDeLaco((t) => { falado += t; onSay(t); }, () => this.conversa.cancelar?.());
+      const filtro = filtroDeFerramenta(laco.say);
+      try {
+        await this.conversa.ask(userText, { ...opcoes, onSay: filtro.say });
+      } catch (err) {
+        if (!laco.cortado) throw err; // o corte do laço aborta o pedido de propósito
+      }
       filtro.fim();
 
       // A conversa quis uma ferramenta: o turno é de AÇÃO, e quem age errou
       // ao responder sem nenhuma. Volta para ela, agora dizendo o que a
       // conversa ia chamar — a conversa não executa nada, mas acertou o que
-      // o pedido precisava.
-      if (filtro.pegou !== null) {
-        const pedidas = ferramentasPedidas(filtro.pegou);
-        this.onDebug(`voz de conversa pediu ferramenta (${pedidas.join("; ") || "?"}); volta para a ação`);
+      // o pedido precisava. Três sinais disso: escreveu a chamada como texto,
+      // entrou em laço, ou prometeu consultar ("deixa eu ver o saldo").
+      const prometeu = PROMETE_CONSULTA.test(falado);
+      if (filtro.pegou !== null || laco.cortado || prometeu) {
+        const pedidas = filtro.pegou !== null ? ferramentasPedidas(filtro.pegou) : [];
+        const motivo = filtro.pegou !== null ? `pediu ferramenta (${pedidas.join("; ") || "?"})`
+          : laco.cortado ? "entrou em laço de repetição" : "prometeu consultar sem ter como";
+        this.onDebug(`voz de conversa ${motivo}; volta para a ação`);
         await this.agirDeNovo(userText, pedidas, opcoes, mensagens, descartada);
         return;
       }
@@ -2512,6 +2564,8 @@ function createBrain(config = {}, { prompt } = {}) {
 
 module.exports = {
   CerebroDeDuasVozes,
+  normalFrase,
+  guardaDeLaco,
   filtroDeFerramenta,
   ferramentasPedidas,
   createBrain,

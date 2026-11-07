@@ -16,7 +16,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const readline = require("node:readline");
 
-const { createBrain, detectProvider, checkGemini, checkOpenAI, montarSystemPrompt, ORDEM_RESERVA } = require("./brains.js");
+const { createBrain, detectProvider, checkGemini, checkOpenAI, montarSystemPrompt, ORDEM_RESERVA, normalFrase } = require("./brains.js");
 const {
   listarVozesEleven,
   vozesUsaveis,
@@ -1133,6 +1133,7 @@ async function ask(userText, canal = "texto") {
 
   let vazias = 0;
   let ultimaFalaTeveConteudo = false;
+  const ditasNesteTurno = new Set();
 
   try {
     await brain.ask(userText, {
@@ -1147,6 +1148,15 @@ async function ask(userText, canal = "texto") {
         // alguma conta ou lembrete, é só avisar." O prompt proíbe fechar
         // assim, e o nemotron fecha assim mesmo. Como a frase chega sozinha,
         // como um parágrafo à parte, dá para tirá-la aqui.
+        // Última trava contra laço, venha de qual voz vier: a mesma frase não
+        // sai duas vezes na mesma resposta (07/11, "Deixa eu ver o saldo
+        // atual da conta" mais de vinte vezes).
+        const normal = normalFrase(texto);
+        if (normal.length >= 12 && ditasNesteTurno.has(normal)) {
+          log("frase repetida descartada:", JSON.stringify(String(texto).trim().slice(0, 60)));
+          return;
+        }
+        if (normal) ditasNesteTurno.add(normal);
         if (FECHO_PRONTO.test(String(texto).trim())) {
           log("fecho pronto descartado:", JSON.stringify(String(texto).trim().slice(0, 60)));
           return;

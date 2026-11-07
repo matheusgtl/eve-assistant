@@ -49,6 +49,15 @@ const servidor = http.createServer((req, res) => {
         res.setHeader("content-type", "application/json");
         return res.end(JSON.stringify({ error: { message: "Rate limit reached" } }));
       }
+      if (cenario === "conversa-em-laco") {
+        // 07/11, 13:36: mais de vinte vezes, cada uma um pouco diferente.
+        const variantes = [
+          "Deixa eu ver o saldo atual da conta pra fazer a conta certa.\n\n",
+          "Deixa eu consultar os gastos pra ver o saldo atual da conta.\n\n",
+          "Deixa eu ver o saldo atual da conta.\n\n",
+        ];
+        return sse(res, Array.from({ length: 12 }, (_, i) => delta({ content: variantes[i % 3] })));
+      }
       if (cenario === "conversa-quer-ferramenta") {
         // O que saiu cru no chat em 04/11, 23:17 — picado no meio da marca,
         // como o stream de verdade pica.
@@ -65,7 +74,7 @@ const servidor = http.createServer((req, res) => {
     const comDica = /Nota interna/.test(ultimaDele?.content || "");
 
     // ---- a ação chama ferramenta e depois responde com o resultado
-    if (cenario === "acao" || (cenario === "conversa-quer-ferramenta" && comDica)) {
+    if (cenario === "acao" || ((cenario === "conversa-quer-ferramenta" || cenario === "conversa-em-laco") && comDica)) {
       const jaTemResultado = (pedido.messages || []).some((m) => m.role === "tool");
       if (!jaTemResultado) {
         return sse(res, [
@@ -262,6 +271,30 @@ servidor.listen(0, async () => {
   const historico = (b5.mensagensDaAcao || []).filter((m) => m.role === "user");
   assert.ok(historico.every((m) => !/Nota interna/.test(m.content)), "a dica sai do histórico depois");
 
+  // ------------- 8. a conversa entra em laço → corta e volta para a ação
+  cenario = "conversa-em-laco";
+  recebidos.length = 0;
+  const ditos6 = [];
+  const usadas6 = [];
+  const b6 = montar();
+  await b6.ask("assim que eu pagar a fatura, quanto vai sobrar?", {
+    ...ops, onSay: (t) => ditos6.push(t), onTool: (n) => usadas6.push(n),
+  });
+  const deixa = ditos6.filter((t) => /Deixa eu/.test(t)).length;
+  assert.ok(deixa <= 2, `o laço tinha de ser cortado; saíram ${deixa} "Deixa eu"`);
+  assert.deepStrictEqual(usadas6, ["system_status"], "e a ação, na segunda chance, consultou de verdade");
+  assert.ok(/12% de CPU/.test(ditos6.join("")), "com a resposta dela no fim");
+
+  // A trava não come lista de lançamentos, que é parecida mas não repetida.
+  const { guardaDeLaco } = require("../brains.js");
+  const lista = [];
+  const g = guardaDeLaco((t) => lista.push(t), () => {});
+  g.say("- R$ 10,00 pago hoje (07/11) para o amigo, categoria Outros.");
+  g.say("- R$ 22,00 pago hoje (07/11) para o app da igreja, categoria Igreja.");
+  g.say("- R$ 20,00 pago hoje (07/11) para o amigo, categoria Outros.");
+  assert.strictEqual(lista.length, 3, "valores diferentes não são laço");
+  assert.ok(!g.cortado);
+
   // O filtro não come texto normal com < ou [.
   const { filtroDeFerramenta } = require("../brains.js");
   const saida = [];
@@ -273,6 +306,7 @@ servidor.listen(0, async () => {
 
   console.log("✓ duas vozes: a ação decide a ferramenta, a conversa escreve o resto");
   console.log("   conversa escreve <tool_call> → some da tela, e a ação age de novo com a dica");
+  console.log("   conversa em laço (\"deixa eu ver o saldo\" ×12) → cortado, e a ação consulta de verdade");
   console.log("   sem ferramenta → fala a conversa; a resposta da ação (que vaza) é descartada");
   console.log("   com ferramenta → fala a ação, e o \"deixa eu ver\" sai antes, na ordem");
   console.log("   pedido da conversa → sem as 30 ferramentas: 1.458 tokens em vez de 3.921");
