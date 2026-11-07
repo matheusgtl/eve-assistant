@@ -387,6 +387,10 @@ function anotar(quem, texto, extra = {}) {
 /// código, sem URL soletrada.
 /// Tem alguma coisa dita aqui? "...", "—", " . . . " não têm. Serve para não
 /// falar enchimento e para não gravar enchimento no histórico da conversa.
+// Parágrafo inteiro que é só a oferta de ajuda do fim da resposta.
+const FECHO_PRONTO =
+  /^(?:se (?:precisar|quiser)[^.!?\n]{0,80}(?:é só|basta|me) (?:avisar|mandar|falar|chamar|pedir)|(?:precisa|quer) de mais alguma coisa|(?:qualquer coisa|estou à disposição)[^.!?\n]{0,40})[.!?]?\s*(?:😊|🙂)?$/i;
+
 function temConteudo(texto) {
   return /[\p{L}\p{N}]/u.test(String(texto || ""));
 }
@@ -1139,6 +1143,14 @@ async function ask(userText, canal = "texto") {
         // O gpt-oss-120b devolveu "..." várias vezes seguidas numa conversa,
         // e ela leu cada um em voz alta, o que soa como gaguejo e polui o
         // histórico que vai de volta ao modelo na pergunta seguinte.
+        // 07/11: cinco respostas seguidas terminaram com "Se precisar de mais
+        // alguma conta ou lembrete, é só avisar." O prompt proíbe fechar
+        // assim, e o nemotron fecha assim mesmo. Como a frase chega sozinha,
+        // como um parágrafo à parte, dá para tirá-la aqui.
+        if (FECHO_PRONTO.test(String(texto).trim())) {
+          log("fecho pronto descartado:", JSON.stringify(String(texto).trim().slice(0, 60)));
+          return;
+        }
         if (!temConteudo(texto)) {
           log("resposta vazia descartada:", JSON.stringify(texto.slice(0, 40)));
           vazias++;

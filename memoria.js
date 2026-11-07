@@ -531,6 +531,32 @@ class Memoria {
     // A recusa devolve o conteúdo atual junto. Assim ela não precisa de outra
     // rodada para descobrir o que apagaria: já tem o texto em mãos para juntar
     // com o acréscimo e gravar de uma vez.
+    // NOTA NOVA SOBRE ASSUNTO QUE JÁ TEM NOTA NÃO PASSA DE PRIMEIRA.
+    //
+    // 04/11 e 07/11: com fatos/financas-do-matheus já dizendo "10% de cada
+    // parcela, assim que cai", ela criou fatos/regra-dizimo-matheus, depois
+    // processos/despesas-variaveis-matheus, depois
+    // processos/regra-dizimo-pagamento-cai — três notas soltas do mesmo
+    // assunto, e a principal sem a informação nova. A recusa devolve a nota
+    // que já existe, para ela reescrever ali. Se for mesmo outro assunto,
+    // a segunda chamada com o mesmo nome passa.
+    if (!fs.existsSync(caminho) && this.recusadaPorParecida !== slug) {
+      const parecidas = await this.relevantes(`${quando || ""} ${titulo || ""} ${nome}`, { maximo: 1, orcamento: 4000 });
+      const parecida = parecidas[0];
+      if (parecida && parecida.pontos >= 5) {
+        this.recusadaPorParecida = slug;
+        return {
+          erro:
+            `já existe "${parecida.nome}" sobre este assunto. Reescreva ELA com anotar_memoria ` +
+            `(nome "${path.basename(parecida.nome)}", pasta "${parecida.nome.split("/")[0]}"), juntando o ` +
+            "que é novo ao texto abaixo — não crie outra nota. Se for mesmo outro assunto, chame de novo " +
+            "com o mesmo nome e eu crio.",
+          conteudo_atual: parecida.conteudo,
+        };
+      }
+    }
+    this.recusadaPorParecida = null;
+
     let anterior = null;
     if (fs.existsSync(caminho)) {
       anterior = await fsp.readFile(caminho, "utf8");

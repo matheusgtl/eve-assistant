@@ -272,6 +272,16 @@ class Gastos {
       this.onDebug(`saldo da conta registrado: ${id} ${reais(item.centavos)} em ${dia}`);
       return { ok: true, id, registrado: `saldo da conta: ${reais(item.centavos)} em ${dia}` };
     }
+    // 07/11: ele ensinou "caiu o pagamento, separo 10% de dízimo na hora",
+    // ela anotou a regra — e não lançou o dízimo do pagamento que ele tinha
+    // acabado de contar. Regra numa nota depende de ela lembrar; o lembrete no
+    // resultado da própria ferramenta chega na hora certa, com o valor exato
+    // (ela tinha escrito 53,49 para 10% de 534,96, que é 53,50).
+    const lembrar = item.entrada
+      ? `Se isto é pagamento do trabalho dele: o dízimo é ${reais(Math.round(item.centavos / 10))} ` +
+        "(10%), separado na hora — lance agora com categoria Igreja, sem perguntar. Pix de amigo ou " +
+        "reembolso não tem dízimo."
+      : undefined;
     this.onDebug(`gasto registrado: ${id} ${reais(item.centavos)} ${item.categoria} (${desc})`);
     return {
       ok: true,
@@ -281,6 +291,7 @@ class Gastos {
         gastos: reais(r.gastos),
         nesta_categoria: reais(r.porCategoria.find((c) => c.categoria === item.categoria)?.centavos || 0),
       },
+      lembrar,
     };
   }
 

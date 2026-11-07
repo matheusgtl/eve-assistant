@@ -118,6 +118,12 @@ const { Memoria } = require("../memoria.js");
   await conta.registrar({ valor: 100, categoria: "Saldo" }, dia5);
   assert.strictEqual((await conta.consultar({}, dia5)).saldo_em_conta.valor, "R$ 100,00", "o último saldo informado manda");
 
+  // 07/11: o dízimo do pagamento que ele acabou de contar não foi lançado.
+  // O lembrete vem no resultado, com o valor exato.
+  const pago = await conta.registrar({ valor: 534.96, descricao: "pagamento", categoria: "Entrada" }, dia5);
+  assert.match(pago.lembrar || "", /R\$ 53,50/, "10% de 534,96 é 53,50 (ela tinha escrito 53,49)");
+  assert.strictEqual((await conta.registrar({ valor: 5, descricao: "pão", categoria: "Mercado" }, dia5)).lembrar, undefined, "gasto não lembra dízimo");
+
   // ------------------------------------------------ 6. pelas ferramentas
   // O livro mora no cofre da memória, e a pasta Gastos não entra no índice:
   // cada mês viraria uma linha que viaja em toda pergunta.

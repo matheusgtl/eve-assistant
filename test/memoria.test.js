@@ -439,3 +439,31 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
   fs.rmSync(cofre, { recursive: true, force: true });
   console.log("✓ memória: as notas do assunto entram já lidas; conversa à toa não abre nada");
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// ---------------------------------------------------------------------------
+// 07/11: nota nova sobre assunto que já tem nota é recusada de primeira —
+// ela criou três notas de dízimo soltas com a de finanças já dizendo isso.
+// ---------------------------------------------------------------------------
+(async () => {
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+  const { Memoria } = require("../memoria.js");
+  const cofre = fs.mkdtempSync(path.join(os.tmpdir(), "ev-parecida-"));
+  const mem = new Memoria({ pasta: cofre });
+  await mem.anotar({ nome: "financas", pasta: "fatos", quando: "quando ele falar de dinheiro, salário, dízimo ou pagamento", conteudo: "# Finanças\n\nDízimo: 10% de cada parcela." });
+
+  const dup = await mem.anotar({ nome: "regra-dizimo", pasta: "processos", quando: "quando cair o pagamento do salário, separar o dízimo", conteudo: "# Regra\n\n10%." });
+  assert.match(dup.erro || "", /já existe "fatos\/financas"/, "a nota parecida é recusada e aponta a que existe");
+  assert.match(dup.conteudo_atual, /10% de cada parcela/, "com o texto dela, para juntar");
+  assert.ok(!fs.existsSync(path.join(cofre, "processos", "regra-dizimo.md")));
+
+  const insistiu = await mem.anotar({ nome: "regra-dizimo", pasta: "processos", quando: "quando cair o pagamento do salário, separar o dízimo", conteudo: "# Regra\n\n10%." });
+  assert.ok(insistiu.ok, "insistir com o mesmo nome cria: pode ser mesmo outro assunto");
+
+  const outra = await mem.anotar({ nome: "julia", pasta: "fatos", quando: "quando ele falar da Júlia", conteudo: "# Júlia\n\nAmiga." });
+  assert.ok(outra.ok, "assunto sem nota parecida passa direto");
+
+  fs.rmSync(cofre, { recursive: true, force: true });
+  console.log("✓ memória: nota nova parecida com uma que existe volta para ser juntada nela");
+})().catch((e) => { console.error(e); process.exit(1); });
