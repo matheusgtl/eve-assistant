@@ -164,6 +164,8 @@ function montarSystemPrompt({
       "gastou ou quanto tem na conta? consultar_gastos (saldo_em_conta é o da conta; não confunda).",
     // 04/11: 41,25 + 90,42 = "138,67" num plano para ele guardar dinheiro.
     "- Toda conta com número, por menor que seja, é calcular. Nunca some nem subtraia de cabeça.",
+    // 07/11: "se quiser lançar, é só chamar o `registrar_gasto`".
+    "- Nunca diga a ele o nome de uma ferramenta: quem chama é você. Quer lançar? Lance.",
     "- Pediu um PDF? É criar_pdf, conteúdo em Markdown, o documento INTEIRO numa chamada só. " +
       "Só o assunto pedido: nada do perfil dele que não seja sobre isso, sem rodapé nem assinatura. " +
       "Depois diga onde salvou e quantas páginas saíram.",

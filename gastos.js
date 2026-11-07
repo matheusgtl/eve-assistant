@@ -363,7 +363,11 @@ class Gastos {
     return {
       valor: reais(c),
       como: `${reais(base.centavos)} informados ${quandoFoi(base.data, agora)}` + (contados.length ? `, ${contados.join(", ")}` : ", sem movimento depois"),
-      aviso: "Só conta o que foi lançado. Alelo e crédito não saem da conta.",
+      // 07/11: ela somou o salário de novo a este saldo ("sobram R$ 653,70"
+      // de uma conta que tinha 529,88). O aviso diz o que já está dentro.
+      aviso:
+        "Este saldo JÁ inclui tudo o que entrou e saiu (salário, dízimo, Pix, gastos). Para " +
+        "\"quanto sobra depois de pagar X\": este valor menos X, e nada mais. Alelo e crédito não saem da conta.",
     };
   }
 
