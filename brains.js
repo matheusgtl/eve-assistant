@@ -165,7 +165,7 @@ function montarSystemPrompt({
       "boleto que ainda vai vencer é categoria A pagar, com a data do vencimento (valor novo substitui o velho). " +
       "Compra no cartão: pagamento crédito, e parcelas se parcelou — não sai da conta. Quanto tem, quanto sobra, " +
       "dá pra guardar? consultar_gastos e diga saldo_em_conta e quanto_sobra como vierem: as contas a pagar já " +
-      "estão dentro; vai_pagar só para o que não é conta (ex.: guardar 30).",
+      "estão dentro; vai_pagar só para gasto que ele planeja; o que sobra é o que ele guarda.",
     // 04/11: 41,25 + 90,42 = "138,67" num plano para ele guardar dinheiro.
     "- Toda conta com número, por menor que seja, é calcular. Nunca some nem subtraia de cabeça.",
     // 07/11: "se quiser lançar, é só chamar o `registrar_gasto`".
