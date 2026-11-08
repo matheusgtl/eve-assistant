@@ -159,10 +159,13 @@ function montarSystemPrompt({
     // Nicolly Sena" e "projeto DevMotors" — puxados do perfil só para encher —
     // e assinado "por Ivi". Documento é só sobre o que ele pediu.
     // 04/11: controle de gastos. A soma é do código; ela só lança e lê.
-    "- Ele contou que gastou, pagou ou recebeu? registrar_gasto na hora — só o que JÁ aconteceu; " +
-      "plano, média e conta a pagar vão na nota das finanças. Lance sem pedir confirmação. Perguntou quanto " +
-      "gastou ou quanto tem na conta? consultar_gastos (saldo_em_conta é o da conta; não confunda). " +
-      "\"Quanto sobra depois de pagar X?\" é consultar_gastos com vai_pagar — o número vem pronto.",
+    // 08/11: ela usou a fatura velha de uma nota e descontou da conta uma
+    // compra no crédito. Conta a vencer agora mora no livro (A pagar).
+    "- Ele contou que gastou, pagou ou recebeu? registrar_gasto na hora, sem pedir confirmação. Fatura ou " +
+      "boleto que ainda vai vencer é categoria A pagar, com a data do vencimento (valor novo substitui o velho). " +
+      "Compra no cartão: pagamento crédito, e parcelas se parcelou — não sai da conta. Quanto tem, quanto sobra, " +
+      "dá pra guardar? consultar_gastos e diga saldo_em_conta e quanto_sobra como vierem: as contas a pagar já " +
+      "estão dentro; vai_pagar só para o que não é conta (ex.: guardar 30).",
     // 04/11: 41,25 + 90,42 = "138,67" num plano para ele guardar dinheiro.
     "- Toda conta com número, por menor que seja, é calcular. Nunca some nem subtraia de cabeça.",
     // 07/11: "se quiser lançar, é só chamar o `registrar_gasto`".

@@ -47,7 +47,7 @@ const { Memoria } = require("../memoria.js");
   assert.strictEqual(nov.lancamentos, 4);
   assert.strictEqual(nov.gastos, "R$ 200,00", "32,50 + 150 + 17,50 — a soma é do código");
   assert.strictEqual(nov.entradas, "R$ 2.000,00");
-  assert.strictEqual(nov.entradas_menos_gastos, "R$ 1.800,00");
+  assert.ok(!("entradas_menos_gastos" in nov), "08/11: o número que ela confundia com o saldo saiu");
   assert.deepStrictEqual(
     nov.por_categoria.map((c) => c.categoria),
     ["Carro", "Alimentação"],
@@ -140,6 +140,42 @@ const { Memoria } = require("../memoria.js");
   assert.match(falta.aviso, /NÃO FECHA/, "quando não fecha, ela é avisada");
   assert.strictEqual((await real.consultar({}, dia7)).quanto_sobra, undefined, "sem vai_pagar, nada");
 
+  // 08/11: "fiz uma compra no crédito, 97,43 em 2 vezes; agora tenho 376,36
+  // de fatura, quanto vai sobrar?" — ela usou a fatura VELHA (327,64, de uma
+  // nota) e descontou a compra no crédito da conta. Agora a fatura é conta A
+  // pagar no livro, o valor novo substitui o velho, e o cartão não sai da conta.
+  const dia8 = new Date(2026, 10, 8, 1, 32);
+  const velha = await real.registrar({ valor: 327.64, descricao: "Fatura Nubank", categoria: "A pagar", data: "2026-11-13" }, dia8);
+  assert.ok(velha.ok, JSON.stringify(velha));
+  const nova = await real.registrar({ valor: 376.36, descricao: "Fatura do Nubank", categoria: "A pagar", data: "2026-11-13" }, dia8);
+  assert.match(nova.substituiu || "", /327,64/, "fatura nova substitui a velha, não soma");
+  const compra = await real.registrar({ valor: 97.43, descricao: "compra", categoria: "Compras", pagamento: "crédito", parcelas: 2 }, dia8);
+  assert.deepStrictEqual(compra.parcelas, ["1ª R$ 48,72", "2ª R$ 48,71"], "as parcelas somam a compra, centavo por centavo");
+  assert.match(compra.lembrar, /NÃO sai da conta/);
+  const oito = await real.consultar({}, dia8);
+  assert.strictEqual(oito.saldo_em_conta.valor, "R$ 529,88", "a compra no crédito não sai da conta");
+  assert.strictEqual(oito.a_pagar.length, 1);
+  assert.strictEqual(oito.a_pagar[0].valor, "R$ 376,36");
+  assert.strictEqual(oito.quanto_sobra.valor, "R$ 153,52", "529,88 − 376,36, sem ela precisar pedir");
+  assert.match(oito.no_cartao, /97,43/);
+  assert.strictEqual((await real.consultar({ vai_pagar: [30] }, dia8)).quanto_sobra.valor, "R$ 123,52", "e guardando 30");
+  assert.strictEqual((await real.consultar({ vai_pagar: [376.36] }, dia8)).quanto_sobra.valor, "R$ 153,52",
+    "repetir a fatura no vai_pagar não desconta duas vezes");
+  assert.ok((await real.registrar({ valor: 50, descricao: "cinema (estimativa)", categoria: "A pagar", data: "2026-11-20" }, dia8)).erro,
+    "estimativa não vira conta a pagar");
+  // Ele paga a fatura: sai das contas a pagar sozinha, e sai da conta.
+  const dia13 = new Date(2026, 10, 13, 9);
+  const paga = await real.registrar({ valor: 376.36, descricao: "paguei a fatura do Nubank", categoria: "Contas", pagamento: "Pix" }, dia13);
+  assert.match(paga.quitou || "", /Fatura do Nubank/);
+  const treze = await real.consultar({}, dia13);
+  assert.strictEqual(treze.a_pagar, undefined, "paga, não está mais a pagar");
+  assert.strictEqual(treze.saldo_em_conta.valor, "R$ 153,52");
+  assert.strictEqual(treze.quanto_sobra, undefined);
+  // Pagar algo com o mesmo nome em outra coisa não quita conta errada: o
+  // "conta" do "paguei a conta de luz" não é a fatura.
+  await real.registrar({ valor: 120, descricao: "Conta de luz", categoria: "A pagar", data: "2026-11-20" }, dia13);
+  assert.strictEqual((await real.registrar({ valor: 30, descricao: "paguei a conta do celular", categoria: "Contas" }, dia13)).quitou, undefined);
+
   // ------------------------------------------------ 6. pelas ferramentas
   // O livro mora no cofre da memória, e a pasta Gastos não entra no índice:
   // cada mês viraria uma linha que viaja em toda pergunta.
@@ -154,6 +190,7 @@ const { Memoria } = require("../memoria.js");
 
   const def = toolDefinitions.find((t) => t.name === "registrar_gasto");
   assert.ok(def.input_schema.properties.categoria.enum.includes("Entrada"), "entrada é uma categoria");
+  assert.ok(def.input_schema.properties.categoria.enum.includes("A pagar"), "conta a vencer é uma categoria");
 
   fs.rmSync(cofre, { recursive: true, force: true });
   console.log("✓ gastos: lançar, somar no código, consultar por mês/período/categoria, apagar");

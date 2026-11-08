@@ -33,6 +33,22 @@ const SALDO = "Saldo";
 // Pago no Alelo ou no crédito não sai da conta corrente: o Alelo é outro
 // cartão, e a compra no crédito só sai quando a fatura for paga.
 const FORA_DA_CONTA = /alelo|vale|cr[eé]dito|cart[aã]o/i;
+const ALELO = /alelo|vale/i;
+const noCartao = (i) => !i.entrada && FORA_DA_CONTA.test(i.pagamento || "") && !ALELO.test(i.pagamento || "");
+// "A pagar" é conta que ainda VAI vencer: a fatura do cartão, um boleto. Não é
+// gasto (não saiu nada) e mora no mês do vencimento. 08/11: ele disse "agora
+// tenho 376,36 de fatura" e ela respondeu com os R$ 327,64 que estavam escritos
+// numa nota — o valor velho — e descontou da conta a compra que ele tinha feito
+// no crédito. Conta a pagar numa nota fica velha e depende de ela lembrar de
+// passar no vai_pagar; aqui ela entra sozinha no quanto_sobra e sai sozinha
+// quando ele paga.
+const A_PAGAR = "A pagar";
+// Palavras que não dizem QUAL conta é: "paguei a conta do mês" não quita a
+// fatura do Nubank só por ter "conta".
+const VAZIAS = new Set(["pagamento", "pagar", "paguei", "pago", "conta", "contas", "valor", "para", "pela", "pelo", "mensal", "parcela"]);
+const palavras = (t) => new Set(semAcento(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !VAZIAS.has(w)));
+const temEmComum = (a, b) => { const B = palavras(b); return [...palavras(a)].some((w) => B.has(w)); };
+const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
 const SINONIMOS = {
   comida: "Alimentação", restaurante: "Alimentação", lanche: "Alimentação",
@@ -61,6 +77,7 @@ function categoriaDe(bruta, entrada) {
   if (entrada) return ENTRADA;
   const chave = semAcento(bruta);
   if (chave === "saldo") return SALDO;
+  if (chave.replace(/\s+/g, " ") === "a pagar") return A_PAGAR;
   if (!chave) return "Outros";
   const exata = CATEGORIAS.find((c) => semAcento(c) === chave);
   if (exata) return exata;
@@ -196,7 +213,10 @@ class Gastos {
       "",
       `# Gastos de ${nomeMes}`,
       "",
-      `**Gastos:** ${reais(r.gastos)} · **Entradas:** ${reais(r.entradas)} · **Saldo:** ${reais(r.entradas - r.gastos)}`,
+      `**Gastos:** ${reais(r.gastos)} (${reais(r.noCartao)} no cartão) · **Entradas:** ${reais(r.entradas)}` +
+        (r.aPagar ? ` · **A pagar:** ${reais(r.aPagar)}` : ""),
+      "",
+      "*O saldo da conta não é entradas menos gastos: ele parte do último Saldo informado, e o que foi no cartão só sai quando a fatura é paga.*",
       "",
       "| id | data | valor | categoria | descrição | pagamento |",
       "|---|---|---|---|---|---|",
@@ -222,7 +242,7 @@ class Gastos {
     await fsp.writeFile(alvo, linhas.join("\n"));
   }
 
-  async registrar({ valor, descricao, categoria, data, pagamento, entrada } = {}, agora) {
+  async registrar({ valor, descricao, categoria, data, pagamento, entrada, parcelas } = {}, agora) {
     // A ferramenta não tem campo `entrada`: é a categoria "Entrada" (custa
     // menos no pedido do que um booleano a mais). O `entrada` fica para quem
     // chama o módulo direto.
@@ -241,8 +261,13 @@ class Gastos {
     // que ele ia pagar no dia seguinte — o mês abriu com R$ 659 "gastos" que
     // ele não tinha gastado. Plano tem lugar: a nota das finanças.
     const ONDE_VAI_O_PLANO =
-      "Plano, estimativa e conta a pagar vão em fatos/financas-do-matheus (anotar_memoria). " +
-      "Lance aqui no dia em que ele disser que pagou ou recebeu.";
+      "Conta que ainda vai vencer (fatura, boleto) é a categoria A pagar, com a data do vencimento. " +
+      "Média e estimativa vão em fatos/financas-do-matheus. O resto se lança no dia em que ele pagou ou recebeu.";
+    const aPagar = categoriaDe(categoria) === A_PAGAR && !entrada;
+    if (aPagar) {
+      if (/estimativ|m[eé]dia|or[cç]amento/i.test(desc)) return { erro: `"${desc}" é plano, não conta. ${ONDE_VAI_O_PLANO}` };
+      return this.contaAPagar({ id: null, data: dia, centavos: Math.abs(centavos(v)), categoria: A_PAGAR, descricao: desc, pagamento: "", entrada: false }, agora);
+    }
     if (dia > hoje(agora)) {
       return { erro: `${dia} ainda não chegou: isso não aconteceu ainda. ${ONDE_VAI_O_PLANO}` };
     }
@@ -250,21 +275,31 @@ class Gastos {
       return { erro: `"${desc}" é plano, não gasto feito. ${ONDE_VAI_O_PLANO}` };
     }
 
+    // Parcelado: a compra entra inteira (é o que ele gastou), e cada parcela
+    // cai numa fatura. Parcelado é sempre no cartão.
+    const total = Math.abs(centavos(v));
+    const n = Math.floor(Number(parcelas));
+    let valoresDasParcelas;
+    let descFinal = desc;
+    if (n >= 2 && !entrada && !ehSaldo) {
+      const base = Math.floor(total / n);
+      valoresDasParcelas = Array.from({ length: n }, (_, k) => base + (k === 0 ? total - base * n : 0));
+      if (!FORA_DA_CONTA.test(pagamento || "")) pagamento = limparCelula(pagamento ? `crédito ${pagamento}` : "crédito");
+      if (!/\d+\s*x/i.test(desc)) descFinal = `${desc} (${n}x de ${reais(valoresDasParcelas[0]).replace("R$ ", "")})`;
+    }
+
     const mes = dia.slice(0, 7);
     const itens = await this.lerMes(mes);
-    const usados = new Set(itens.map((i) => i.id));
-    let id;
-    do id = "g" + Math.random().toString(36).slice(2, 6); while (usados.has(id));
-
     const item = {
-      id,
+      id: await this.novoId(),
       data: dia,
-      centavos: Math.abs(centavos(v)),
+      centavos: total,
       categoria: categoriaDe(categoria, !!entrada),
-      descricao: desc,
+      descricao: descFinal,
       pagamento: limparCelula(pagamento),
       entrada: !!entrada,
     };
+    const id = item.id;
     itens.push(item);
     await this.gravarMes(mes, itens);
     const r = resumir(itens);
@@ -277,22 +312,82 @@ class Gastos {
     // acabado de contar. Regra numa nota depende de ela lembrar; o lembrete no
     // resultado da própria ferramenta chega na hora certa, com o valor exato
     // (ela tinha escrito 53,49 para 10% de 534,96, que é 53,50).
+    const cartao = noCartao(item);
     const lembrar = item.entrada
       ? `Se isto é pagamento do trabalho dele: o dízimo é ${reais(Math.round(item.centavos / 10))} ` +
         "(10%), separado na hora — lance agora com categoria Igreja, sem perguntar. Pix de amigo ou " +
         "reembolso não tem dízimo."
-      : undefined;
-    this.onDebug(`gasto registrado: ${id} ${reais(item.centavos)} ${item.categoria} (${desc})`);
+      : cartao
+        ? "Foi no cartão: NÃO sai da conta agora, entra na fatura. Não desconte do saldo."
+        : undefined;
+    // Pagou uma conta que estava a pagar? Ela sai da lista sozinha.
+    const quitou = !item.entrada && !cartao ? await this.quitar(item) : undefined;
+    this.onDebug(`gasto registrado: ${id} ${reais(item.centavos)} ${item.categoria} (${descFinal})` + (quitou ? ` — quitou ${quitou}` : ""));
     return {
       ok: true,
       id,
-      registrado: `${reais(item.centavos)} · ${item.categoria} · ${desc} · ${dia}`,
+      registrado: `${reais(item.centavos)} · ${item.categoria} · ${descFinal} · ${dia}`,
       mes: {
         gastos: reais(r.gastos),
         nesta_categoria: reais(r.porCategoria.find((c) => c.categoria === item.categoria)?.centavos || 0),
       },
+      parcelas: valoresDasParcelas?.map((c, k) => `${k + 1}ª ${reais(c)}`),
+      quitou: quitou ? `${quitou} saiu das contas a pagar` : undefined,
       lembrar,
     };
+  }
+
+  async novoId() {
+    const usados = new Set();
+    for (const m of await this.meses()) for (const i of await this.lerMes(m)) usados.add(i.id);
+    let id;
+    do id = "g" + Math.random().toString(36).slice(2, 6); while (usados.has(id));
+    return id;
+  }
+
+  async todos() {
+    const lista = [];
+    for (const m of await this.meses()) lista.push(...(await this.lerMes(m)));
+    return lista;
+  }
+
+  async tirar(alvo) {
+    const m = alvo.data.slice(0, 7);
+    await this.gravarMes(m, (await this.lerMes(m)).filter((i) => i.id !== alvo.id));
+  }
+
+  /// Conta a vencer. Se já há uma parecida em aberto ("Fatura Nubank" de
+  /// novo), o valor novo SUBSTITUI o velho: é ele dizendo que a fatura mudou.
+  async contaAPagar(item, agora) {
+    const abertas = (await this.todos()).filter((i) => i.categoria === A_PAGAR);
+    const velha = abertas.find((i) => temEmComum(i.descricao, item.descricao) && i.data.slice(0, 7) === item.data.slice(0, 7));
+    if (velha) await this.tirar(velha);
+    item.id = await this.novoId();
+    const mes = item.data.slice(0, 7);
+    await this.gravarMes(mes, [...(await this.lerMes(mes)), item]);
+    this.onDebug(`conta a pagar: ${item.id} ${reais(item.centavos)} ${item.descricao} vence ${item.data}` + (velha ? ` (era ${reais(velha.centavos)})` : ""));
+    return {
+      ok: true,
+      id: item.id,
+      registrado: `a pagar: ${reais(item.centavos)} · ${item.descricao} · vence ${ddmm(item.data)}`,
+      substituiu: velha ? `${reais(velha.centavos)} (${velha.descricao}) — o valor velho saiu` : undefined,
+      lembrar: "Não saiu nada da conta ainda. Quando ele disser que pagou, lance o pagamento: a conta sai daqui sozinha.",
+    };
+  }
+
+  /// Pagamento de verdade que corresponde a uma conta a pagar: tira a conta.
+  /// Casa pelo nome ("fatura", "nubank"); pelo valor só se for a única com ele.
+  async quitar(pago) {
+    const abertas = (await this.todos()).filter((i) => i.categoria === A_PAGAR);
+    const porNome = abertas.filter((i) => temEmComum(i.descricao, pago.descricao));
+    const porValor = abertas.filter((i) => i.centavos === pago.centavos);
+    const alvo =
+      porNome.find((i) => i.centavos === pago.centavos) ||
+      (porNome.length === 1 ? porNome[0] : null) ||
+      (porValor.length === 1 ? porValor[0] : null);
+    if (!alvo) return undefined;
+    await this.tirar(alvo);
+    return `${alvo.descricao} (${reais(alvo.centavos)}, vencia ${ddmm(alvo.data)})`;
   }
 
   /// O período padrão é o mês corrente; `de`/`ate` cruzam meses.
@@ -314,6 +409,7 @@ class Gastos {
     const cat = categoria ? categoriaDe(categoria) : null;
     const termo = semAcento(busca);
     const itens = todos
+      .filter((i) => i.categoria !== A_PAGAR)
       .filter((i) => i.data >= inicio && i.data <= fim)
       .filter((i) => !cat || i.categoria === cat || (semAcento(categoria) === "entrada" && i.entrada))
       .filter((i) => !termo || semAcento(`${i.descricao} ${i.pagamento}`).includes(termo))
@@ -321,16 +417,25 @@ class Gastos {
 
     const r = resumir(itens);
     const saldo = await this.saldoEmConta(agora);
+    const abertas = (await this.todos()).filter((i) => i.categoria === A_PAGAR).sort((a, b) => a.data.localeCompare(b.data));
     const LIMITE = 30;
     return {
       periodo: `${inicio} a ${fim}`,
       lancamentos: itens.length,
+      // 08/11: o `entradas_menos_gastos` saiu. Ela leu "entrou 544,96, saiu
+      // 202,93, sobra 342,03" — com a compra no crédito descontada de uma
+      // conta de onde ela não saiu. O que ele tem é o saldo_em_conta.
       gastos: reais(r.gastos),
+      no_cartao: r.noCartao ? `${reais(r.noCartao)} destes gastos foram no cartão: não saíram da conta, vão na fatura` : undefined,
       entradas: reais(r.entradas),
-      // NÃO é o saldo da conta: é a diferença do que foi lançado no período.
-      entradas_menos_gastos: reais(r.entradas - r.gastos),
       saldo_em_conta: saldo,
-      quanto_sobra: await this.quantoSobra(saldo, vai_pagar),
+      a_pagar: abertas.length
+        ? abertas.map((i) => ({
+            id: i.id, vence: ddmm(i.data), valor: reais(i.centavos), descricao: i.descricao,
+            atrasada: i.data < hoje(agora) ? "já venceu: pergunte se ele pagou" : undefined,
+          }))
+        : undefined,
+      quanto_sobra: await this.quantoSobra(saldo, abertas, vai_pagar),
       por_categoria: r.porCategoria.map((c) => ({ categoria: c.categoria, total: reais(c.centavos), qtd: c.qtd })),
       itens: itens.slice(0, LIMITE).map((i) => ({
         id: i.id, data: i.data, valor: reais(i.centavos), categoria: i.categoria,
@@ -357,7 +462,7 @@ class Gastos {
     let c = base.centavos;
     const contados = [];
     for (const i of linha.slice(k + 1)) {
-      if (i.categoria === SALDO) continue;
+      if (i.categoria === SALDO || i.categoria === A_PAGAR) continue;
       if (FORA_DA_CONTA.test(i.pagamento || "")) continue;
       c += i.entrada ? i.centavos : -i.centavos;
       contados.push(`${i.entrada ? "+" : "−"}${reais(i.centavos).replace("R$ ", "")} ${i.descricao} (${quandoFoi(i.data, agora)})`);
@@ -381,22 +486,32 @@ class Gastos {
   /// 529,88. A calculadora acertou a soma; o erro era a FÓRMULA. Então a
   /// fórmula saiu da mão dela: o saldo vem do livro, ela só diz o que ainda vai
   /// sair, e o número final vem pronto.
-  async quantoSobra(saldo, vaiPagar) {
-    const lista = (Array.isArray(vaiPagar) ? vaiPagar : vaiPagar != null ? [vaiPagar] : [])
+  ///
+  /// 08/11: as contas a pagar entram sozinhas; o vai_pagar é só o que não é
+  /// conta lançada (guardar 30, um gasto que ele planeja).
+  async quantoSobra(saldo, abertas, vaiPagar) {
+    const extras = (Array.isArray(vaiPagar) ? vaiPagar : vaiPagar != null ? [vaiPagar] : [])
       .map((v) => centavos(Math.abs(valorDe(v))))
-      .filter((c) => Number.isFinite(c) && c > 0);
+      .filter((c) => Number.isFinite(c) && c > 0)
+      // A conta já lançada não entra duas vezes se ela repetir o valor.
+      .filter((c) => !abertas.some((a) => a.centavos === c));
+    const lista = [
+      ...abertas.map((a) => ({ c: a.centavos, rotulo: `${reais(a.centavos)} (${a.descricao}, ${ddmm(a.data)})` })),
+      ...extras.map((c) => ({ c, rotulo: reais(c) })),
+    ];
     if (!lista.length) return undefined;
     if (typeof saldo !== "object") {
       return "sem saldo de partida: pergunte quanto ele tem na conta agora e lance com a categoria Saldo";
     }
     const agoraC = centavos(valorDe(saldo.valor));
-    const sai = lista.reduce((a, b) => a + b, 0);
+    const sai = lista.reduce((a, b) => a + b.c, 0);
     const fica = agoraC - sai;
     return {
       valor: reais(fica),
-      conta: `${reais(agoraC)} na conta − ${lista.map((c) => reais(c)).join(" − ")} = ${reais(fica)}`,
+      conta: `${reais(agoraC)} na conta − ${lista.map((x) => x.rotulo).join(" − ")} = ${reais(fica)}`,
       aviso:
-        "Este é o número final: diga este, sem refazer a conta e sem somar salário ou dízimo, que já estão no saldo." +
+        "Este é o número final: diga este, sem refazer a conta e sem somar salário ou dízimo, que já estão no saldo. " +
+        "Compra no cartão não entra: já está dentro da fatura." +
         (fica < 0 ? " NÃO FECHA: falta dinheiro — diga quanto falta." : ""),
     };
   }
@@ -417,19 +532,21 @@ class Gastos {
 }
 
 function resumir(itens) {
-  let gastos = 0, entradas = 0;
+  let gastos = 0, entradas = 0, emCartao = 0, aPagar = 0;
   const mapa = new Map();
   for (const i of itens) {
     if (i.categoria === SALDO) continue;
+    if (i.categoria === A_PAGAR) { aPagar += i.centavos; continue; }
     if (i.entrada) { entradas += i.centavos; continue; }
     gastos += i.centavos;
+    if (noCartao(i)) emCartao += i.centavos;
     const c = mapa.get(i.categoria) || { categoria: i.categoria, centavos: 0, qtd: 0 };
     c.centavos += i.centavos;
     c.qtd++;
     mapa.set(i.categoria, c);
   }
   const porCategoria = [...mapa.values()].sort((a, b) => b.centavos - a.centavos);
-  return { gastos, entradas, porCategoria };
+  return { gastos, entradas, porCategoria, noCartao: emCartao, aPagar };
 }
 
-module.exports = { Gastos, CATEGORIAS, PASTA_GASTOS, valorDe, categoriaDe, dataDe, reais };
+module.exports = { Gastos, CATEGORIAS, A_PAGAR, PASTA_GASTOS, valorDe, categoriaDe, dataDe, reais };

@@ -97,6 +97,9 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // média CAIU, porque o calcular é menor que a média.
   // 07/11: o vai_pagar do consultar_gastos coube sem subir o teto — as
   // descrições do registrar e do calcular encolheram para abrir o espaço.
+  // 08/11: "A pagar" e `parcelas` no registrar, sem subir o teto — o
+  // vai_pagar perdeu a descrição (o quanto_sobra agora vem sozinho) e as
+  // descrições do registrar e do consultar encolheram. 2.797 tokens.
   assert.ok(tokens < 2800, `as ferramentas somam ~${tokens} tokens (teto: 2800)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
