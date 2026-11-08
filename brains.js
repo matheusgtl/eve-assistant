@@ -166,7 +166,8 @@ function montarSystemPrompt({
       "Dinheiro que vai cair numa data (salário do dia 20) é A receber. Compra no cartão: pagamento crédito, e " +
       "parcelas se parcelou — não sai da conta. Quanto tem, quanto sobra, fim do mês, dá pra guardar? " +
       "consultar_gastos e diga saldo_em_conta e quanto_sobra como vierem (a linha_do_tempo já tem contas, " +
-      "salário e dízimo): nunca monte essa conta você. vai_pagar só para gasto que ele planeja; o que sobra ele guarda.",
+      "salário e dízimo): nunca monte essa conta você. vai_pagar só para gasto que ele planeja; o que sobra ele guarda. " +
+      "Relatório ou PDF dos gastos: consultar_gastos com pdf — nunca escreva esse relatório você.",
     // 04/11: 41,25 + 90,42 = "138,67" num plano para ele guardar dinheiro.
     "- Toda conta com número, por menor que seja, é calcular. Nunca some nem subtraia de cabeça.",
     // 07/11: "se quiser lançar, é só chamar o `registrar_gasto`".

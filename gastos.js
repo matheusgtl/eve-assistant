@@ -568,6 +568,103 @@ class Gastos {
     };
   }
 
+  /// Relatório do mês em Markdown, para o criar_pdf. 08/11: ele pediu "um PDF
+  /// com o relatório do mês e quanto posso guardar". Os números saem daqui,
+  /// prontos — se ela escrevesse o relatório, cada soma seria uma chance de
+  /// errar, e o PDF fica guardado com o erro dentro.
+  async relatorio({ mes } = {}, agora = new Date()) {
+    const alvo = /^\d{4}-\d{2}$/.test(String(mes || "").trim()) ? mes.trim() : hoje(agora).slice(0, 7);
+    const [ano, m] = alvo.split("-");
+    const nomeMes = `${MESES[Number(m) - 1]} de ${ano}`;
+    const doMes = (await this.lerMes(alvo)).filter((i) => !PREVISTO.has(i.categoria) && i.categoria !== SALDO);
+    const r = resumir(doMes);
+    const entradas = doMes.filter((i) => i.entrada);
+    const gastos = doMes.filter((i) => !i.entrada).sort((a, b) => a.data.localeCompare(b.data));
+    const daConta = gastos.filter((i) => !FORA_DA_CONTA.test(i.pagamento || ""));
+    const noCart = gastos.filter(noCartao);
+    const noAlelo = gastos.filter((i) => ALELO.test(i.pagamento || ""));
+    const soma = (l) => l.reduce((a, i) => a + i.centavos, 0);
+    const saldo = await this.saldoEmConta(agora);
+    const previstos = (await this.todos()).filter((i) => PREVISTO.has(i.categoria)).sort((a, b) => a.data.localeCompare(b.data));
+    const ehAtual = alvo === hoje(agora).slice(0, 7);
+    const sobra = ehAtual ? await this.quantoSobra(saldo, previstos, [], agora) : undefined;
+    const fimC = sobra && typeof sobra === "object" ? centavos(valorDe(sobra.valor)) : typeof saldo === "object" && ehAtual ? centavos(valorDe(saldo.valor)) : null;
+
+    // O que o mês deixa de sobra: tudo o que entra menos tudo o que sai da
+    // conta, contando o que ainda vai entrar e vencer neste mês (e o dízimo).
+    const prevMes = previstos.filter((i) => i.data.slice(0, 7) === alvo);
+    const recebe = prevMes.filter((i) => i.categoria === A_RECEBER);
+    const paga = prevMes.filter((i) => i.categoria === A_PAGAR);
+    const dizimoPrev = recebe.filter((i) => DO_TRABALHO.test(i.descricao)).reduce((a, i) => a + Math.round(i.centavos / 10), 0);
+    const ritmo = r.entradas + soma(recebe) - soma(daConta) - soma(paga) - dizimoPrev;
+
+    const linha = (i) => `- ${ddmm(i.data)} · **${reais(i.centavos)}** · ${i.descricao}` + (i.pagamento ? ` · ${i.pagamento}` : "");
+    const pct = (c) => (r.gastos ? ` (${Math.round((c / r.gastos) * 100)}%)` : "");
+    const md = [
+      `# Relatório de ${nomeMes}`,
+      "",
+      `*Feito em ${ddmm(hoje(agora))}/${hoje(agora).slice(0, 4)} com o que está lançado no controle de gastos.*`,
+      "",
+      "## Resumo",
+      `- **Entrou:** ${reais(r.entradas)}` + (recebe.length ? ` (e ainda vai entrar ${reais(soma(recebe))})` : ""),
+      `- **Gastou:** ${reais(r.gastos)}: ${reais(soma(daConta))} saíram da conta` +
+        (noCart.length ? `, ${reais(soma(noCart))} no cartão` : "") + (noAlelo.length ? `, ${reais(soma(noAlelo))} no Alelo` : ""),
+      ...(ehAtual && typeof saldo === "object" ? [`- **Na conta hoje:** ${saldo.valor}`] : []),
+      ...(fimC != null ? [`- **Previsto para o fim do mês:** ${reais(fimC)}`] : []),
+      "",
+      "## Entradas",
+      ...(entradas.length ? entradas.map(linha) : ["- nenhuma lançada"]),
+      ...recebe.map((i) => `- ${ddmm(i.data)} · **${reais(i.centavos)}** · ${i.descricao} · *previsto*`),
+      "",
+      "## Gastos por categoria",
+      ...(r.porCategoria.length
+        ? r.porCategoria.map((c) => `- **${c.categoria}:** ${reais(c.centavos)}${pct(c.centavos)} · ${c.qtd} ${c.qtd === 1 ? "lançamento" : "lançamentos"}`)
+        : ["- nada gasto"]),
+      "",
+      "## Todos os gastos",
+      ...(gastos.length ? gastos.map(linha) : ["- nenhum"]),
+      "",
+      ...(noCart.length || previstos.some((i) => i.categoria === A_PAGAR)
+        ? [
+            "## Cartão e contas a pagar",
+            ...(noCart.length ? [`- Compras no cartão neste mês: **${reais(soma(noCart))}**. Não saem da conta no dia; entram na fatura.`] : []),
+            ...previstos.filter((i) => i.categoria === A_PAGAR).map((i) => `- Vence ${ddmm(i.data)}: **${reais(i.centavos)}** · ${i.descricao}`),
+            "",
+          ]
+        : []),
+      ...(sobra && typeof sobra === "object"
+        ? ["## Até o fim do mês", ...sobra.linha_do_tempo.map((t) => `- ${t}`), ""]
+        : []),
+      "## Quanto dá para guardar",
+    ];
+    if (fimC != null) md.push(`- **Neste mês:** se nada mais for gasto, ficam **${reais(fimC)}** na conta no fim de ${MESES[Number(m) - 1]}. É isso que dá para guardar.`);
+    if (ritmo > 0) {
+      md.push(
+        `- **O que ${MESES[Number(m) - 1]} deixa de sobra:** ${reais(ritmo)} (tudo o que entra no mês menos tudo o que sai da conta, com dízimo e fatura).`,
+        "",
+        `### Se todo mês for como ${MESES[Number(m) - 1]}`,
+        `Guardando ${reais(ritmo)} por mês` + (fimC != null ? `, a partir dos ${reais(fimC)} do fim deste mês:` : ":"),
+      );
+      const base = fimC != null ? fimC : 0;
+      for (const k of [3, 6, 12]) md.push(`- **Em ${k} meses:** ${reais(base + k * ritmo)}`);
+      md.push("", "### Quanto tempo para juntar");
+      for (const meta of [100000, 300000, 500000, 1000000]) {
+        const falta = meta - base;
+        const meses = falta <= 0 ? 0 : Math.ceil(falta / ritmo);
+        md.push(`- **${reais(meta)}:** ${meses === 0 ? "já tem" : `${meses} ${meses === 1 ? "mês" : "meses"}`}`);
+      }
+      md.push(
+        "",
+        `Cada R$ 50 a menos de gasto por mês são ${reais(5000 * 12)} a mais em um ano.`,
+        "",
+        "*É uma projeção: supõe que entra e sai o mesmo que neste mês. Gasto novo, fatura maior ou salário diferente mudam a conta.*",
+      );
+    } else if (ritmo <= 0) {
+      md.push(`- Neste mês sai mais do que entra: faltam ${reais(-ritmo)} para empatar. Antes de guardar, é preciso cortar gasto.`);
+    }
+    return { markdown: md.join("\n"), titulo: `Relatório de ${nomeMes}`, arquivo: `Relatorio de gastos ${alvo}.pdf` };
+  }
+
   async apagar({ id } = {}) {
     const alvo = String(id || "").trim();
     if (!alvo) return { erro: "diga o id do lançamento (consultar_gastos mostra)" };

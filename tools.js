@@ -398,8 +398,8 @@ const toolDefinitions = [
   {
     name: "criar_pdf",
     description:
-      "Escreve um PDF no disco, com tipografia e paginação. Conteúdo em Markdown, o " +
-      "documento inteiro numa chamada só. Nunca salve .md ou .txt e chame de PDF.",
+      "Escreve um PDF no disco. Conteúdo em Markdown, o " +
+      "documento inteiro numa chamada só. Nunca salve .md/.txt como PDF.",
     input_schema: {
       type: "object",
       properties: {
@@ -432,11 +432,12 @@ const toolDefinitions = [
   },
   {
     name: "consultar_gastos",
-    description: "Saldo, contas a pagar, quanto sobra e totais do mês.",
+    description: "Saldo, contas a pagar, quanto sobra, totais; pdf: relatório.",
     input_schema: {
       type: "object",
       properties: {
         vai_pagar: { type: "array", items: { type: "number" } },
+        pdf: { type: "boolean" },
         mes: { type: "string", description: "AAAA-MM" },
         de: { type: "string" },
         ate: { type: "string" },
@@ -1000,6 +1001,21 @@ const executors = {
     const livro = livroDeGastos();
     if (!livro) return { error: "o cofre da memória não está disponível" };
     try {
+      // 08/11: "um PDF com o relatório do meu mês e quanto posso guardar". O
+      // relatório inteiro sai do livro, com os números prontos, e vai direto
+      // para o PDF — ela não reescreve número nenhum no caminho.
+      if (args?.pdf) {
+        const rel = await livro.relatorio(args);
+        const feito = await executors.criar_pdf({ caminho: rel.arquivo, conteudo: rel.markdown, titulo: rel.titulo });
+        if (feito.error) return feito;
+        const c = await livro.consultar(args);
+        return {
+          ...feito,
+          saldo_em_conta: c.saldo_em_conta?.valor || c.saldo_em_conta,
+          fim_do_mes: c.quanto_sobra?.valor,
+          aviso: feito.aviso + " Os números estão no PDF; em voz, diga só o fim do mês e quanto dá para guardar por mês.",
+        };
+      }
       return await livro.consultar(args || {});
     } catch (err) {
       return { error: err.message };

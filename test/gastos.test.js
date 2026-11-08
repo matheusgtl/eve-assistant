@@ -179,6 +179,17 @@ const { Memoria } = require("../memoria.js");
   assert.match(fim.depois_das_contas, /^R\$ 153,52/, "depois da fatura, antes do salário");
   assert.match(fim.mes_que_vem[0], /13\/12: − R\$ 158,71 Fatura Nubank \(não entra neste mês\)/,
     "a fatura de dezembro não é a de novembro: substitui só no mesmo mês, e não entra na conta deste");
+  // 08/11: "um PDF com o relatório do meu mês e quanto posso guardar". Os
+  // números saem do livro, não dela.
+  const rel = (await real.relatorio({}, dia8)).markdown;
+  assert.match(rel, /^# Relatório de novembro de 2026$/m);
+  assert.match(rel, /R\$ 105,50 saíram da conta, R\$ 97,43 no cartão/, "cartão separado da conta");
+  assert.match(rel, /Previsto para o fim do mês:\*\* R\$ 634,98/);
+  assert.match(rel, /deixa de sobra:\*\* R\$ 544,56/, "544,96 + 534,96 − 105,50 − 376,36 − 53,50");
+  assert.match(rel, /Em 12 meses:\*\* R\$ 7\.169,70/, "634,98 + 12 × 544,56");
+  assert.match(rel, /R\$ 10\.000,00:\*\* 18 meses/);
+  assert.ok(!/\|/.test(rel), "sem tabela: o PDF não desenha tabela");
+
   // O salário cai com outro nome e outro valor: o previsto sai sozinho.
   const dia20 = new Date(2026, 10, 20, 10);
   const caiu = await real.registrar({ valor: 540, descricao: "caiu o pagamento", categoria: "Entrada" }, dia20);

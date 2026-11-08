@@ -100,6 +100,8 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   // 08/11: "A pagar" e `parcelas` no registrar, sem subir o teto — o
   // vai_pagar perdeu a descrição (o quanto_sobra agora vem sozinho) e as
   // descrições do registrar e do consultar encolheram. 2.797 tokens.
+  // 08/11: "A receber" e o `pdf` do consultar (relatório do mês feito pelo
+  // livro) couberam encolhendo a descrição do criar_pdf. 2.798 tokens.
   assert.ok(tokens < 2800, `as ferramentas somam ~${tokens} tokens (teto: 2800)`);
   assert.ok(porFerramenta < 80, `~${porFerramenta.toFixed(0)} tokens por ferramenta (teto: 80)`);
 
