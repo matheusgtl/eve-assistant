@@ -135,7 +135,7 @@ const { Memoria } = require("../memoria.js");
   for (const v of [10, 22, 20]) await real.registrar({ valor: v, descricao: "pix", categoria: "Outros", pagamento: "Pix" }, dia7);
   const sobra = (await real.consultar({ vai_pagar: [327.64] }, dia7)).quanto_sobra;
   assert.strictEqual(sobra.valor, "R$ 202,24", "529,88 − 327,64; não os 653,70 que ela disse");
-  assert.match(sobra.conta, /R\$ 529,88 na conta − R\$ 327,64 = R\$ 202,24/);
+  assert.deepStrictEqual(sobra.linha_do_tempo, ["hoje: R$ 529,88 na conta", "planejado: − R$ 327,64 que ele quer separar = R$ 202,24"]);
   const falta = (await real.consultar({ vai_pagar: [600] }, dia7)).quanto_sobra;
   assert.match(falta.aviso, /NÃO FECHA/, "quando não fecha, ela é avisada");
   assert.strictEqual((await real.consultar({}, dia7)).quanto_sobra, undefined, "sem vai_pagar, nada");
@@ -163,6 +163,32 @@ const { Memoria } = require("../memoria.js");
     "repetir a fatura no vai_pagar não desconta duas vezes");
   assert.ok((await real.registrar({ valor: 50, descricao: "cinema (estimativa)", categoria: "A pagar", data: "2026-11-20" }, dia8)).erro,
     "estimativa não vira conta a pagar");
+  // 08/11, de novo: "com o que vou receber dia 20, quanto tenho no fim do
+  // mês?" — ela deu −R$ 229,83 e depois +R$ 879,34. A linha do tempo vem pronta.
+  const prev = await real.registrar({ valor: 534.96, descricao: "2ª parcela do salário", categoria: "A receber", data: "2026-11-20" }, dia8);
+  assert.ok(prev.ok, JSON.stringify(prev));
+  await real.registrar({ valor: 158.71, descricao: "Fatura Nubank", categoria: "A pagar", data: "2026-12-13" }, dia8);
+  const fim = (await real.consultar({}, dia8)).quanto_sobra;
+  assert.strictEqual(fim.valor, "R$ 634,98", "529,88 − 376,36 + 534,96 − 53,50 de dízimo");
+  assert.deepStrictEqual(fim.linha_do_tempo, [
+    "hoje: R$ 529,88 na conta",
+    "13/11: − R$ 376,36 Fatura do Nubank = R$ 153,52",
+    "20/11: + R$ 534,96 2ª parcela do salário = R$ 688,48",
+    "20/11: − R$ 53,50 dízimo (10%) = R$ 634,98",
+  ]);
+  assert.match(fim.depois_das_contas, /^R\$ 153,52/, "depois da fatura, antes do salário");
+  assert.match(fim.mes_que_vem[0], /13\/12: − R\$ 158,71 Fatura Nubank \(não entra neste mês\)/,
+    "a fatura de dezembro não é a de novembro: substitui só no mesmo mês, e não entra na conta deste");
+  // O salário cai com outro nome e outro valor: o previsto sai sozinho.
+  const dia20 = new Date(2026, 10, 20, 10);
+  const caiu = await real.registrar({ valor: 540, descricao: "caiu o pagamento", categoria: "Entrada" }, dia20);
+  assert.match(caiu.quitou || "", /2ª parcela/, "não conta o salário duas vezes");
+  await real.registrar({ valor: 54, descricao: "dízimo", categoria: "Igreja" }, dia20);
+  assert.strictEqual((await real.consultar({}, dia20)).a_receber, undefined);
+  for (const i of (await real.consultar({}, dia20)).a_pagar) if (i.vence === "13/12") await real.apagar({ id: i.id });
+  await real.apagar({ id: caiu.id });
+  for (const i of (await real.consultar({ busca: "dízimo" }, dia20)).itens) if (i.data === "2026-11-20") await real.apagar({ id: i.id });
+
   // Ele paga a fatura: sai das contas a pagar sozinha, e sai da conta.
   const dia13 = new Date(2026, 10, 13, 9);
   const paga = await real.registrar({ valor: 376.36, descricao: "paguei a fatura do Nubank", categoria: "Contas", pagamento: "Pix" }, dia13);

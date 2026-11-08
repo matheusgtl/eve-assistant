@@ -43,6 +43,16 @@ const noCartao = (i) => !i.entrada && FORA_DA_CONTA.test(i.pagamento || "") && !
 // passar no vai_pagar; aqui ela entra sozinha no quanto_sobra e sai sozinha
 // quando ele paga.
 const A_PAGAR = "A pagar";
+// "A receber" é o espelho: dinheiro que vai entrar numa data (a 2ª parcela do
+// salário, dia 20). 08/11: "com o que vou receber dia 20, quanto tenho no fim
+// do mês?" — sem isso no livro ela montou a conta na mão: tirou o Claude (que é
+// no cartão), o app da igreja (já pago no dia 7), os gastos já lançados (que já
+// estavam no saldo) e deu −R$ 229,83. Depois tirou a fatura, que ainda vai ser
+// paga, e deu +R$ 879,34. O certo era R$ 634,98.
+const A_RECEBER = "A receber";
+const PREVISTO = new Set([A_PAGAR, A_RECEBER]);
+// Pagamento do trabalho tem dízimo de 10%, separado no dia em que cai.
+const DO_TRABALHO = /sal[aá]rio|pagamento|parcela|trabalho/i;
 // Palavras que não dizem QUAL conta é: "paguei a conta do mês" não quita a
 // fatura do Nubank só por ter "conta".
 const VAZIAS = new Set(["pagamento", "pagar", "paguei", "pago", "conta", "contas", "valor", "para", "pela", "pelo", "mensal", "parcela"]);
@@ -78,6 +88,7 @@ function categoriaDe(bruta, entrada) {
   const chave = semAcento(bruta);
   if (chave === "saldo") return SALDO;
   if (chave.replace(/\s+/g, " ") === "a pagar") return A_PAGAR;
+  if (chave.replace(/\s+/g, " ") === "a receber") return A_RECEBER;
   if (!chave) return "Outros";
   const exata = CATEGORIAS.find((c) => semAcento(c) === chave);
   if (exata) return exata;
@@ -263,10 +274,10 @@ class Gastos {
     const ONDE_VAI_O_PLANO =
       "Conta que ainda vai vencer (fatura, boleto) é a categoria A pagar, com a data do vencimento. " +
       "Média e estimativa vão em fatos/financas-do-matheus. O resto se lança no dia em que ele pagou ou recebeu.";
-    const aPagar = categoriaDe(categoria) === A_PAGAR && !entrada;
-    if (aPagar) {
+    const cat0 = categoriaDe(categoria);
+    if (PREVISTO.has(cat0) && !entrada) {
       if (/estimativ|m[eé]dia|or[cç]amento/i.test(desc)) return { erro: `"${desc}" é plano, não conta. ${ONDE_VAI_O_PLANO}` };
-      return this.contaAPagar({ id: null, data: dia, centavos: Math.abs(centavos(v)), categoria: A_PAGAR, descricao: desc, pagamento: "", entrada: false }, agora);
+      return this.contaAPagar({ id: null, data: dia, centavos: Math.abs(centavos(v)), categoria: cat0, descricao: desc, pagamento: "", entrada: false }, agora);
     }
     if (dia > hoje(agora)) {
       return { erro: `${dia} ainda não chegou: isso não aconteceu ainda. ${ONDE_VAI_O_PLANO}` };
@@ -321,7 +332,7 @@ class Gastos {
         ? "Foi no cartão: NÃO sai da conta agora, entra na fatura. Não desconte do saldo."
         : undefined;
     // Pagou uma conta que estava a pagar? Ela sai da lista sozinha.
-    const quitou = !item.entrada && !cartao ? await this.quitar(item) : undefined;
+    const quitou = !cartao ? await this.quitar(item) : undefined;
     this.onDebug(`gasto registrado: ${id} ${reais(item.centavos)} ${item.categoria} (${descFinal})` + (quitou ? ` — quitou ${quitou}` : ""));
     return {
       ok: true,
@@ -359,32 +370,43 @@ class Gastos {
   /// Conta a vencer. Se já há uma parecida em aberto ("Fatura Nubank" de
   /// novo), o valor novo SUBSTITUI o velho: é ele dizendo que a fatura mudou.
   async contaAPagar(item, agora) {
-    const abertas = (await this.todos()).filter((i) => i.categoria === A_PAGAR);
+    const abertas = (await this.todos()).filter((i) => i.categoria === item.categoria);
     const velha = abertas.find((i) => temEmComum(i.descricao, item.descricao) && i.data.slice(0, 7) === item.data.slice(0, 7));
     if (velha) await this.tirar(velha);
     item.id = await this.novoId();
     const mes = item.data.slice(0, 7);
     await this.gravarMes(mes, [...(await this.lerMes(mes)), item]);
-    this.onDebug(`conta a pagar: ${item.id} ${reais(item.centavos)} ${item.descricao} vence ${item.data}` + (velha ? ` (era ${reais(velha.centavos)})` : ""));
+    const receber = item.categoria === A_RECEBER;
+    this.onDebug(`${receber ? "a receber" : "conta a pagar"}: ${item.id} ${reais(item.centavos)} ${item.descricao} em ${item.data}` + (velha ? ` (era ${reais(velha.centavos)})` : ""));
     return {
       ok: true,
       id: item.id,
-      registrado: `a pagar: ${reais(item.centavos)} · ${item.descricao} · vence ${ddmm(item.data)}`,
+      registrado: `${receber ? "a receber" : "a pagar"}: ${reais(item.centavos)} · ${item.descricao} · ${ddmm(item.data)}`,
       substituiu: velha ? `${reais(velha.centavos)} (${velha.descricao}) — o valor velho saiu` : undefined,
-      lembrar: "Não saiu nada da conta ainda. Quando ele disser que pagou, lance o pagamento: a conta sai daqui sozinha.",
+      lembrar: receber
+        ? "Ainda não entrou. Quando ele disser que caiu, lance a Entrada (e o dízimo): isto sai daqui sozinho."
+        : "Não saiu nada da conta ainda. Quando ele disser que pagou, lance o pagamento: a conta sai daqui sozinha.",
     };
   }
 
   /// Pagamento de verdade que corresponde a uma conta a pagar: tira a conta.
   /// Casa pelo nome ("fatura", "nubank"); pelo valor só se for a única com ele.
   async quitar(pago) {
-    const abertas = (await this.todos()).filter((i) => i.categoria === A_PAGAR);
+    const tipo = pago.entrada ? A_RECEBER : A_PAGAR;
+    const abertas = (await this.todos()).filter((i) => i.categoria === tipo);
     const porNome = abertas.filter((i) => temEmComum(i.descricao, pago.descricao));
     const porValor = abertas.filter((i) => i.centavos === pago.centavos);
+    // Salário que caiu com valor diferente do previsto e outro nome ("caiu o
+    // pagamento" × "2ª parcela do salário"): é o que estava previsto para
+    // aqueles dias, se for o único.
+    const perto = pago.entrada
+      ? abertas.filter((i) => Math.abs(Date.parse(i.data) - Date.parse(pago.data)) <= 5 * 864e5 && DO_TRABALHO.test(i.descricao))
+      : [];
     const alvo =
       porNome.find((i) => i.centavos === pago.centavos) ||
       (porNome.length === 1 ? porNome[0] : null) ||
-      (porValor.length === 1 ? porValor[0] : null);
+      (porValor.length === 1 ? porValor[0] : null) ||
+      (pago.entrada && DO_TRABALHO.test(pago.descricao) && perto.length === 1 ? perto[0] : null);
     if (!alvo) return undefined;
     await this.tirar(alvo);
     return `${alvo.descricao} (${reais(alvo.centavos)}, vencia ${ddmm(alvo.data)})`;
@@ -409,7 +431,7 @@ class Gastos {
     const cat = categoria ? categoriaDe(categoria) : null;
     const termo = semAcento(busca);
     const itens = todos
-      .filter((i) => i.categoria !== A_PAGAR)
+      .filter((i) => !PREVISTO.has(i.categoria))
       .filter((i) => i.data >= inicio && i.data <= fim)
       .filter((i) => !cat || i.categoria === cat || (semAcento(categoria) === "entrada" && i.entrada))
       .filter((i) => !termo || semAcento(`${i.descricao} ${i.pagamento}`).includes(termo))
@@ -417,7 +439,9 @@ class Gastos {
 
     const r = resumir(itens);
     const saldo = await this.saldoEmConta(agora);
-    const abertas = (await this.todos()).filter((i) => i.categoria === A_PAGAR).sort((a, b) => a.data.localeCompare(b.data));
+    const previstos = (await this.todos()).filter((i) => PREVISTO.has(i.categoria)).sort((a, b) => a.data.localeCompare(b.data));
+    const abertas = previstos.filter((i) => i.categoria === A_PAGAR);
+    const aReceber = previstos.filter((i) => i.categoria === A_RECEBER);
     const LIMITE = 30;
     return {
       periodo: `${inicio} a ${fim}`,
@@ -435,7 +459,10 @@ class Gastos {
             atrasada: i.data < hoje(agora) ? "já venceu: pergunte se ele pagou" : undefined,
           }))
         : undefined,
-      quanto_sobra: await this.quantoSobra(saldo, abertas, vai_pagar),
+      a_receber: aReceber.length
+        ? aReceber.map((i) => ({ id: i.id, dia: ddmm(i.data), valor: reais(i.centavos), descricao: i.descricao }))
+        : undefined,
+      quanto_sobra: await this.quantoSobra(saldo, previstos, vai_pagar, agora),
       por_categoria: r.porCategoria.map((c) => ({ categoria: c.categoria, total: reais(c.centavos), qtd: c.qtd })),
       itens: itens.slice(0, LIMITE).map((i) => ({
         id: i.id, data: i.data, valor: reais(i.centavos), categoria: i.categoria,
@@ -462,7 +489,7 @@ class Gastos {
     let c = base.centavos;
     const contados = [];
     for (const i of linha.slice(k + 1)) {
-      if (i.categoria === SALDO || i.categoria === A_PAGAR) continue;
+      if (i.categoria === SALDO || PREVISTO.has(i.categoria)) continue;
       if (FORA_DA_CONTA.test(i.pagamento || "")) continue;
       c += i.entrada ? i.centavos : -i.centavos;
       contados.push(`${i.entrada ? "+" : "−"}${reais(i.centavos).replace("R$ ", "")} ${i.descricao} (${quandoFoi(i.data, agora)})`);
@@ -489,30 +516,55 @@ class Gastos {
   ///
   /// 08/11: as contas a pagar entram sozinhas; o vai_pagar é só o que não é
   /// conta lançada (guardar 30, um gasto que ele planeja).
-  async quantoSobra(saldo, abertas, vaiPagar) {
+  ///
+  /// 08/11, de novo: "e no fim do mês, com o que vou receber dia 20?" Agora a
+  /// resposta é uma linha do tempo do saldo, dia por dia, até o fim do mês: o
+  /// que já aconteceu está no saldo de hoje, o que vence ou cai depois entra na
+  /// data dele, e o dízimo de salário previsto entra sozinho. O que é do mês
+  /// que vem aparece à parte e NÃO entra.
+  async quantoSobra(saldo, previstos, vaiPagar, agora) {
+    const fimDoMes = `${hoje(agora).slice(0, 7)}-31`;
+    const doMes = previstos.filter((i) => i.data <= fimDoMes);
+    const depois = previstos.filter((i) => i.data > fimDoMes);
     const extras = (Array.isArray(vaiPagar) ? vaiPagar : vaiPagar != null ? [vaiPagar] : [])
       .map((v) => centavos(Math.abs(valorDe(v))))
       .filter((c) => Number.isFinite(c) && c > 0)
       // A conta já lançada não entra duas vezes se ela repetir o valor.
-      .filter((c) => !abertas.some((a) => a.centavos === c));
-    const lista = [
-      ...abertas.map((a) => ({ c: a.centavos, rotulo: `${reais(a.centavos)} (${a.descricao}, ${ddmm(a.data)})` })),
-      ...extras.map((c) => ({ c, rotulo: reais(c) })),
-    ];
-    if (!lista.length) return undefined;
+      .filter((c) => !previstos.some((a) => a.categoria === A_PAGAR && a.centavos === c));
+    if (!doMes.length && !extras.length) return undefined;
     if (typeof saldo !== "object") {
       return "sem saldo de partida: pergunte quanto ele tem na conta agora e lance com a categoria Saldo";
     }
-    const agoraC = centavos(valorDe(saldo.valor));
-    const sai = lista.reduce((a, b) => a + b.c, 0);
-    const fica = agoraC - sai;
+    let c = centavos(valorDe(saldo.valor));
+    const passos = [`hoje: ${reais(c)} na conta`];
+    const mexe = (delta, rotulo, quando) => {
+      c += delta;
+      passos.push(`${quando}: ${delta < 0 ? "−" : "+"} ${reais(Math.abs(delta))} ${rotulo} = ${reais(c)}`);
+    };
+    const depoisDasContas = c - doMes.filter((i) => i.categoria === A_PAGAR).reduce((a, i) => a + i.centavos, 0);
+    for (const i of doMes) {
+      const quando = i.data < hoje(agora) ? `${ddmm(i.data)} (atrasada)` : ddmm(i.data);
+      if (i.categoria === A_PAGAR) mexe(-i.centavos, i.descricao, quando);
+      else {
+        mexe(i.centavos, i.descricao, quando);
+        if (DO_TRABALHO.test(i.descricao)) mexe(-Math.round(i.centavos / 10), "dízimo (10%)", quando);
+      }
+    }
+    for (const e of extras) mexe(-e, "que ele quer separar", "planejado");
+    const temReceber = doMes.some((i) => i.categoria === A_RECEBER);
     return {
-      valor: reais(fica),
-      conta: `${reais(agoraC)} na conta − ${lista.map((x) => x.rotulo).join(" − ")} = ${reais(fica)}`,
+      valor: reais(c),
+      // "Quanto sobra depois da fatura?" é este; "no fim do mês" é o valor.
+      depois_das_contas: temReceber ? `${reais(depoisDasContas)} (hoje menos as contas a pagar, sem contar o que vai receber)` : undefined,
+      linha_do_tempo: passos,
+      mes_que_vem: depois.length
+        ? depois.map((i) => `${ddmm(i.data)}: ${i.categoria === A_PAGAR ? "−" : "+"} ${reais(i.centavos)} ${i.descricao} (não entra neste mês)`)
+        : undefined,
       aviso:
-        "Este é o número final: diga este, sem refazer a conta e sem somar salário ou dízimo, que já estão no saldo. " +
-        "Compra no cartão não entra: já está dentro da fatura." +
-        (fica < 0 ? " NÃO FECHA: falta dinheiro — diga quanto falta." : ""),
+        "valor é o que fica no fim do mês, e é o que ele guarda. Diga como veio, sem refazer a conta. Já está tudo " +
+        "dentro: gastos lançados e o que já foi pago estão no saldo de hoje; compra no cartão e o Claude estão na " +
+        "fatura; não desconte de novo." +
+        (c < 0 ? " NÃO FECHA: falta dinheiro — diga quanto falta." : ""),
     };
   }
 
@@ -537,6 +589,7 @@ function resumir(itens) {
   for (const i of itens) {
     if (i.categoria === SALDO) continue;
     if (i.categoria === A_PAGAR) { aPagar += i.centavos; continue; }
+    if (i.categoria === A_RECEBER) continue;
     if (i.entrada) { entradas += i.centavos; continue; }
     gastos += i.centavos;
     if (noCartao(i)) emCartao += i.centavos;
@@ -549,4 +602,4 @@ function resumir(itens) {
   return { gastos, entradas, porCategoria, noCartao: emCartao, aPagar };
 }
 
-module.exports = { Gastos, CATEGORIAS, A_PAGAR, PASTA_GASTOS, valorDe, categoriaDe, dataDe, reais };
+module.exports = { Gastos, CATEGORIAS, A_PAGAR, A_RECEBER, PASTA_GASTOS, valorDe, categoriaDe, dataDe, reais };
