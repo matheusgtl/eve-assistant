@@ -512,7 +512,7 @@ const toolDefinitions = [
   },
   {
     name: "criar_evento",
-    description: "Compromisso no Calendário do Mac: aparece no Calendário.app e no iPhone.",
+    description: "Compromisso no Calendário do Mac e do iPhone.",
     input_schema: {
       type: "object",
       properties: {
@@ -520,8 +520,8 @@ const toolDefinitions = [
         inicio: { type: "string", description: "ISO local. Só a data (2026-05-02) = dia inteiro." },
         fim: { type: "string", description: "ISO local. Só com hora marcada." },
         local: { type: "string" },
-        dia_inteiro: { type: "boolean" },
         alarme_minutos: { type: "integer", description: "Aviso N minutos antes." },
+        repetir: { type: "string", description: "anual/mensal/semanal" },
       },
       required: ["titulo", "inicio"],
     },
@@ -1209,13 +1209,14 @@ const executors = {
 
   // ---------------- calendário do macOS ----------------
   // Separado dos lembretes de propósito: ver o comentário em calendario.js.
-  async criar_evento({ titulo, inicio, fim, local, dia_inteiro, alarme_minutos }) {
+  async criar_evento({ titulo, inicio, fim, local, dia_inteiro, alarme_minutos, repetir }) {
     if (!ctx.calendario) return { error: "o Calendário não está disponível agora" };
     try {
       return await ctx.calendario.criar({
         titulo, inicio, fim, local,
         diaInteiro: dia_inteiro,
         alarmeMinutos: alarme_minutos,
+        repetir,
       });
     } catch (err) {
       // O código vem do helper e diz o que ELE precisa fazer. Sem isso, "falhou"

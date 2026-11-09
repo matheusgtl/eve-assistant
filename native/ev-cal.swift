@@ -312,6 +312,21 @@ let HORA_DO_AVISO = 9
 /// Usada por duas vias: pela ação "lembrete" e, de carona, pelo "criar" do
 /// evento — porque o pedido dele foi que tudo o que entra na agenda apareça
 /// também nos Lembretes, no Mac e no iPhone.
+/// `--repetir anual|mensal|semanal|diario`. 09/11: "aniversário da Hortência,
+/// dia todo, TODO ANO" virou um evento só de 2026 — não havia como repetir.
+func regraDeRepeticao() -> EKRecurrenceRule? {
+    guard let bruto = opcao("repetir")?.lowercased() else { return nil }
+    let freq: EKRecurrenceFrequency
+    switch bruto {
+    case "anual", "ano", "yearly": freq = .yearly
+    case "mensal", "mes", "mês", "monthly": freq = .monthly
+    case "semanal", "semana", "weekly": freq = .weekly
+    case "diario", "diário", "dia", "daily": freq = .daily
+    default: morrer("repetir aceita anual, mensal, semanal ou diario (veio \"\(bruto)\")")
+    }
+    return EKRecurrenceRule(recurrenceWith: freq, interval: 1, end: nil)
+}
+
 func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
                    lista: String?, alarmeMinutos: Double?) -> [String: Any] {
     garantirPermissaoLembretes()
@@ -347,6 +362,7 @@ func criarLembrete(titulo: String, quando: Date?, comHora: Bool, notas: String?,
 
         let desconto = (alarmeMinutos ?? 0) * 60
         r.addAlarm(EKAlarm(absoluteDate: instante.addingTimeInterval(-abs(desconto))))
+        if let regra = regraDeRepeticao() { r.addRecurrenceRule(regra) }
     }
 
     // JÁ EXISTE UM IGUAL? Então não se cria outro.
@@ -469,9 +485,10 @@ case "criar":
         // Negativo porque EventKit conta ANTES do começo.
         evento.addAlarm(EKAlarm(relativeOffset: -abs(m) * 60))
     }
+    if let regra = regraDeRepeticao() { evento.addRecurrenceRule(regra) }
 
     do {
-        try store.save(evento, span: .thisEvent, commit: true)
+        try store.save(evento, span: .futureEvents, commit: true)
     } catch {
         morrer("o Calendário recusou o evento: \(error.localizedDescription)")
     }
@@ -493,6 +510,12 @@ case "criar":
     // O que se faz é contar o que aconteceu — `lembrete` traz o item, ou
     // `lembrete_erro` traz o motivo, e ela diz isso a ele em uma frase.
     var saida: [String: Any] = ["criado": true, "evento": descrever(gravado)]
+    if let regra = gravado.recurrenceRules?.first {
+        let nomes: [EKRecurrenceFrequency: String] = [.yearly: "todo ano", .monthly: "todo mês", .weekly: "toda semana", .daily: "todo dia"]
+        saida["repete"] = nomes[regra.frequency] ?? "sim"
+    } else if opcao("repetir") != nil {
+        saida["repete_erro"] = "pedi para repetir, mas o Calendário gravou sem repetição"
+    }
     if !tem("sem-lembrete") {
         let estado = EKEventStore.authorizationStatus(for: .reminder)
         let negado = estado == .denied || estado == .restricted

@@ -64,6 +64,11 @@ const chamadas = () =>
   assert.match(chamada, /--alarme 60/);
   assert.ok(!/--fim/.test(chamada), "sem fim declarado, quem decide a duração é o helper");
   assert.ok(!/--dia-inteiro/.test(chamada), "e dia inteiro só vai quando é pedido");
+  assert.ok(!/--repetir/.test(chamada), "sem pedido, não repete");
+
+  // 09/11: "aniversário da Hortência, dia todo, todo ano" saiu só em 2026.
+  await cal.criar({ titulo: "Aniversário da Hortência", inicio: "2026-11-30", repetir: "anual" });
+  assert.match(chamadas().at(-1), /--repetir anual/, "todo ano chega ao helper");
 
   // ------------------------------- 2. o que falta é dito antes de gastar
   for (const [args, esperado] of [

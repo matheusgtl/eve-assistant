@@ -63,7 +63,7 @@ function rodar(args) {
 }
 
 /// Cria um evento. `inicio`/`fim` em ISO local ("2026-05-02T09:00").
-function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, calendario, semLembrete } = {}) {
+function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, calendario, semLembrete, repetir } = {}) {
   if (!titulo) return Promise.reject(new Error("o evento precisa de um título"));
   if (!inicio) return Promise.reject(new Error("o evento precisa de uma data de início"));
   const args = ["criar", "--titulo", String(titulo), "--inicio", String(inicio)];
@@ -75,6 +75,7 @@ function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, c
     args.push("--alarme", String(Number(alarmeMinutos)));
   }
   if (calendario) args.push("--calendario", String(calendario));
+  if (repetir) args.push("--repetir", String(repetir));
   // Por padrão o evento VIRA TAMBÉM um lembrete no app Lembretes — foi o que
   // ele pediu. `semLembrete` existe para o caso de ele não querer o espelho de
   // um compromisso específico.
