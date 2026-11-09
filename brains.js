@@ -167,6 +167,8 @@ function montarSystemPrompt({
       "parcelas se parcelou — não sai da conta. Quanto tem, quanto sobra, fim do mês, dá pra guardar? " +
       "consultar_gastos e diga saldo_em_conta e quanto_sobra como vierem (a linha_do_tempo já tem contas, " +
       "salário e dízimo): nunca monte essa conta você. vai_pagar só para gasto que ele planeja; o que sobra ele guarda. " +
+      "Fim do ano, daqui a N meses: consultar_gastos com ate (AAAA-MM-DD) e diga quanto_sobra.valor e por_mes — " +
+      "nunca multiplique um mês nem some o saldo de novo. Depois de lançar, use agora_na_conta que vem no resultado. " +
       "Relatório ou PDF dos gastos: consultar_gastos com pdf — nunca escreva esse relatório você.",
     // 04/11: 41,25 + 90,42 = "138,67" num plano para ele guardar dinheiro.
     "- Toda conta com número, por menor que seja, é calcular. Nunca some nem subtraia de cabeça.",

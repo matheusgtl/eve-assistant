@@ -177,7 +177,7 @@ const { Memoria } = require("../memoria.js");
     "20/11: − R$ 53,50 dízimo (10%) = R$ 634,98",
   ]);
   assert.match(fim.depois_das_contas, /^R\$ 153,52/, "depois da fatura, antes do salário");
-  assert.match(fim.mes_que_vem[0], /13\/12: − R\$ 158,71 Fatura Nubank \(não entra neste mês\)/,
+  assert.match(fim.mes_que_vem[0], /13\/12: − R\$ 158,71 Fatura Nubank \(fora desta conta\)/,
     "a fatura de dezembro não é a de novembro: substitui só no mesmo mês, e não entra na conta deste");
   // 08/11: "um PDF com o relatório do meu mês e quanto posso guardar". Os
   // números saem do livro, não dela.
@@ -189,6 +189,24 @@ const { Memoria } = require("../memoria.js");
   assert.match(rel, /Em 12 meses:\*\* R\$ 7\.169,70/, "634,98 + 12 × 544,56");
   assert.match(rel, /R\$ 10\.000,00:\*\* 18 meses/);
   assert.ok(!/\|/.test(rel), "sem tabela: o PDF não desenha tabela");
+
+  // 09/11: "quanto vou ter até o fim do ano?" — ela disse R$ 1.799,84
+  // (multiplicou o fim de novembro e somou o saldo de hoje, que já estava
+  // dentro). Com `ate`, a linha do tempo vai até lá usando os fixos.
+  fs.writeFileSync(path.join(real.pasta, "fixos.md"), [
+    "| dia | valor | tipo | descrição |", "|---|---|---|---|",
+    "| 5 | 534,96 | A receber | 1ª parcela do salário |",
+    "| 7 | 22,00 | A pagar | Ajuda no app de música da igreja |",
+    "| 13 | 110,00 | A pagar | Fatura Nubank (mínimo) |",
+    "| 20 | 534,96 | A receber | 2ª parcela do salário |",
+  ].join("\n"));
+  const ano = (await real.consultar({ ate: "2026-12-31" }, dia8)).quanto_sobra;
+  assert.deepStrictEqual(ano.por_mes, ["fim de novembro: R$ 634,98", "fim de dezembro: R$ 1.417,19"]);
+  assert.strictEqual(ano.valor, "R$ 1.417,19", "634,98 + 2 × (534,96 − 53,50) − 22 − 158,71");
+  assert.ok(ano.linha_do_tempo.some((l) => /13\/12: − R\$ 158,71/.test(l)), "a fatura de dezembro lançada vale, não o mínimo fixo");
+  assert.ok(!ano.linha_do_tempo.some((l) => /13\/12 \(fixo\)/.test(l)));
+  assert.strictEqual((await real.consultar({}, dia8)).quanto_sobra.valor, "R$ 634,98", "sem `ate`, só até o fim do mês");
+  fs.rmSync(path.join(real.pasta, "fixos.md"));
 
   // O salário cai com outro nome e outro valor: o previsto sai sozinho.
   const dia20 = new Date(2026, 10, 20, 10);
@@ -204,6 +222,8 @@ const { Memoria } = require("../memoria.js");
   const dia13 = new Date(2026, 10, 13, 9);
   const paga = await real.registrar({ valor: 376.36, descricao: "paguei a fatura do Nubank", categoria: "Contas", pagamento: "Pix" }, dia13);
   assert.match(paga.quitou || "", /Fatura do Nubank/);
+  // 09/11: depois de "paguei minha fatura" ela disse o saldo de antes. O novo vem junto.
+  assert.strictEqual(paga.agora_na_conta, "R$ 153,52", "o saldo novo vem no próprio lançamento");
   const treze = await real.consultar({}, dia13);
   assert.strictEqual(treze.a_pagar, undefined, "paga, não está mais a pagar");
   assert.strictEqual(treze.saldo_em_conta.valor, "R$ 153,52");

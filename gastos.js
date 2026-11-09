@@ -344,8 +344,44 @@ class Gastos {
       },
       parcelas: valoresDasParcelas?.map((c, k) => `${k + 1}ª ${reais(c)}`),
       quitou: quitou ? `${quitou} saiu das contas a pagar` : undefined,
+      ...(await this.depoisDoLancamento(agora)),
       lembrar,
     };
+  }
+
+  /// 09/11: "paguei minha fatura" — ela lançou certo e respondeu "saldo na
+  /// conta: R$ 529,88", o número de ANTES, que estava na conversa. O saldo
+  /// novo vem junto com o lançamento, para ela não precisar lembrar de
+  /// consultar de novo.
+  async depoisDoLancamento(agora) {
+    const c = await this.consultar({}, agora);
+    return {
+      agora_na_conta: typeof c.saldo_em_conta === "object" ? c.saldo_em_conta.valor : undefined,
+      fim_do_mes: typeof c.quanto_sobra === "object" ? c.quanto_sobra.valor : undefined,
+      numeros_novos: "Use estes números, não os que foram ditos antes nesta conversa.",
+    };
+  }
+
+  /// Os fixos de todo mês, em `Gastos/fixos.md` — salário, contas por Pix, a
+  /// fatura mínima. Ele edita à mão no Obsidian. Servem para projetar além do
+  /// mês atual; o mês atual vem só do livro (o que já foi pago está lá).
+  async fixos() {
+    let texto;
+    try {
+      texto = await fsp.readFile(path.join(this.pasta, "fixos.md"), "utf8");
+    } catch {
+      return [];
+    }
+    const lista = [];
+    for (const linha of texto.split("\n")) {
+      const cel = linha.split("|").slice(1, -1).map((x) => x.trim());
+      if (cel.length < 4 || !/^\d{1,2}$/.test(cel[0])) continue;
+      const c = centavos(valorDe(cel[1]));
+      const categoria = categoriaDe(cel[2]);
+      if (!Number.isFinite(c) || !PREVISTO.has(categoria)) continue;
+      lista.push({ dia: Number(cel[0]), centavos: Math.abs(c), categoria, descricao: cel[3] });
+    }
+    return lista;
   }
 
   async novoId() {
@@ -383,6 +419,7 @@ class Gastos {
       id: item.id,
       registrado: `${receber ? "a receber" : "a pagar"}: ${reais(item.centavos)} · ${item.descricao} · ${ddmm(item.data)}`,
       substituiu: velha ? `${reais(velha.centavos)} (${velha.descricao}) — o valor velho saiu` : undefined,
+      ...(await this.depoisDoLancamento(agora)),
       lembrar: receber
         ? "Ainda não entrou. Quando ele disser que caiu, lance a Entrada (e o dízimo): isto sai daqui sozinho."
         : "Não saiu nada da conta ainda. Quando ele disser que pagou, lance o pagamento: a conta sai daqui sozinha.",
@@ -462,7 +499,7 @@ class Gastos {
       a_receber: aReceber.length
         ? aReceber.map((i) => ({ id: i.id, dia: ddmm(i.data), valor: reais(i.centavos), descricao: i.descricao }))
         : undefined,
-      quanto_sobra: await this.quantoSobra(saldo, previstos, vai_pagar, agora),
+      quanto_sobra: await this.quantoSobra(saldo, previstos, vai_pagar, agora, dataDe(ate, agora)),
       por_categoria: r.porCategoria.map((c) => ({ categoria: c.categoria, total: reais(c.centavos), qtd: c.qtd })),
       itens: itens.slice(0, LIMITE).map((i) => ({
         id: i.id, data: i.data, valor: reais(i.centavos), categoria: i.categoria,
@@ -522,16 +559,43 @@ class Gastos {
   /// que já aconteceu está no saldo de hoje, o que vence ou cai depois entra na
   /// data dele, e o dízimo de salário previsto entra sozinho. O que é do mês
   /// que vem aparece à parte e NÃO entra.
-  async quantoSobra(saldo, previstos, vaiPagar, agora) {
-    const fimDoMes = `${hoje(agora).slice(0, 7)}-31`;
-    const doMes = previstos.filter((i) => i.data <= fimDoMes);
-    const depois = previstos.filter((i) => i.data > fimDoMes);
+  ///
+  /// 09/11: "quanto vou ter até o fim do ano?" — ela pegou os R$ 634,98 do fim
+  /// de novembro, chamou de "o que sobra por mês", multiplicou e ainda somou o
+  /// saldo de hoje, que já estava dentro: R$ 1.799,84. Com `ate` no futuro a
+  /// linha do tempo vai até lá, e os meses seguintes vêm dos fixos.
+  async quantoSobra(saldo, previstos, vaiPagar, agora, ate) {
+    const mesAtual = hoje(agora).slice(0, 7);
+    const fimDoMes = `${mesAtual}-31`;
+    const horizonte = ate && ate > fimDoMes ? ate : fimDoMes;
+    const gerados = [];
+    if (horizonte > fimDoMes) {
+      const fixos = await this.fixos();
+      let [a, m] = mesAtual.split("-").map(Number);
+      for (;;) {
+        m++; if (m > 12) { m = 1; a++; }
+        const mes = `${a}-${String(m).padStart(2, "0")}`;
+        if (`${mes}-01` > horizonte) break;
+        const ultimo = new Date(a, m, 0).getDate();
+        for (const f of fixos) {
+          const data = `${mes}-${String(Math.min(f.dia, ultimo)).padStart(2, "0")}`;
+          if (data > horizonte) continue;
+          // A fatura de dezembro já lançada (R$ 158,71) vale mais que o mínimo fixo.
+          // Perto do mesmo dia: o salário do dia 5 lançado não apaga o fixo do dia 20.
+          const jaTem = previstos.some((p) => p.data.slice(0, 7) === mes && p.categoria === f.categoria &&
+            temEmComum(p.descricao, f.descricao) && Math.abs(Number(p.data.slice(8, 10)) - Math.min(f.dia, ultimo)) <= 5);
+          if (!jaTem) gerados.push({ data, centavos: f.centavos, categoria: f.categoria, descricao: f.descricao, fixo: true });
+        }
+      }
+    }
+    const dentro = [...previstos.filter((i) => i.data <= horizonte), ...gerados].sort((x, y) => x.data.localeCompare(y.data));
+    const depois = previstos.filter((i) => i.data > horizonte);
     const extras = (Array.isArray(vaiPagar) ? vaiPagar : vaiPagar != null ? [vaiPagar] : [])
       .map((v) => centavos(Math.abs(valorDe(v))))
       .filter((c) => Number.isFinite(c) && c > 0)
       // A conta já lançada não entra duas vezes se ela repetir o valor.
       .filter((c) => !previstos.some((a) => a.categoria === A_PAGAR && a.centavos === c));
-    if (!doMes.length && !extras.length) return undefined;
+    if (!dentro.length && !extras.length) return undefined;
     if (typeof saldo !== "object") {
       return "sem saldo de partida: pergunte quanto ele tem na conta agora e lance com a categoria Saldo";
     }
@@ -541,9 +605,14 @@ class Gastos {
       c += delta;
       passos.push(`${quando}: ${delta < 0 ? "−" : "+"} ${reais(Math.abs(delta))} ${rotulo} = ${reais(c)}`);
     };
+    const doMes = dentro.filter((i) => i.data <= fimDoMes);
     const depoisDasContas = c - doMes.filter((i) => i.categoria === A_PAGAR).reduce((a, i) => a + i.centavos, 0);
-    for (const i of doMes) {
-      const quando = i.data < hoje(agora) ? `${ddmm(i.data)} (atrasada)` : ddmm(i.data);
+    const porMes = [];
+    let mesCorrente = mesAtual;
+    const fechaMes = () => porMes.push(`fim de ${MESES[Number(mesCorrente.slice(5, 7)) - 1]}: ${reais(c)}`);
+    for (const i of dentro) {
+      if (i.data.slice(0, 7) !== mesCorrente) { fechaMes(); mesCorrente = i.data.slice(0, 7); }
+      const quando = (i.data < hoje(agora) ? `${ddmm(i.data)} (atrasada)` : ddmm(i.data)) + (i.fixo ? " (fixo)" : "");
       if (i.categoria === A_PAGAR) mexe(-i.centavos, i.descricao, quando);
       else {
         mexe(i.centavos, i.descricao, quando);
@@ -551,19 +620,24 @@ class Gastos {
       }
     }
     for (const e of extras) mexe(-e, "que ele quer separar", "planejado");
+    fechaMes();
     const temReceber = doMes.some((i) => i.categoria === A_RECEBER);
+    const longe = horizonte > fimDoMes;
     return {
       valor: reais(c),
+      ate: longe ? ddmm(horizonte) + "/" + horizonte.slice(0, 4) : "fim do mês",
       // "Quanto sobra depois da fatura?" é este; "no fim do mês" é o valor.
-      depois_das_contas: temReceber ? `${reais(depoisDasContas)} (hoje menos as contas a pagar, sem contar o que vai receber)` : undefined,
+      depois_das_contas: temReceber ? `${reais(depoisDasContas)} (hoje menos as contas a pagar deste mês, sem contar o que vai receber)` : undefined,
+      por_mes: longe ? porMes : undefined,
       linha_do_tempo: passos,
       mes_que_vem: depois.length
-        ? depois.map((i) => `${ddmm(i.data)}: ${i.categoria === A_PAGAR ? "−" : "+"} ${reais(i.centavos)} ${i.descricao} (não entra neste mês)`)
+        ? depois.map((i) => `${ddmm(i.data)}: ${i.categoria === A_PAGAR ? "−" : "+"} ${reais(i.centavos)} ${i.descricao} (fora desta conta)`)
         : undefined,
       aviso:
-        "valor é o que fica no fim do mês, e é o que ele guarda. Diga como veio, sem refazer a conta. Já está tudo " +
-        "dentro: gastos lançados e o que já foi pago estão no saldo de hoje; compra no cartão e o Claude estão na " +
-        "fatura; não desconte de novo." +
+        `valor é o que ele terá na conta em ${longe ? ddmm(horizonte) : "fim do mês"}, guardando tudo o que sobra: é o total ` +
+        "juntado, NÃO some o saldo de hoje (já está dentro) nem multiplique. Diga como veio, sem refazer a conta. " +
+        "Gastos lançados e o que já foi pago estão no saldo de hoje; compra no cartão e o Claude estão na fatura." +
+        (longe ? " Os meses seguintes usam os fixos (salário, dízimo, fatura mínima): gasto novo no cartão aumenta a fatura e diminui isto." : "") +
         (c < 0 ? " NÃO FECHA: falta dinheiro — diga quanto falta." : ""),
     };
   }
