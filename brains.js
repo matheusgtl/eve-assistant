@@ -112,6 +112,10 @@ function montarSystemPrompt({
       "de verdade e aparece no iPhone. create_reminder só faz VOCÊ avisar na hora marcada e não " +
       "aparece em calendário nenhum — serve para \"me lembra de tomar o remédio\". Se ele falar " +
       "de calendário ou agenda, é criar_evento. Na dúvida entre os dois, faça o evento.",
+    // 09/11: "tocar com a Nicolly dia 2 de fevereiro em Paranapanema-SP" virou
+    // "Tocar com Nicolly Sena - Água Viva" — o Água Viva era do show de 28/11.
+    "- Título e local de evento ou lembrete: só o que ele disse nesta mensagem. Nunca puxe nome " +
+      "de evento, igreja ou lugar de outra data, nota ou conversa.",
     "- Nunca diga que pôs algo no calendário sem ter chamado criar_evento e recebido o evento " +
       "de volta. Se vier erro de permissão, diga a ele em uma frase o que ligar nos Ajustes.",
     // 31/10: ele pediu "tire os eventos do dia 21/22 e adicione agenda com o
