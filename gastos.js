@@ -537,6 +537,7 @@ class Gastos {
       // 07/11: ela somou o salário de novo a este saldo ("sobram R$ 653,70"
       // de uma conta que tinha 529,88). O aviso diz o que já está dentro.
       aviso:
+        "PARA VOCÊ, NÃO LEIA PARA ELE: " +
         "Este saldo JÁ inclui tudo o que entrou e saiu (salário, dízimo, Pix, gastos). Para " +
         "\"quanto sobra depois de pagar X\": este valor menos X, e nada mais. Alelo e crédito não saem da conta.",
     };
@@ -634,6 +635,7 @@ class Gastos {
         ? depois.map((i) => `${ddmm(i.data)}: ${i.categoria === A_PAGAR ? "−" : "+"} ${reais(i.centavos)} ${i.descricao} (fora desta conta)`)
         : undefined,
       aviso:
+        "PARA VOCÊ, NÃO LEIA PARA ELE: " +
         `valor é o que ele terá na conta em ${longe ? ddmm(horizonte) : "fim do mês"}, guardando tudo o que sobra: é o total ` +
         "juntado, NÃO some o saldo de hoje (já está dentro) nem multiplique. Diga como veio, sem refazer a conta. " +
         "Gastos lançados e o que já foi pago estão no saldo de hoje; compra no cartão e o Claude estão na fatura." +
