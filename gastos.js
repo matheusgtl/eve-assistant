@@ -58,6 +58,13 @@ const DO_TRABALHO = /sal[aá]rio|pagamento|parcela|trabalho/i;
 const VAZIAS = new Set(["pagamento", "pagar", "paguei", "pago", "conta", "contas", "valor", "para", "pela", "pelo", "mensal", "parcela"]);
 const palavras = (t) => new Set(semAcento(t).split(/[^a-z0-9]+/).filter((w) => w.length >= 4 && !VAZIAS.has(w)));
 const temEmComum = (a, b) => { const B = palavras(b); return [...palavras(a)].some((w) => B.has(w)); };
+/// O próximo dia N (hoje incluído) em AAAA-MM-DD.
+function proximoDia(n, agora = new Date()) {
+  const h = hoje(agora);
+  let [a, m] = h.split("-").map(Number);
+  if (Number(h.slice(8, 10)) > n) { m++; if (m > 12) { m = 1; a++; } }
+  return `${a}-${String(m).padStart(2, "0")}-${String(n).padStart(2, "0")}`;
+}
 const ddmm = (d) => `${d.slice(8, 10)}/${d.slice(5, 7)}`;
 
 const SINONIMOS = {
@@ -277,6 +284,16 @@ class Gastos {
     const cat0 = categoriaDe(categoria);
     if (PREVISTO.has(cat0) && !entrada) {
       if (/estimativ|m[eé]dia|or[cç]amento/i.test(desc)) return { erro: `"${desc}" é plano, não conta. ${ONDE_VAI_O_PLANO}` };
+      // 22/11: "minha fatura aumentou, agora está em 401,55" — a de 13/12 —
+      // entrou com data 13/11, que já tinha passado. Virou uma segunda fatura,
+      // "vencida há 9 dias", e ela falou em juros. Previsto é sempre futuro.
+      if (dia < hoje(agora)) {
+        return {
+          erro: cat0 === A_PAGAR
+            ? `${ddmm(dia)} já passou. Conta a pagar vence no futuro: se é a fatura que fecha agora, a data é o próximo vencimento (ex.: ${proximoDia(13, agora)}).`
+            : `${ddmm(dia)} já passou. Se o dinheiro já caiu, é categoria Entrada (e o dízimo, se for salário), não A receber.`,
+        };
+      }
       return this.contaAPagar({ id: null, data: dia, centavos: Math.abs(centavos(v)), categoria: cat0, descricao: desc, pagamento: "", entrada: false }, agora);
     }
     if (dia > hoje(agora)) {
@@ -359,6 +376,47 @@ class Gastos {
       agora_na_conta: typeof c.saldo_em_conta === "object" ? c.saldo_em_conta.valor : undefined,
       fim_do_mes: typeof c.quanto_sobra === "object" ? c.quanto_sobra.valor : undefined,
       numeros_novos: "Use estes números, não os que foram ditos antes nesta conversa.",
+    };
+  }
+
+  /// As parcelas das compras no cartão, por vencimento de fatura. Regra: a
+  /// 1ª parcela cai no primeiro dia 13 DEPOIS da compra (08/11 → 13/11, ele
+  /// confirmou; 18/11 → 13/12), e as outras nos meses seguintes. O número de
+  /// parcelas vem do "(Nx de …)" que o registrar escreve na descrição.
+  async parcelasPorFatura(agora) {
+    const diaFatura = (await this.fixos()).find((f) => f.categoria === A_PAGAR && /fatura/i.test(f.descricao))?.dia || 13;
+    const mapa = new Map();
+    for (const i of await this.todos()) {
+      if (!noCartao(i)) continue;
+      const m = i.descricao.match(/(\d{1,2})\s*x\b/i);
+      const n = m ? Number(m[1]) : 1;
+      if (n < 2) continue;
+      const base = Math.floor(i.centavos / n);
+      let [a, mes] = i.data.split("-").map(Number);
+      if (Number(i.data.slice(8, 10)) >= diaFatura) { mes++; if (mes > 12) { mes = 1; a++; } }
+      for (let k = 0; k < n; k++) {
+        const data = `${a}-${String(mes).padStart(2, "0")}-${String(diaFatura).padStart(2, "0")}`;
+        if (data >= hoje(agora)) {
+          const valor = base + (k === 0 ? i.centavos - base * n : 0);
+          const g = mapa.get(data) || { centavos: 0, itens: [] };
+          g.centavos += valor;
+          g.itens.push(`${i.descricao.replace(/\s*\(.*$/, "").replace(/\s*em \d+x.*$/i, "")} ${k + 1}/${n} ${reais(valor)}`);
+          mapa.set(data, g);
+        }
+        mes++; if (mes > 12) { mes = 1; a++; }
+      }
+    }
+    return new Map([...mapa.entries()].sort((x, y) => x[0].localeCompare(y[0])));
+  }
+
+  /// O que já está comprometido no cartão em cada fatura que vem — para
+  /// "qual meu custo fixo?" e "quanto vai ser a fatura de janeiro?".
+  async comprometido(agora) {
+    const mapa = await this.parcelasPorFatura(agora);
+    if (!mapa.size) return undefined;
+    return {
+      por_fatura: [...mapa.entries()].map(([d, g]) => `${ddmm(d)}/${d.slice(2, 4)}: ${reais(g.centavos)} em parcelas (${g.itens.join("; ")})`),
+      aviso: "Só parcelas já compradas. Fora isso a fatura tem o Claude e o que ele comprar à vista no cartão; se uma fatura já está lançada como A pagar, vale o valor lançado.",
     };
   }
 
@@ -497,8 +555,15 @@ class Gastos {
           }))
         : undefined,
       a_receber: aReceber.length
-        ? aReceber.map((i) => ({ id: i.id, dia: ddmm(i.data), valor: reais(i.centavos), descricao: i.descricao }))
+        ? aReceber.map((i) => ({
+            id: i.id, dia: ddmm(i.data), valor: reais(i.centavos), descricao: i.descricao,
+            // 22/11: "recebi meu pagamento" e o do dia 20 continuou "a receber".
+            atrasada: i.data < hoje(agora)
+              ? "a data passou: se ele disse que recebeu, lance a Entrada com o valor (e o dízimo) — isto sai sozinho; se não disse, pergunte"
+              : undefined,
+          }))
         : undefined,
+      cartao_comprometido: await this.comprometido(agora),
       quanto_sobra: await this.quantoSobra(saldo, previstos, vai_pagar, agora, dataDe(ate, agora)),
       por_categoria: r.porCategoria.map((c) => ({ categoria: c.categoria, total: reais(c.centavos), qtd: c.qtd })),
       itens: itens.slice(0, LIMITE).map((i) => ({
@@ -572,6 +637,7 @@ class Gastos {
     const gerados = [];
     if (horizonte > fimDoMes) {
       const fixos = await this.fixos();
+      const porFatura = await this.parcelasPorFatura(agora);
       let [a, m] = mesAtual.split("-").map(Number);
       for (;;) {
         m++; if (m > 12) { m = 1; a++; }
@@ -585,7 +651,14 @@ class Gastos {
           // Perto do mesmo dia: o salário do dia 5 lançado não apaga o fixo do dia 20.
           const jaTem = previstos.some((p) => p.data.slice(0, 7) === mes && p.categoria === f.categoria &&
             temEmComum(p.descricao, f.descricao) && Math.abs(Number(p.data.slice(8, 10)) - Math.min(f.dia, ultimo)) <= 5);
-          if (!jaTem) gerados.push({ data, centavos: f.centavos, categoria: f.categoria, descricao: f.descricao, fixo: true });
+          if (jaTem) continue;
+          // A fatura mínima de um mês futuro é o fixo (Claude) mais as
+          // parcelas já compradas que caem nela.
+          const parc = f.categoria === A_PAGAR && /fatura/i.test(f.descricao) ? (porFatura.get(data)?.centavos || 0) : 0;
+          gerados.push({
+            data, centavos: f.centavos + parc, categoria: f.categoria, fixo: true,
+            descricao: parc ? `${f.descricao} + parcelas ${reais(parc)}` : f.descricao,
+          });
         }
       }
     }

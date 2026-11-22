@@ -233,6 +233,23 @@ const { Memoria } = require("../memoria.js");
   await real.registrar({ valor: 120, descricao: "Conta de luz", categoria: "A pagar", data: "2026-11-20" }, dia13);
   assert.strictEqual((await real.registrar({ valor: 30, descricao: "paguei a conta do celular", categoria: "Contas" }, dia13)).quitou, undefined);
 
+  // 22/11: a fatura de 13/12 entrou como 13/11 (já passado) e virou "vencida
+  // há 9 dias". Previsto no passado é recusado, com a data certa sugerida.
+  const l22 = new Gastos({ pasta: fs.mkdtempSync(path.join(os.tmpdir(), "ev-22-")) });
+  const d22 = new Date(2026, 10, 22, 14, 34);
+  const passada = await l22.registrar({ valor: 401.55, descricao: "Fatura atualizada", categoria: "A pagar", data: "2026-11-13" }, d22);
+  assert.match(passada.erro || "", /já passou[\s\S]*2026-12-13/, "fatura com data passada é recusada e a de 13/12 é sugerida");
+  assert.match((await l22.registrar({ valor: 534.96, descricao: "salário", categoria: "A receber", data: "2026-11-20" }, d22)).erro || "",
+    /Entrada/, "salário com data passada é Entrada");
+
+  // Parcelas por fatura: a 1ª no primeiro dia 13 depois da compra.
+  await l22.registrar({ valor: 684.06, descricao: "Relógio", categoria: "Compras", pagamento: "crédito Nubank", parcelas: 5, data: "2026-11-18" }, d22);
+  await l22.registrar({ valor: 97.43, descricao: "Cotton On", categoria: "Compras", pagamento: "crédito Nubank", parcelas: 2, data: "2026-11-08" }, d22);
+  const comp = (await l22.consultar({}, d22)).cartao_comprometido.por_fatura;
+  assert.match(comp[0], /^13\/12\/26: R\$ 185,53/, "13/12: relógio 1/5 (136,82) + Cotton On 2/2 (48,71)");
+  assert.match(comp[4], /^13\/04\/27: R\$ 136,81/, "a 5ª do relógio em abril");
+  assert.strictEqual(comp.length, 5);
+
   // ------------------------------------------------ 6. pelas ferramentas
   // O livro mora no cofre da memória, e a pasta Gastos não entra no índice:
   // cada mês viraria uma linha que viaja em toda pergunta.

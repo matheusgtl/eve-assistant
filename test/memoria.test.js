@@ -213,6 +213,17 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
       pasta: "fatos",
     });
     assert.ok(junto.ok, "o texto completo com o acréscimo tem de passar");
+
+    // 10/11: o app Midnight Racers foi escrito POR CIMA da nota do grupo —
+    // texto maior, então a trava do tamanho não viu. Esta vê o que some.
+    const outroAssunto = await mem.anotar({
+      nome: "hortencia",
+      quando: "falar do aplicativo",
+      conteudo: "# Aplicativo\n\n" + "Radar com GPS, telemetria, leaderboard, mercado interno, comboio, garagem. ".repeat(30),
+      pasta: "fatos",
+    });
+    assert.match(outroAssunto.erro || "", /SUBSTITUÍDA/, "texto maior que joga fora o que a nota dizia é recusado");
+    assert.match(fs.readFileSync(path.join(cofre, "fatos", "hortencia.md"), "utf8"), /Premiações/, "e a nota fica intacta");
     const final = fs.readFileSync(path.join(cofre, "fatos", "hortencia.md"), "utf8");
     assert.match(final, /Premiações/);
     assert.match(final, /amigos desde agosto/);

@@ -165,17 +165,16 @@ function montarSystemPrompt({
     // 04/11: controle de gastos. A soma é do código; ela só lança e lê.
     // 08/11: ela usou a fatura velha de uma nota e descontou da conta uma
     // compra no crédito. Conta a vencer agora mora no livro (A pagar).
-    "- Ele contou que gastou, pagou ou recebeu? registrar_gasto na hora, sem pedir confirmação. Fatura ou " +
-      "boleto que ainda vai vencer é categoria A pagar, com a data do vencimento (valor novo substitui o velho). " +
-      "Dinheiro que vai cair numa data (salário do dia 20) é A receber. Compra no cartão: pagamento crédito, e " +
-      "parcelas se parcelou — não sai da conta. Quanto tem, quanto sobra, fim do mês, dá pra guardar? " +
-      "consultar_gastos e diga saldo_em_conta e quanto_sobra como vierem (a linha_do_tempo já tem contas, " +
-      "salário e dízimo): nunca monte essa conta você. vai_pagar só para gasto que ele planeja; o que sobra ele guarda. " +
-      "Fim do ano, daqui a N meses: consultar_gastos com ate (AAAA-MM-DD) e diga quanto_sobra.valor e por_mes — " +
-      "nunca multiplique um mês nem some o saldo de novo. Depois de lançar, use agora_na_conta que vem no resultado. " +
-      "Relatório ou PDF dos gastos: consultar_gastos com pdf — nunca escreva esse relatório você.",
+    "- Dinheiro (toda conta é do código): gastou, pagou ou recebeu → registrar_gasto na hora, sem confirmar; " +
+      "salário que caiu = Entrada + dízimo. Fatura/boleto a vencer = A pagar no PRÓXIMO vencimento (valor novo " +
+      "substitui); salário futuro = A receber; cartão = pagamento crédito, e parcelas. Quanto tem, sobra, guardar, " +
+      "fim do mês ou do ano → consultar_gastos (ate para outra data, pdf para relatório, cartao_comprometido para " +
+      "custo fixo) e diga os números como vierem, sem refazer conta.",
     // 04/11: 41,25 + 90,42 = "138,67" num plano para ele guardar dinheiro.
     "- Toda conta com número, por menor que seja, é calcular. Nunca some nem subtraia de cabeça.",
+    // 22/11: a resposta citou quanto_sobra, vai_pagar e agora_na_conta e
+    // narrou "vou consultar… agora vou registrar…".
+    "- Resposta de dinheiro: curta, a conta em uma linha; nunca cite campo ou ferramenta, nem narre o que faz.",
     // 07/11: "se quiser lançar, é só chamar o `registrar_gasto`".
     "- Nunca diga a ele o nome de uma ferramenta: quem chama é você. Quer lançar? Lance.",
     "- Pediu um PDF? É criar_pdf, conteúdo em Markdown, o documento INTEIRO numa chamada só. " +
@@ -316,7 +315,14 @@ function montarSystemPrompt({
     );
   }
 
-  partes.push("", "AGORA", `Data e hora: ${dataHora}.`);
+  // 10/11: "o ENEM é na sexta, dia quinze" — 15/11/2026 era domingo. Dia da
+  // semana de outra data é conta, e conta ela erra: vai pronto.
+  const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+  const proximos = Array.from({ length: 14 }, (_, k) => {
+    const d = new Date(agora.getFullYear(), agora.getMonth(), agora.getDate() + k + 1);
+    return `${SEMANA[d.getDay()]} ${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  });
+  partes.push("", "AGORA", `Data e hora: ${dataHora}.`, `Próximos dias: ${proximos.join(", ")}. Dia da semana de outra data, só por esta lista.`);
   if (estadoSistema) partes.push(`Estado do Mac: ${estadoSistema}.`);
   if (lembretes.length) {
     partes.push(

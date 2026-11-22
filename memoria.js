@@ -562,6 +562,24 @@ class Memoria {
       anterior = await fsp.readFile(caminho, "utf8");
       const vaiVirar = conteudo.trim().length;
       const era = anterior.replace(/^---[\s\S]*?---\n/, "").trim().length;
+      // 10/11: "leia o projeto do app e anote" — a nota do app foi recusada
+      // por parecer a do grupo, e ela escreveu o app POR CIMA da do grupo:
+      // 3.541 caracteres novos, nada dos membros, do Instagram e dos encontros.
+      // O tamanho subiu, então a trava de baixo não viu. Esta olha o que FICA.
+      const palavrasDe = (t) => new Set((t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").match(/[a-z0-9]{5,}/g)) || []);
+      const velhas = [...palavrasDe(anterior.replace(/^---[\s\S]*?---\n/, ""))];
+      const novas = palavrasDe(conteudo);
+      const ficam = velhas.filter((w) => novas.has(w)).length / (velhas.length || 1);
+      const encolhe = era > 500 && vaiVirar < era * 0.5; // a trava de baixo explica esse caso
+      if (!encolhe && era > 200 && velhas.length >= 15 && ficam < 0.5) {
+        return {
+          erro:
+            `a nota "${arquivo}" seria SUBSTITUÍDA: só ${Math.round(ficam * 100)}% do que ela diz continua no texto novo. ` +
+            "Se é outro assunto, anote com OUTRO nome (e ponha esta nota em relacionado). Se é a mesma, " +
+            "mande o texto abaixo inteiro mais o que é novo.",
+          conteudo_atual: anterior,
+        };
+      }
       if (era > 500 && vaiVirar < era * 0.5) {
         return {
           erro:
