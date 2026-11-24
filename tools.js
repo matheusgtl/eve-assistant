@@ -528,12 +528,13 @@ const toolDefinitions = [
   },
   {
     name: "listar_eventos",
-    description: "Compromissos do Calendário. Sem datas, os próximos 7 dias. Devolve o id de cada um.",
+    description: "Eventos do Calendário, com id. Sem datas, 7 dias.",
     input_schema: {
       type: "object",
       properties: {
         de: { type: "string", description: "ISO local" },
-        ate: { type: "string", description: "ISO local" },
+        ate: { type: "string" },
+        busca: { type: "string", description: "título; ano todo" },
       },
     },
   },
@@ -1225,10 +1226,10 @@ const executors = {
     }
   },
 
-  async listar_eventos({ de, ate }) {
+  async listar_eventos({ de, ate, busca }) {
     if (!ctx.calendario) return { error: "o Calendário não está disponível agora" };
     try {
-      return await ctx.calendario.listar({ de, ate });
+      return await ctx.calendario.listar({ de, ate, busca });
     } catch (err) {
       return { error: err.message, codigo: err.codigo || undefined };
     }

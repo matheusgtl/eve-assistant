@@ -233,6 +233,14 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
     const trocada = await mem.anotar({ nome: "curta", quando: "x", conteudo: "# Curta\n\noutra", pasta: "fatos" });
     assert.ok(trocada.ok, "nota curta não entra na trava");
 
+    // 24/11: um `quando` que já passou não abre a nota nunca mais.
+    for (const q of ["agora, ao analisar o calendário", "quando: hoje", "Amanhã"]) {
+      const r = await mem.anotar({ nome: "aniversarios", quando: q, conteudo: "# A\n\nx", pasta: "fatos" });
+      assert.match(r.erro || "", /FUTURA/, `"${q}" tem de ser recusado`);
+    }
+    const hojeEmDia = await mem.anotar({ nome: "zebra", quando: "ele perguntar o que tem hoje", conteudo: "# Z\n\nx", pasta: "fatos" });
+    assert.ok(hojeEmDia.ok, "'hoje' no meio da frase é um quando legítimo");
+
     // =======================================================================
     // `\n` literal e frontmatter dentro do corpo
     // =======================================================================

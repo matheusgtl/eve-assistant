@@ -83,7 +83,51 @@ function criar({ titulo, inicio, fim, local, notas, diaInteiro, alarmeMinutos, c
   return rodar(args);
 }
 
-function listar({ de, ate } = {}) {
+const semAcento = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const diaISO = (d) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/// Procura pelo título, no ano inteiro.
+///
+/// 24/11: "anote tudo que são datas de aniversário" e ela olhou de 01/11 a
+/// 31/12: perdeu seis dos oito. Aniversário repete todo ano, então o intervalo
+/// que ela mandar não estreita a busca — um ano para cada lado, sempre. Nos
+/// outros casos vale o intervalo dela; sem ele, 30 dias atrás até um ano.
+async function procurar({ de, ate, busca }, agora = new Date()) {
+  const dias = (n) => {
+    const d = new Date(agora);
+    d.setDate(d.getDate() + n);
+    return diaISO(d);
+  };
+  let termo = semAcento(busca).trim();
+  const aniversario = /^anivers|^niver/.test(termo);
+  // "aniversários da família" não está em título nenhum: aniversário é o tipo.
+  const termos = aniversario ? ["anivers", "niver"] : [termo, termo.replace(/s$/, "")];
+  const inicio = aniversario ? dias(-365) : de || dias(-30);
+  const fim = aniversario ? dias(366) : ate || dias(366);
+  const r = await rodar(["listar", "--de", String(inicio), "--ate", String(fim), "--max", "5000"]);
+  // Ocorrências do mesmo evento anual viram uma só: a próxima.
+  const porChave = new Map();
+  const hoje = diaISO(agora);
+  for (const e of r.eventos || []) {
+    const titulo = semAcento(e.titulo);
+    if (!termos.some((t) => t && titulo.includes(t))) continue;
+    const dia = String(e.inicio || "").slice(0, 10);
+    const chave = aniversario ? `${titulo.trim()}|${dia.slice(5)}` : `${titulo.trim()}|${e.inicio}`;
+    const antes = porChave.get(chave);
+    if (!antes || (String(antes.inicio).slice(0, 10) < hoje && dia >= hoje)) porChave.set(chave, e);
+  }
+  const achados = [...porChave.values()].sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
+  const mostrados = achados.slice(0, 60).map(({ id, titulo, inicio: i, calendario, local }) =>
+    ({ id, titulo, inicio: i, calendario, local }));
+  return {
+    de: inicio, ate: fim, busca, total: achados.length, eventos: mostrados,
+    aviso: achados.length > 60 ? "só os 60 primeiros: diga isso a ele" : undefined,
+  };
+}
+
+function listar({ de, ate, busca } = {}, agora) {
+  if (busca && String(busca).trim()) return procurar({ de, ate, busca }, agora);
   const args = ["listar"];
   if (de) args.push("--de", String(de));
   if (ate) args.push("--ate", String(ate));

@@ -514,6 +514,17 @@ class Memoria {
     conteudo = normalizarConteudo(conteudo);
     if (!conteudo) return { erro: "a nota precisa de conteúdo" };
 
+    // 24/11: "quando: agora, ao analisar o calendário". Essa linha é o que faz
+    // a nota abrir depois; um momento que já passou não abre nunca mais.
+    const semPrefixo = String(quando || "").trim().replace(/^quando:?\s*/i, "");
+    if (/^(agora|hoje|ontem|amanhã|neste momento|nesta conversa|imediatamente)(?![\p{L}\d])/iu.test(semPrefixo)) {
+      return {
+        erro:
+          `"quando: ${quando}" só vale para este momento, e a nota não abriria depois. Chame de novo ` +
+          "dizendo que pergunta FUTURA dele precisa dela (ex.: \"ele perguntar de aniversário ou data de alguém\").",
+      };
+    }
+
     const subpasta = /^fatos/i.test(pasta) ? "fatos" : "processos";
     // O nome não repete a pasta: "fatos/fatos-perfil" vira "fatos/perfil".
     const slug = apelido(String(nome).replace(new RegExp(`^${subpasta}[-/\\s]+`, "i"), ""));

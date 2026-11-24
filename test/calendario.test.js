@@ -463,6 +463,26 @@ const chamadas = () =>
     "ela tem de confirmar a hora do AVISO, que é a que ele quer saber"
   );
 
+  // 24/11: aniversários procurados só em dois meses. A busca cobre o ano.
+  {
+    const ev = (titulo, inicio) => ({ id: titulo + inicio, titulo, inicio, calendario: "Pessoal" });
+    process.env.EV_CAL_BIN = helperFalso({ total: 5, eventos: [
+      ev("aniversário Isaac", "2026-03-01T00:00:00"), ev("Natal", "2026-12-25T00:00:00"),
+      ev("aniversário Isaac", "2027-03-01T00:00:00"), ev("Aniversário da Hortência", "2026-11-30T00:00:00"),
+      ev("aniversario Casamento Pais", "2026-09-14T00:00:00"),
+    ] });
+    delete require.cache[require.resolve("../calendario.js")];
+    const cal = require("../calendario.js");
+    const r = await cal.listar({ de: "2026-11-01", ate: "2026-12-31", busca: "aniversários" }, new Date(2026, 10, 24));
+    assert.deepStrictEqual([r.de, r.ate], ["2025-11-24", "2027-11-25"], "o intervalo curto dela não estreita aniversário");
+    assert.strictEqual(r.total, 3, "sem Natal, e o Isaac uma vez só");
+    assert.ok(r.eventos.some((e) => /Isaac/.test(e.titulo) && e.inicio.startsWith("2027")), "fica a próxima vez");
+    const n = await cal.listar({ busca: "natal" }, new Date(2026, 10, 24));
+    assert.strictEqual(n.total, 1);
+    assert.ok(nomes.includes("listar_eventos") && toolDefinitions.find((t) => t.name === "listar_eventos").input_schema.properties.busca);
+    assert.match(swiftLem, /opcao\("max"\)/, "sem --max o helper corta em 100 antes da busca");
+  }
+
   fs.rmSync(pasta, { recursive: true, force: true });
   console.log("✓ calendário do macOS: argumentos, permissão explicada e a confusão com lembrete");
   console.log("   criar          →", chamada.slice(0, 72) + "…");

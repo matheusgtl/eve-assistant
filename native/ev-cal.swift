@@ -13,7 +13,7 @@
 //
 // Uso:  ev-cal criar --titulo T --inicio ISO [--fim ISO] [--dia-inteiro]
 //                    [--local L] [--notas N] [--alarme MIN] [--calendario C]
-//       ev-cal listar --de ISO --ate ISO
+//       ev-cal listar --de ISO --ate ISO [--max N]
 //       ev-cal calendarios
 //       ev-cal apagar --id ID
 // Sai:  JSON
@@ -551,7 +551,7 @@ case "listar":
         "de": escrever(de),
         "ate": escrever(ate),
         "total": eventos.count,
-        "eventos": eventos.prefix(100).map(descrever),
+        "eventos": eventos.prefix(opcao("max").flatMap(Int.init) ?? 100).map(descrever),
     ])
 
 case "apagar":
