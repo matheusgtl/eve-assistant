@@ -322,7 +322,7 @@ A régua é: **o que dá para desfazer, ela faz**. Criar e editar arquivos, mand
 
 Restam duas travas, e elas não dependem de o modelo se comportar:
 
-1. **Comando que destrói sem volta** — `rm -rf`, `sudo`, formatar, desligar, esvaziar o Lixo, force push. Ela explica o risco e espera o seu sim.
+1. **Comando que destrói sem volta** — qualquer `rm`, `find -delete`, `sudo`, formatar, desligar, esvaziar o Lixo, `git reset --hard`, force push, `>` por cima de arquivo que já existe, baixar e executar script (`curl … | sh`). Ela explica o risco e espera o seu sim.
 2. **Mensagem para outra pessoa** — o destinatário é gente e não existe desfazer. Ela lê para quem vai e o quê, e só manda depois do seu sim.
 
 ## WhatsApp
@@ -476,8 +476,8 @@ Sem o certificado o app continua funcionando normalmente — só com as permiss�
 
 Três travas que não dependem de o modelo se comportar:
 
-1. **Comandos destrutivos** (`rm -r`, `sudo`, `shutdown`, `diskutil erase`, `chmod -R`, force push, esvaziar o Lixo…) não executam de primeira: ela explica o risco e espera você confirmar em voz alta. A lista está em `DANGEROUS`, no `tools.js`.
-2. **Apagar é mandar para o Lixo**, pelo Finder — dá para recuperar. Ela nunca usa `rm` para apagar arquivo seu. Sobrescrever um arquivo existente guarda um `.bak` ao lado.
+1. **Comandos destrutivos** (qualquer `rm`, `find -delete`, `sudo`, `shutdown`, `diskutil erase`, `chmod -R`, `git reset --hard`/`clean -f`, `truncate`, `rsync --delete`, `curl … | sh`, AppleScript com privilégio de administrador, esvaziar o Lixo…) não executam de primeira: ela explica o risco e espera você confirmar em voz alta. `>` por cima de um arquivo que já existe também espera, porque apaga o conteúdo sem `.bak`. A lista está em `DANGEROUS`, no `tools.js`, e `test/travas.test.js` confere o que barra e o que segue livre.
+2. **Apagar é mandar para o Lixo**, pelo Finder — dá para recuperar. Ela nunca usa `rm` para apagar arquivo seu. Fora da sua pasta, ou a pasta inteira, só com o seu sim. Sobrescrever um arquivo existente guarda um `.bak` ao lado, e nem `write_file` nem `edit_file` escrevem no cofre da memória.
 3. **Mensagem para outra pessoa sempre pede confirmação**, mesmo sem nada de perigoso no texto: ela lê em voz alta para quem vai e o que vai, e só manda depois do seu sim. (No WhatsApp ela deixa pronto e o enter é seu — ver acima.)
 
 Fora disso, ela executa o que você pedir com as suas permissões de usuário — trate-a como um terminal que entende português.

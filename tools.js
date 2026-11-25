@@ -92,7 +92,48 @@ const DANGEROUS = [
   /\bcsrutil\b/i,
   /\bspctl\b/i,
   /\blaunchctl\s+(unload|remove|bootout)\b/i,
+  // 25/11: o que não tem volta e passava direto. Apagar arquivo dela é pelo Lixo
+  // (trash_file), então QUALQUER rm em posição de comando espera o sim — não só -r/-f.
+  /(^|[;&|(`\n]|\$\(|\bxargs|\bexec|\bsudo|\bthen|\bdo)\s*(\S*\/)?rm(\s+(?!--?h(elp)?\b)|\s*$)/i,
+  /(^|[;&|(`\n]|\$\()\s*(\S*\/)?(srm|shred)\b/i,
+  /\bfind\b.*\s-delete\b/i,
+  /\bgit\s+(reset\s+.*--hard\b|clean\s+-[a-z]*f|stash\s+(drop|clear)\b)/i,
+  /\bgit\s+branch\s+(-D|--delete\s+--force)\b/, // -d (só apaga o que já foi mesclado) segue livre
+  /\btruncate\b/i,
+  /\bcrontab\s+-[a-z]*r/i,
+  /\brsync\b.*\s--delete/i,
+  /\bmv\b.*\s\/dev\/null\b/i,
+  /\btmutil\s+delete/i,
+  /\bsecurity\s+delete-/i,
+  // Baixar e executar na hora: o que roda é decidido por quem está do outro lado.
+  /\b(curl|wget)\b[^|;&]*\|\s*(sudo\s+)?(ba|z)?sh\b/i,
+  /\b(ba|z)?sh\s+-c\s+["']?\$\(\s*(curl|wget)\b/i,
+  // AppleScript que vira root ou desliga o Mac pelo System Events.
+  /\bwith\s+administrator\s+privileges\b/i,
+  /"System Events"\s+to\s+(shut\s+down|restart|log\s+out)\b/i,
 ];
+
+/// `>` por cima de arquivo que já existe apaga o conteúdo, e não há .bak como no
+/// write_file. Arquivo novo, `>>`, `2>&1` e /dev/null seguem livres. Devolve o
+/// caminho que seria perdido, ou null. Caminho com variável não dá para saber: passa.
+function sobrescreveArquivo(comando = "") {
+  const alvos = /(?<![>&])(?:\d|&)?>(?![>&])\|?\s*("[^"]+"|'[^']+'|[^\s;&|<>()]+)/g;
+  for (const [, bruto] of comando.matchAll(alvos)) {
+    const alvo = bruto.replace(/^["']|["']$/g, "");
+    if (!alvo || alvo.includes("$") || alvo.startsWith("/dev/")) continue;
+    try {
+      const st = fsSync.statSync(resolvePath(alvo));
+      if (st.isFile() && st.size > 0) return resolvePath(alvo);
+    } catch {}
+  }
+  return null;
+}
+
+/// Mandar para o Lixo sem perguntar só vale para o que está DENTRO da pasta dele.
+/// A pasta inteira não é "dentro", e /Users/matheus-outro não começa com /Users/matheus/.
+function lixoPrecisaDoSim(full) {
+  return !path.resolve(full).startsWith(HOME + path.sep);
+}
 
 function isDangerous(texto = "") {
   return DANGEROUS.some((re) => re.test(texto));
@@ -701,6 +742,8 @@ async function osascript(script) {
 const executors = {
   async run_command({ command, confirmed }) {
     if (isDangerous(command) && !confirmed) return pedirConfirmacao(command);
+    const perde = sobrescreveArquivo(command);
+    if (perde && !confirmed) return pedirConfirmacao(`apagar o conteúdo de ${perde} com >`);
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: HOME,
@@ -823,13 +866,18 @@ const executors = {
   async edit_file({ filepath, old, new: novo }) {
     try {
       const full = resolvePath(filepath);
+      // 25/11: só o write_file tinha esta trava; o edit_file mexia no cofre por fora.
+      const barrado = escritaNoCofre(full) || escritaNoCofre(String(filepath || ""));
+      if (barrado) return barrado;
       const antes = await fs.readFile(full, "utf8");
       const ocorrencias = antes.split(old).length - 1;
       if (ocorrencias === 0) return { error: "Esse trecho não existe no arquivo." };
       if (ocorrencias > 1) {
         return { error: `O trecho aparece ${ocorrencias} vezes; inclua mais contexto para ficar único.` };
       }
-      await fs.writeFile(full, antes.replace(old, novo ?? ""), "utf8");
+      // split/join, não replace: no replace, "$&" e "$$" do texto novo viram código
+      // (25/11: "US$&" gravava "USPRECO"). O trecho é único, então dá o mesmo.
+      await fs.writeFile(full, antes.split(old).join(novo ?? ""), "utf8");
       return { ok: true, filepath: full };
     } catch (err) {
       return { error: err.message };
@@ -839,7 +887,7 @@ const executors = {
   async trash_file({ filepath, confirmed }) {
     const full = resolvePath(filepath);
     // Fora da pasta do usuário é sistema ou de outra conta: só com confirmação.
-    if (!full.startsWith(HOME) && !confirmed) return pedirConfirmacao(`mandar ${full} para o Lixo`);
+    if (lixoPrecisaDoSim(full) && !confirmed) return pedirConfirmacao(`mandar ${full} para o Lixo`);
     try {
       await fs.access(full);
     } catch {
@@ -1435,4 +1483,4 @@ async function runTool(name, input) {
   }
 }
 
-module.exports = { toolDefinitions, runTool, configurar, isDangerous, DANGEROUS };
+module.exports = { toolDefinitions, runTool, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim };
