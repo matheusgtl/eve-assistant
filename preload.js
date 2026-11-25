@@ -69,6 +69,7 @@ contextBridge.exposeInMainWorld("ev", {
       mic: "ev:mic",
       attachment: "ev:attachment",
       arquivo: "ev:arquivo",
+      escolhas: "ev:escolhas",
     };
     const canal = canais[evento];
     if (canal) ipcRenderer.on(canal, (_e, payload) => handler(payload));

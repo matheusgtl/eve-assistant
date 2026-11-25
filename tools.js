@@ -31,6 +31,10 @@ const HOME = os.homedir();
 const { apelido: apelidoDeArquivo } = require("./memoria.js");
 const { Gastos, CATEGORIAS } = require("./gastos.js");
 const { calcular: calcularConta } = require("./calculo.js");
+const { Confirmacoes } = require("./escolhas.js");
+
+// Um só para o app inteiro: o main.js avisa cada fala dele, e o runTool consulta.
+const confirmacoes = new Confirmacoes();
 
 // Contexto injetado pelo main.js: lembretes, chave do Gemini, notificações.
 // Fica aqui para as ferramentas não precisarem conhecer o Electron.
@@ -1475,7 +1479,26 @@ async function runTool(name, input) {
   const fn = executors[name];
   if (!fn) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
   try {
-    return JSON.stringify(await fn(input || {}));
+    let args = input || {};
+    // confirmed=true só vale se ELE disse sim a esta mesma chamada (escolhas.js).
+    // Sem isso, o modelo se autoconfirmava: 25/11, trash_file com confirmed="true"
+    // logo na primeira chamada.
+    let ignorouConfirmacao = false;
+    if (args.confirmed && !confirmacoes.liberar(name, args)) {
+      args = { ...args, confirmed: false };
+      ignorouConfirmacao = true;
+    }
+    const r = await fn(args);
+    if (r?.needs_confirmation) {
+      confirmacoes.pedir(name, args);
+      ctx.onPedidoDeSim?.({ nome: name });
+      if (ignorouConfirmacao) {
+        r.aviso =
+          "confirmed=true foi ignorado: o sim precisa vir DELE, na fala seguinte. Pergunte e pare; " +
+          "a tela mostra os botões Sim e Não.";
+      }
+    }
+    return JSON.stringify(r);
   } catch (err) {
     // Rede fora, permissão negada, caminho inválido: o cérebro precisa saber o
     // que houve para explicar — não pode receber uma exceção e travar o laço.
@@ -1483,4 +1506,6 @@ async function runTool(name, input) {
   }
 }
 
-module.exports = { toolDefinitions, runTool, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim };
+module.exports = {
+  toolDefinitions, runTool, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim, confirmacoes,
+};

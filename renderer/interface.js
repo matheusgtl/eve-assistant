@@ -742,6 +742,36 @@ window.ev.on("message", ({ quem, texto, lembrete, anexo }) => {
 
 window.ev.on("tool", ({ name }) => mostrarFerramenta(name));
 window.ev.on("arquivo", (arquivo) => mostrarArquivo(arquivo));
+window.ev.on("escolhas", (dados) => mostrarEscolhas(dados));
+
+/// Botões de resposta embaixo da última fala dela: o "Sim, pode / Não" de um
+/// pedido de confirmação, ou as opções que ela ofereceu. Clicar é o mesmo que
+/// escrever o rótulo — falar também vale. Só existe um grupo por vez, e ele
+/// some quando chega a resposta (qualquer que seja).
+function mostrarEscolhas(dados) {
+  document.querySelectorAll(".escolhas").forEach((el) => el.remove());
+  if (!dados?.opcoes?.length) return;
+
+  const grupo = document.createElement("div");
+  grupo.className = "escolhas" + (dados.tipo === "confirmacao" ? " confirmacao" : "");
+  grupo.setAttribute("role", "group");
+  grupo.setAttribute("aria-label", dados.tipo === "confirmacao" ? "Confirmar" : "Responder");
+
+  dados.opcoes.forEach((rotulo, i) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "arquivo-botao " + (i === 0 ? "primario" : "secundario");
+    b.textContent = rotulo;
+    b.addEventListener("click", () => {
+      grupo.remove();
+      window.ev.type(rotulo);
+    });
+    grupo.appendChild(b);
+  });
+
+  roloEl.appendChild(grupo);
+  rolar();
+}
 window.ev.on("error", ({ message }) => registrar({ quem: "eve", texto: message, classe: "erro" }));
 window.ev.on("notice", ({ message }) => registrarSistema(message));
 window.ev.on("metrics", mostrarMetricas);

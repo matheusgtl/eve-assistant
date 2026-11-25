@@ -325,6 +325,15 @@ Restam duas travas, e elas não dependem de o modelo se comportar:
 1. **Comando que destrói sem volta** — qualquer `rm`, `find -delete`, `sudo`, formatar, desligar, esvaziar o Lixo, `git reset --hard`, force push, `>` por cima de arquivo que já existe, baixar e executar script (`curl … | sh`). Ela explica o risco e espera o seu sim.
 2. **Mensagem para outra pessoa** — o destinatário é gente e não existe desfazer. Ela lê para quem vai e o quê, e só manda depois do seu sim.
 
+## Botões de resposta
+
+Quando a resposta depende de você, aparecem botões embaixo da fala dela. Clicar é o mesmo que escrever o rótulo, e falar também vale.
+
+- **Confirmação** (`Sim, pode` / `Não`): quando uma trava pede o seu sim. **O sim é registrado pelo código, não pelo modelo**: `confirmed=true` só vale se a sua fala seguinte for um sim para aquela mesma chamada, e vale uma vez. Antes, o modelo podia preencher `confirmed=true` sozinho, e o log de 25/11 mostra isso (`trash_file … confirmed="true"` na primeira chamada). Mudar de assunto descarta o pedido, e outro comando ou destinatário precisa de outro sim.
+- **Escolha** (o que ela oferecer): ela termina a pergunta com `[opções: Sim, cria; Não precisa]`. Essa linha sai da tela e da voz e vira botões, com o recomendado primeiro. Das 75 respostas salvas até 25/11, 15 terminavam em pergunta, e em 12 você respondeu outra coisa: a oferta se perdia.
+
+A lógica está em `escolhas.js`, e `test/escolhas.test.js` confere inclusive a marca chegando em pedaços, como a voz de conversa manda.
+
 ## WhatsApp
 
 Sai de verdade, depois de você confirmar em voz alta: ela lê para quem vai e o texto inteiro, você diz que sim, e ela manda.

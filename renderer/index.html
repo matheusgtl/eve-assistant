@@ -300,6 +300,10 @@
   .arquivo-botao:hover { filter: brightness(1.12); }
   .arquivo-botao:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
   .arquivo-botao:disabled { opacity: .55; cursor: progress; }
+  /* Botões de resposta: alinhados com o texto da fala dela, a primeira opção
+     (a que ela recomenda, ou o "Sim, pode") em destaque. */
+  .escolhas { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; padding-left: 10px; }
+  .escolhas .arquivo-botao { padding: 8px 13px; font-size: 12.5px; }
 
   .linha-log code {
     background: var(--fundo); border: 1px solid var(--borda); border-radius: 2px; padding: 0 3px;

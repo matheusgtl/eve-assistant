@@ -227,7 +227,11 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   assert.ok(!zap.aberto, "nem sequer abrir a conversa antes do sim");
 
   // Número sem DDD não vira envio para um número errado: vira pedido de dado.
-  const curto = await chamar("send_message", { canal: "whatsapp", para: "123", texto: "oi", confirmed: true });
+  // (o sim agora é dele, não do parâmetro: pede, ele diz sim, e só então vale)
+  const pedidoCurto = { canal: "whatsapp", para: "123", texto: "oi" };
+  assert.strictEqual((await chamar("send_message", pedidoCurto)).needs_confirmation, true);
+  require("../tools.js").confirmacoes.aoFalarDele("sim");
+  const curto = await chamar("send_message", { ...pedidoCurto, confirmed: true });
   assert.match(curto.error, /DDD/, "número curto demais tem de ser recusado, não completado");
 
   // ------------------------------------------------- 6. contexto injetado

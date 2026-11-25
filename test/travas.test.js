@@ -4,7 +4,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { runTool, toolDefinitions, isDangerous, configurar, lixoPrecisaDoSim } = require("../tools.js");
+const { runTool, toolDefinitions, isDangerous, configurar, lixoPrecisaDoSim, confirmacoes } = require("../tools.js");
 
 const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
 
@@ -110,9 +110,34 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
       fs.rmSync(cofre, { recursive: true, force: true });
     }
 
-    // O sim de verdade executa.
-    await chamar("run_command", { command: `rm -rf ${pasta}`, confirmed: true });
+    // 25/11: o modelo se autoconfirmava (trash_file com confirmed="true" de primeira).
+    // confirmed=true sem o sim DELE é ignorado — e a resposta diz por quê.
+    const apagar = { command: `rm -rf ${pasta}` };
+    const auto = await chamar("run_command", { ...apagar, confirmed: true });
+    semVolta(auto, "confirmed=true sem o sim dele");
+    assert.match(auto.aviso, /sim precisa vir DELE/);
+
+    // Mudar de assunto ou dizer não descarta o pedido.
+    for (const fala of ["não", "Não, deixa", "qual a previsão do tempo?", ""]) {
+      await chamar("run_command", apagar);
+      confirmacoes.aoFalarDele(fala);
+      semVolta(await chamar("run_command", { ...apagar, confirmed: true }), `depois de "${fala}"`);
+    }
+
+    // O sim vale para a chamada aprovada, e não para outra.
+    await chamar("run_command", apagar);
+    assert.strictEqual(confirmacoes.aoFalarDele("Sim, pode"), "sim");
+    // (o "outro" apaga o próprio arquivo protegido: se a trava falhar, o teste acusa e nada fora da pasta sofre)
+    semVolta(await chamar("run_command", { command: `rm -f ${vivo}`, confirmed: true }), "outro comando");
+
+    // O sim de verdade executa — uma vez só.
+    await chamar("run_command", apagar);
+    confirmacoes.aoFalarDele("Sim, pode");
+    await chamar("run_command", { ...apagar, confirmed: true });
     assert.ok(!fs.existsSync(vivo), "com o sim, o comando tem de rodar");
+    fs.mkdirSync(pasta);
+    fs.writeFileSync(vivo, "de novo");
+    semVolta(await chamar("run_command", { ...apagar, confirmed: true }), "o mesmo sim usado duas vezes");
   } finally {
     fs.rmSync(pasta, { recursive: true, force: true });
   }

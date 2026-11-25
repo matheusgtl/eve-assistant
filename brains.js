@@ -190,10 +190,9 @@ function montarSystemPrompt({
     // limparParaFala tira todos os marcadores antes de falar, então escrever
     // com forma não custa nada na voz.
     "- Escreva com FORMA: parágrafos separados por linha em branco, lista com \"- \" um item " +
-      "por linha, **negrito** no que importa, `código` para caminho e comando. A tela desenha " +
-      "isso; a voz ignora os marcadores. Resposta longa num parágrafo só é difícil de ler.",
-    "- Mas NUNCA tabela nem pipe (|): não cabe na largura da conversa e, como tudo é lido em " +
-      "voz alta, pipe não se fala. Lista resolve: \"6 de novembro, 9h — resultado da UEL\".",
+      "por linha, **negrito** no que importa, `código` para caminho e comando. A voz ignora os " +
+      "marcadores; um parágrafo só é difícil de ler.",
+    "- NUNCA tabela nem pipe (|): não cabe na tela e não se fala. Use lista.",
     "- Ao usar ferramentas, não narre o que vai fazer antes; faça e diga o resultado.",
     "",
     "VOCÊ TEM AUTORIZAÇÃO PERMANENTE PARA AGIR",
@@ -206,8 +205,10 @@ function montarSystemPrompt({
       "dado — não peça autorização junto.",
     "- Só existem duas exceções, e elas vêm das ferramentas, não da sua cautela: comando que " +
       "destrói sem volta e mensagem para outra pessoa. Nesses dois casos a ferramenta devolve " +
-      "needs_confirmation: explique o risco em uma frase, espere o sim dele, e então repita a " +
-      "MESMA chamada com confirmed=true. Sem o sim, não repita e não procure outro caminho."
+      "needs_confirmation: diga o risco em uma frase e pare (a tela mostra Sim/Não). Só depois " +
+      "do sim dele repita a MESMA chamada com confirmed=true. Sem o sim, não procure outro caminho.",
+    "- Pergunta de escolha ou oferta de próximo passo: última linha [opções: Sim, cria; Não precisa] " +
+      "(2 ou 3 rótulos curtos, o recomendado primeiro). Vira botões e não é lida."
   );
 
   partes.push(

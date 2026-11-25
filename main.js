@@ -27,6 +27,15 @@ const {
   velocidadeValida,
 } = require("./tts.js");
 const ferramentas = require("./tools.js");
+const { ROTULOS_CONFIRMACAO, filtroDeOpcoes } = require("./escolhas.js");
+
+// Os botões que a resposta em andamento vai deixar no chat: o pedido de sim de
+// uma ferramenta, ou o `[opções: …]` que ela escreveu. Saem no FIM da resposta,
+// para ficarem embaixo da fala e não no meio dela.
+let escolhasDoTurno = null;
+// "Executei vários passos e ainda não terminei. Quer que eu continue?" vem do
+// código (brains.js), então os botões dele também.
+const PERGUNTA_CONTINUAR = /ainda não terminei\. Quer que eu continue\?$/;
 const sistema = require("./sistema.js");
 const { Lembretes, formatar: formatarQuando } = require("./lembretes.js");
 const { Memoria } = require("./memoria.js");
@@ -1126,6 +1135,12 @@ async function ask(userText, canal = "texto") {
   // o que dispensa qualquer passo de sincronização (e reiniciar o app).
   await atualizarIndiceSkills();
 
+  // Respondeu a um pedido de sim? Quem decide é esta fala, não o modelo.
+  const decisao = ferramentas.confirmacoes.aoFalarDele(userText);
+  if (decisao) log("confirmação:", decisao, "←", JSON.stringify(userText.slice(0, 40)));
+  escolhasDoTurno = null;
+  send("ev:escolhas", null); // botões antigos saem: a pergunta já foi respondida
+
   const anexo = await lerAnexoPendente();
   anotar("voce", userText, { canal, anexo: anexo?.nome });
   send("ev:message", { quem: "voce", texto: userText, anexo: anexo?.nome });
@@ -1135,11 +1150,15 @@ async function ask(userText, canal = "texto") {
   let ultimaFalaTeveConteudo = false;
   const ditasNesteTurno = new Set();
 
-  try {
-    await brain.ask(userText, {
-      canal,
-      anexo,
-      onSay: (texto) => {
+  // `[opções: A | B]` sai da fala e da tela e vira botões (escolhas.js).
+  const opcoesDaFala = filtroDeOpcoes(
+    (texto) => falar(texto),
+    (opcoes) => {
+      if (!escolhasDoTurno) escolhasDoTurno = { opcoes, tipo: "oferta" };
+    }
+  );
+
+  const falar = (texto) => {
         // Texto sem uma letra nem um número não é resposta: é enchimento.
         // O gpt-oss-120b devolveu "..." várias vezes seguidas numa conversa,
         // e ela leu cada um em voz alta, o que soa como gaguejo e polui o
@@ -1167,10 +1186,19 @@ async function ask(userText, canal = "texto") {
           return;
         }
         ultimaFalaTeveConteudo = true;
+        if (!escolhasDoTurno && PERGUNTA_CONTINUAR.test(String(texto).trim())) {
+          escolhasDoTurno = { opcoes: ["Continua", "Pode parar"], tipo: "oferta" };
+        }
         anotar("eve", texto);
         send("ev:message", { quem: "eve", texto });
         speak(texto);
-      },
+  };
+
+  try {
+    await brain.ask(userText, {
+      canal,
+      anexo,
+      onSay: (texto) => opcoesDaFala.say(texto),
       // O log não registrava ferramenta nenhuma, e por isso não dava para
       // saber, lendo depois, se ela tinha AGIDO ou só conversado. Era o buraco
       // de diagnóstico mais caro que este app tinha.
@@ -1244,6 +1272,8 @@ async function ask(userText, canal = "texto") {
     setEstado("idle");
     return;
   }
+  // Solta o que o filtro ainda segurava (uma marca que nunca fechou vira texto).
+  opcoesDaFala.fim();
 
   // A volta inteira saiu em enchimento: nenhuma frase com conteúdo. Ficar
   // calada aqui é o pior desfecho — parece que ela ignorou o pedido. Melhor
@@ -1254,6 +1284,10 @@ async function ask(userText, canal = "texto") {
     anotar("eve", aviso);
     send("ev:message", { quem: "eve", texto: aviso });
     speak(aviso);
+  }
+  if (escolhasDoTurno) {
+    log("botões:", escolhasDoTurno.opcoes.join(" | "));
+    send("ev:escolhas", escolhasDoTurno);
   }
   // No mudo não existe fala, e quem devolve a esfera para "parada" é o fim da
   // fala — sem isto ela ficaria "pensando" para sempre, e no modo de microfone
@@ -1503,6 +1537,11 @@ app.whenReady().then(() => {
 
   ferramentas.configurar({
     onArquivo: anotarArquivo,
+    // A ferramenta pediu o sim dele: os botões Sim/Não entram no fim desta resposta.
+    onPedidoDeSim: ({ nome }) => {
+      escolhasDoTurno = { opcoes: ROTULOS_CONFIRMACAO, tipo: "confirmacao" };
+      log("confirmação pedida:", nome);
+    },
     lembretes,
     memoria,
     skills,
