@@ -555,6 +555,6 @@ Testes (não precisam de chave nem de internet, exceto o do painel, que mede est
 cd ~/EV && npm test
 ```
 
-São vinte e um: chave, Gemini, troca de modelo, modelo imprestável, provedores (Groq/NVIDIA/Mistral e a corrente), cotas, sobrecarga (503), voz, esfera, fala em pedaços, lembretes, memória .md, uso dos agentes, web, corrente de buscadores, PDF (com OCR de verdade), skills, ferramentas, sistema e ponte entre interface e processo principal.
+Roda todos os `test/*.test.js`; `npm test memoria` roda só os que casam com o nome. `npm run verificar` soma a checagem de sintaxe e do Swift. O `install-app` só instala com tudo passando, commit no GitHub e a E.V.E fechada.
 
 Para fixar um modelo específico, adicione `"model": "gemini-flash-latest"` no `config.json` — sem isso, ela pergunta ao Google qual o melhor disponível e troca sozinha quando um modelo é recusado.
