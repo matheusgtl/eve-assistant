@@ -14,7 +14,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 ## Onde fica
 - `main.js`: Electron, voz e canais; `preload.js`: ponte; `renderer/`: interface
 - `brains.js`: prompt, provedores e corrente de reserva; `agentes.js`: consumo
-- `chats.js`: conversas da barra lateral; `aprendizados.js`: erros e lições no cofre
+- `chats.js`: conversas da barra lateral; `aprendizados.js`: erros e lições no cofre; `honestidade.js`: trava contra "feito" com ferramenta em erro
 - `tools.js`: ferramentas e travas; `escolhas.js`: botões de resposta e o sim que só ele dá; `memoria.js`, `conversas.js`, `skills.js`: cofre do Obsidian
 - `registro.js`: formato do `~/Library/Logs/E.V.E/eve.log` (leia para diagnosticar)
 - `build/make-icon.swift`: ícone, logo e ícone da barra de menus a partir de `assets/logo-original.png`

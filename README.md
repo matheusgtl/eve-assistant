@@ -164,6 +164,10 @@ Pedido dele em 25/11/2026 (`aprendizados.js`). Duas metades:
 
 Toda lição volta em **toda** pergunta, no bloco "O QUE VOCÊ JÁ APRENDEU" (até 1.400 caracteres, as mais novas primeiro). Lição que só mora no disco não muda comportamento.
 
+## A trava da honestidade
+
+Lição no prompt é pedido, não garantia: em 25/11/2026 ela respondeu "Tudo certo. Removi…" com três de quatro `trash_file` em erro, mesmo com a regra escrita. Então isso virou trava em código (`honestidade.js`). O `main.js` guarda cada ferramenta de **ação** do turno e o resultado dela; se alguma falhou e não deu certo depois com o mesmo alvo, e a resposta não admite falha nenhuma, o código acrescenta a correção na tela e na voz ("Correção: nem tudo deu certo. Não consegui mandar para o Lixo “Nox….dmg” (o Finder não respondeu)…") com os botões *Tenta de novo* / *Deixa assim*. Consulta que falha (busca, leitura) não entra, porque não é algo que ela fez. Cada vez que a trava age conta como erro dela no diário de aprendizados, e a repetição vira alerta no prompt.
+
 ## O cérebro no Obsidian
 
 Memória, aprendizados, conversas e skills são uma rede só. A nota `CEREBRO.md` liga os índices (`MEMORIA`, `APRENDIZADOS`, `CONVERSAS`); cada conversa salva termina com **Ligações** para as notas que ela abriu e os aprendizados que gravou naquela conversa. No grafo do Obsidian isso aparece como uma rede de neurônios conversando, e não como pastas soltas.

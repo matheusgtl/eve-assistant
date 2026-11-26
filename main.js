@@ -49,6 +49,7 @@ const calendario = require("./calendario.js");
 const { Conversas } = require("./conversas.js");
 const { Chats } = require("./chats.js");
 const { Aprendizados, pareceCorrecao, gerarCerebro } = require("./aprendizados.js");
+const { Honestidade } = require("./honestidade.js");
 const web = require("./web.js");
 
 // Fixa o nome ANTES de qualquer getPath: o app empacotado e o `npm start`
@@ -152,6 +153,8 @@ let aprendizados = null;
 let indiceAprendizados = null;
 let correcaoNoTurno = false;
 let chats = null;
+// O que as ferramentas deste turno de fato fizeram (honestidade.js).
+let honestidade = new Honestidade();
 
 /// O que a conversa ABERTA tem de antes do cérebro atual, para o prompt. Só
 /// texto (cartão de arquivo não conta) e no máximo 1.800 caracteres — contados
@@ -1240,6 +1243,8 @@ async function ask(userText, canal = "texto") {
 
   let vazias = 0;
   let ultimaFalaTeveConteudo = false;
+  honestidade = new Honestidade();
+  let respostaDoTurno = "";
   const ditasNesteTurno = new Set();
 
   // `[opções: A | B]` sai da fala e da tela e vira botões (escolhas.js).
@@ -1282,6 +1287,7 @@ async function ask(userText, canal = "texto") {
           escolhasDoTurno = { opcoes: ["Continua", "Pode parar"], tipo: "oferta" };
         }
         turno.falou(texto);
+        respostaDoTurno += " " + texto;
         anotar("eve", texto);
         send("ev:message", { quem: "eve", texto });
         speak(texto);
@@ -1296,6 +1302,7 @@ async function ask(userText, canal = "texto") {
       // saber, lendo depois, se ela tinha AGIDO ou só conversado. Era o buraco
       // de diagnóstico mais caro que este app tinha.
       onTool: (nome, args) => {
+        honestidade.chamou(nome, args);
         log("ferramenta:", nome, resumirArgs(args));
         send("ev:tool", { name: nome });
         setEstado("thinking", nome);
@@ -1372,6 +1379,27 @@ async function ask(userText, canal = "texto") {
   }
   // Solta o que o filtro ainda segurava (uma marca que nunca fechou vira texto).
   opcoesDaFala.fim();
+
+  // A TRAVA DA HONESTIDADE (25/11/2026). Ação que falhou e não deu certo
+  // depois, numa resposta que não admite falha nenhuma: o código acrescenta a
+  // verdade, na tela e na voz. Em 25/11, 23:34, ela disse "Tudo certo. Removi…"
+  // com três de quatro trash_file em erro. Conta também como erro DELA no
+  // diário de aprendizados, para virar alerta se repetir.
+  const correcao = honestidade.aviso(respostaDoTurno);
+  if (correcao) {
+    log("honestidade: resposta sem admitir falha; corrigindo:", correcao);
+    anotar("eve", correcao);
+    send("ev:message", { quem: "eve", texto: correcao });
+    speak(correcao);
+    if (!escolhasDoTurno) escolhasDoTurno = { opcoes: ["Tenta de novo", "Deixa assim"], tipo: "oferta" };
+    aprendizados
+      ?.registrarFalha({
+        ferramenta: "resposta",
+        erro: "disse que fez, mas a ferramenta tinha falhado (a trava corrigiu)",
+        pedido: perguntaAtual.texto,
+      })
+      .then(() => atualizarIndiceAprendizados());
+  }
 
   // A volta inteira saiu em enchimento: nenhuma frase com conteúdo. Ficar
   // calada aqui é o pior desfecho — parece que ela ignorou o pedido. Melhor
@@ -1765,6 +1793,7 @@ app.whenReady().then(() => {
     onResultado: ({ nome, ms, resultado }) => {
       const r = registro.resultadoDeFerramenta(resultado);
       turnoAtual?.ferramenta(r.ok);
+      honestidade.resultado(nome, r);
       log(`  ↳ ${nome} ${r.ok ? "✓" : "✗"} ${ms} ms · ${r.texto}`);
       // Aprender com o erro: toda falha vai para o diário de erros no cofre, e
       // a que se repete volta no prompt como alerta (aprendizados.js).
