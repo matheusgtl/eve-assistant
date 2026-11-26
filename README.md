@@ -14,7 +14,7 @@ Ela se chama **Sexta-Feira** desde 25/11/2026; antes era a **E.V.E** ("Ivi"). No
 
 Fechar a janela só a esconde: ela continua no olho da barra de menus, ouvindo o ⌥Espaço e avisando lembretes. O menu do olho tem abrir, falar, nova conversa, silenciar a voz e sair. O ícone é uma imagem *template* (`assets/trayTemplate*.png`): o macOS pinta de claro ou escuro sozinho.
 
-O ícone do app vem da arte em `assets/logo-original.png`; `build/make-icon.swift` recorta o quadrado, aplica a máscara de cantos da Apple e gera o ícone, a logo da tela (`renderer/logo.png`) e o da barra de menus. O `pack.sh` refaz o `.icns` quando a arte muda.
+O ícone do app vem da arte em `assets/logo-original.png`; `build/make-icon.swift` recorta o quadrado, aplica a máscara de cantos da Apple e gera o ícone do app e o da barra de menus. Dentro da tela a logo e o avatar das respostas são outro desenho: o olho em **vetor** (o `<symbol id="olho">` no `index.html`), que segue a cor do tema e fica nítido em qualquer tamanho — a foto do ícone parecia um adesivo colado na interface. O `pack.sh` refaz o `.icns` quando a arte muda.
 
 ## Primeira vez
 
@@ -36,9 +36,9 @@ Desde 25/11/2026, o layout das conversas do Claude, em três faixas:
 
 - **Esquerda — conversas.** Nova conversa (⌘N, também ⌘K), configurações (⌘,) e a lista das conversas. Clicar numa antiga a reabre; a que estava aberta fica guardada (`chats.js`: o `historico.json` continua sendo a aberta, e o `chats.json` guarda as outras inteiras — trocar nunca apaga nada). Duplo clique no título lá em cima renomeia.
 - **Centro — o chat.** A mensagem dele numa bolha à direita, a resposta dela em texto corrido com o olho ao lado, as ferramentas usadas como linhas discretas (`⚙ web search`). Conversa vazia mostra o olho, uma saudação e sugestões. O compositor é a caixa arredondada embaixo: anexar, silenciar a voz, microfone e enviar.
-- **Direita — o painel dela.** A esfera de redes neurais (clique para falar), o estado, o **contexto da conversa**, o monitor do sistema e o uso dos agentes. O botão no canto da barra lateral esconde o painel; em janela estreita ele flutua.
+- **Direita — o painel dela.** A esfera de redes neurais (clique para falar), o estado, o **contexto da conversa**, o monitor do sistema (compacto: duas colunas, detalhe no passar do mouse, e medida que o Mac não informa some) e o uso dos agentes. A esfera tem um contorno desenhado (o limbo) e perspectiva menos curta: antes só a malha da frente aparecia e a figura lia como oval. O botão no canto da barra lateral esconde o painel; em janela estreita ele flutua.
 
-O tema padrão é o **sexta-feira**: os cinzas neutros do Claude com o ciano do olho. Os temas antigos continuam nas configurações.
+O tema padrão é o **Sexta-Feira**: preto neutro com o ciano do olho. Todos os temas escuros são quase pretos; verde, âmbar e vermelho são os mesmos em todos (são sinal, não decoração). As **barras têm cores próprias** (`--barra-ok`, `--barra-meio`, `--barra-alto`), vivas nos dois modos: as do texto, no claro, precisam ser escuras para ler, e numa barra isso virava lama. As configurações são uma janela por cima do app, com as abas à esquerda.
 
 O campo de escrever **cresce com o texto** até um teto e então rola. Campo de uma linha escondia o que você acabou de escrever assim que passava da largura — que é exatamente quando reler importa. **Enter** envia, **⇧enter** quebra linha.
 

@@ -2,7 +2,6 @@
 //
 // Uso:
 //   swift build/make-icon.swift app   <destino.png>   ícone do app, 1024×1024
-//   swift build/make-icon.swift logo  <destino.png>   logo da interface, 256×256
 //   swift build/make-icon.swift tray  <pasta>         ícone da barra de menus
 //
 // Até 25/11/2026 o ícone era desenhado aqui em código (disco + órbita). Agora
@@ -92,9 +91,6 @@ case "app":
         desenharArte(em: NSRect(x: (l - corpo) / 2, y: (l - corpo) / 2, width: corpo, height: corpo))
     }, destino)
 
-case "logo":
-    gravar(desenhar(256) { _, l in desenharArte(em: NSRect(x: 0, y: 0, width: l, height: l)) }, destino)
-
 case "tray":
     // O olho em traço. 18 pt é o tamanho da barra de menus; @2x para Retina.
     for (escala, sufixo) in [(1, ""), (2, "@2x")] {
@@ -136,6 +132,6 @@ case "tray":
     }
 
 default:
-    print("modo desconhecido: \(modo) (use app, logo ou tray)")
+    print("modo desconhecido: \(modo) (use app ou tray)")
     exit(1)
 }

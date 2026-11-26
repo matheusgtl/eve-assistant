@@ -20,124 +20,129 @@
 // ===========================================================================
 // 1. Temas
 // ===========================================================================
+// 25/11/2026: todos os escuros ficaram quase pretos (ele pediu "mais puxado
+// para o preto, menos para o cinza"). A diferença entre fundo, barra lateral,
+// painel e campo é pequena de propósito: separa as áreas sem acinzentar.
+//
+// Verde, âmbar e vermelho são IGUAIS em todos os temas: são sinal (uso baixo,
+// médio, alto), não decoração, e mudar de tema não pode mudar o que eles
+// querem dizer. As barras têm cores próprias e vivas no index.html
+// (--barra-ok…); estas aqui são as do texto.
+const SINAL_ESCURO = { "--ok": "#22d37f", "--meio": "#fbbf24", "--alto": "#ff6b6b" };
+const SINAL_CLARO = { "--ok": "#067647", "--meio": "#b54708", "--alto": "#d92d20" };
+
 const TEMAS = {
-  // O tema da Sexta-Feira: os cinzas neutros do Claude e o ciano do olho dela.
+  // O tema da Sexta-Feira: preto neutro e o ciano do olho dela.
   sexta: {
-    nome: "sexta-feira", desc: "cinza neutro e o ciano do olho",
+    nome: "Sexta-Feira", desc: "preto e o ciano do olho",
     vars: {
-      "--fundo": "#1f2023", "--lateral": "#18191c", "--painel": "#26272b", "--campo": "#2b2c31",
-      "--borda": "#34363c", "--texto": "#ececec", "--fraco": "#9b9da4", "--ac": "#5cc8ff", "--ac2": "#a99bff",
-      "--ok": "#4ade80", "--meio": "#fbbf24", "--alto": "#f87171",
+      "--fundo": "#0a0b0d", "--lateral": "#060708", "--painel": "#111215", "--campo": "#15161a",
+      "--borda": "#272a30", "--texto": "#ececed", "--fraco": "#8d9098", "--ac": "#5cc8ff", "--ac2": "#a99bff",
+      ...SINAL_ESCURO,
     },
     esfera: { idle: [92, 200, 255], listening: [110, 240, 180], thinking: [169, 155, 255], speaking: [130, 220, 255] },
   },
   holografico: {
-    nome: "holográfico", desc: "ciano sobre quase preto",
+    nome: "Holográfico", desc: "ciano sobre azul-noite",
     vars: {
-      "--fundo": "#0b141e", "--painel": "#152231", "--borda": "#2e4a63",
-      "--texto": "#eaf5ff", "--fraco": "#9bbbd4", "--ac": "#6fd8ff", "--ac2": "#b3a6ff",
-      "--ok": "#5ee88f", "--meio": "#ffc940", "--alto": "#ff8585",
+      "--fundo": "#04080d", "--lateral": "#020508", "--painel": "#0a1219", "--campo": "#0e1820",
+      "--borda": "#1a2a38", "--texto": "#e6f4ff", "--fraco": "#86a6bf", "--ac": "#6fd8ff", "--ac2": "#b3a6ff",
+      ...SINAL_ESCURO,
     },
     esfera: { idle: [95, 208, 255], listening: [110, 240, 180], thinking: [155, 140, 255], speaking: [251, 191, 36] },
   },
   ambar: {
-    nome: "âmbar", desc: "terminal antigo",
+    nome: "Âmbar", desc: "terminal antigo",
     vars: {
-      "--fundo": "#16110a", "--painel": "#241a0f", "--borda": "#4b3822",
-      "--texto": "#fcf0dc", "--fraco": "#c3a177", "--ac": "#ffc96e", "--ac2": "#ff9a5e",
-      "--ok": "#b6ef4a", "--meio": "#ffc940", "--alto": "#ff8585",
+      "--fundo": "#0b0805", "--lateral": "#070503", "--painel": "#140f09", "--campo": "#19130c",
+      "--borda": "#33281a", "--texto": "#fbefdb", "--fraco": "#b39570", "--ac": "#ffc96e", "--ac2": "#ff9a5e",
+      ...SINAL_ESCURO,
     },
     esfera: { idle: [255, 190, 92], listening: [163, 230, 53], thinking: [255, 138, 76], speaking: [255, 214, 120] },
   },
   esmeralda: {
-    nome: "esmeralda", desc: "osciloscópio",
+    nome: "Esmeralda", desc: "osciloscópio",
     vars: {
-      "--fundo": "#091712", "--painel": "#10241c", "--borda": "#224a38",
-      "--texto": "#dffbea", "--fraco": "#7cb89c", "--ac": "#5ff7b4", "--ac2": "#63d8ff",
-      "--ok": "#5ee88f", "--meio": "#ffc940", "--alto": "#ff8585",
+      "--fundo": "#040b08", "--lateral": "#020604", "--painel": "#09140f", "--campo": "#0d1a14",
+      "--borda": "#183325", "--texto": "#dcfae9", "--fraco": "#74ab91", "--ac": "#5ff7b4", "--ac2": "#63d8ff",
+      ...SINAL_ESCURO,
     },
     esfera: { idle: [91, 240, 174], listening: [170, 255, 210], thinking: [79, 208, 255], speaking: [251, 191, 36] },
   },
   violeta: {
-    nome: "violeta", desc: "roxo profundo",
+    nome: "Violeta", desc: "roxo profundo",
     vars: {
-      "--fundo": "#120c1e", "--painel": "#1c152d", "--borda": "#3b2d59",
-      "--texto": "#efe7ff", "--fraco": "#a89ccb", "--ac": "#c4a3ff", "--ac2": "#ff9bd8",
-      "--ok": "#5ee88f", "--meio": "#ffc940", "--alto": "#ff8585",
+      "--fundo": "#08060d", "--lateral": "#050308", "--painel": "#110d1a", "--campo": "#161120",
+      "--borda": "#2a2140", "--texto": "#efe7ff", "--fraco": "#9d91c0", "--ac": "#c4a3ff", "--ac2": "#ff9bd8",
+      ...SINAL_ESCURO,
     },
     esfera: { idle: [179, 136, 255], listening: [120, 245, 190], thinking: [255, 135, 207], speaking: [251, 191, 36] },
   },
   mono: {
-    nome: "monocromático", desc: "branco e cinza",
+    nome: "Monocromático", desc: "branco sobre preto",
     vars: {
-      "--fundo": "#101114", "--painel": "#1a1c20", "--borda": "#3b3e46",
-      "--texto": "#f4f5f7", "--fraco": "#a7abb4", "--ac": "#eceef2", "--ac2": "#bfc4cd",
-      "--ok": "#c9d0d8", "--meio": "#e8ebef", "--alto": "#ff8585",
+      "--fundo": "#09090a", "--lateral": "#050506", "--painel": "#121213", "--campo": "#171719",
+      "--borda": "#27272a", "--texto": "#f4f4f5", "--fraco": "#9a9aa1", "--ac": "#ededf0", "--ac2": "#b8bcc5",
+      ...SINAL_ESCURO,
     },
     esfera: { idle: [223, 226, 230], listening: [255, 255, 255], thinking: [158, 163, 171], speaking: [200, 205, 212] },
   },
 };
 
-// Versão clara de cada tema. É um EIXO à parte, não um sexto tema: o tema
-// escolhe a cor de destaque, o claro/escuro escolhe o fundo. Assim quem gosta
-// do âmbar continua no âmbar nos dois modos.
-//
-// Não dá para inverter as cores do escuro por fórmula. Num fundo quase preto
-// um ciano pastel brilha; no branco ele some. Então cada tema tem a sua paleta
-// clara escrita à mão, com os destaques escurecidos até terem contraste de
-// verdade sobre o branco.
+// Versão clara de cada tema. É um EIXO à parte, não um sétimo tema: o tema
+// escolhe a cor de destaque, o claro/escuro escolhe o fundo. Os destaques são
+// escurecidos à mão até terem contraste de verdade sobre o branco.
 const CLAROS = {
   sexta: {
     vars: {
-      "--fundo": "#f7f7f5", "--lateral": "#efefec", "--painel": "#ffffff", "--campo": "#ffffff",
-      "--borda": "#dcdcd6", "--texto": "#1c1c1e", "--fraco": "#66676d", "--ac": "#0a72b3", "--ac2": "#5a43d6",
-      "--ok": "#16803c", "--meio": "#a35b00", "--alto": "#b42318",
+      "--fundo": "#ffffff", "--lateral": "#f6f6f7", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#e2e3e7", "--texto": "#16171a", "--fraco": "#62646c", "--ac": "#0a72b3", "--ac2": "#5a43d6",
+      ...SINAL_CLARO,
     },
-    esfera: { idle: [10, 114, 179], listening: [22, 128, 60], thinking: [90, 67, 214], speaking: [10, 114, 179] },
+    esfera: { idle: [10, 114, 179], listening: [6, 118, 71], thinking: [90, 67, 214], speaking: [10, 114, 179] },
   },
   holografico: {
     vars: {
-      "--fundo": "#e8f0f7", "--painel": "#ffffff", "--borda": "#a7c2d7",
-      "--texto": "#06161f", "--fraco": "#3c5e78", "--ac": "#00618a", "--ac2": "#4433c4",
-      "--ok": "#0f6b33", "--meio": "#8f4000", "--alto": "#a3121a",
+      "--fundo": "#f6fafd", "--lateral": "#eaf2f8", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#c9dae7", "--texto": "#06161f", "--fraco": "#3c5e78", "--ac": "#00618a", "--ac2": "#4433c4",
+      ...SINAL_CLARO,
     },
-    esfera: { idle: [0, 97, 138], listening: [15, 107, 51], thinking: [68, 51, 196], speaking: [143, 64, 0] },
+    esfera: { idle: [0, 97, 138], listening: [6, 118, 71], thinking: [68, 51, 196], speaking: [143, 64, 0] },
   },
   ambar: {
     vars: {
-      "--fundo": "#f5efe3", "--painel": "#fffdf7", "--borda": "#cdb894",
-      "--texto": "#2a1c07", "--fraco": "#6d5331", "--ac": "#7d4502", "--ac2": "#a8330a",
-      "--ok": "#3d6509", "--meio": "#8f4000", "--alto": "#a3121a",
+      "--fundo": "#fdfaf4", "--lateral": "#f5eee1", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#e3d5bd", "--texto": "#2a1c07", "--fraco": "#6d5331", "--ac": "#7d4502", "--ac2": "#a8330a",
+      ...SINAL_CLARO,
     },
-    esfera: { idle: [125, 69, 2], listening: [61, 101, 9], thinking: [168, 51, 10], speaking: [143, 64, 0] },
+    esfera: { idle: [125, 69, 2], listening: [6, 118, 71], thinking: [168, 51, 10], speaking: [143, 64, 0] },
   },
   esmeralda: {
     vars: {
-      "--fundo": "#e7f5ee", "--painel": "#ffffff", "--borda": "#a2cbb6",
-      "--texto": "#062018", "--fraco": "#336450", "--ac": "#00634a", "--ac2": "#025682",
-      "--ok": "#0f6b33", "--meio": "#8f4000", "--alto": "#a3121a",
+      "--fundo": "#f5fbf8", "--lateral": "#e8f4ee", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#c4ddd0", "--texto": "#062018", "--fraco": "#336450", "--ac": "#00634a", "--ac2": "#025682",
+      ...SINAL_CLARO,
     },
-    esfera: { idle: [0, 99, 74], listening: [15, 107, 51], thinking: [2, 86, 130], speaking: [143, 64, 0] },
+    esfera: { idle: [0, 99, 74], listening: [6, 118, 71], thinking: [2, 86, 130], speaking: [143, 64, 0] },
   },
   violeta: {
     vars: {
-      "--fundo": "#f1eafc", "--painel": "#ffffff", "--borda": "#c3b2e3",
-      "--texto": "#1c1233", "--fraco": "#55457c", "--ac": "#5a17c4", "--ac2": "#a30d5d",
-      "--ok": "#0f6b33", "--meio": "#8f4000", "--alto": "#a3121a",
+      "--fundo": "#faf7fe", "--lateral": "#f1eafc", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#dccff0", "--texto": "#1c1233", "--fraco": "#55457c", "--ac": "#5a17c4", "--ac2": "#a30d5d",
+      ...SINAL_CLARO,
     },
-    esfera: { idle: [90, 23, 196], listening: [15, 107, 51], thinking: [163, 13, 93], speaking: [143, 64, 0] },
+    esfera: { idle: [90, 23, 196], listening: [6, 118, 71], thinking: [163, 13, 93], speaking: [143, 64, 0] },
   },
   mono: {
     vars: {
-      "--fundo": "#eeeef0", "--painel": "#ffffff", "--borda": "#c2c4ca",
-      "--texto": "#0e0f12", "--fraco": "#55585f", "--ac": "#1c1e22", "--ac2": "#4f535b",
-      "--ok": "#3a4049", "--meio": "#5c544c", "--alto": "#a3121a",
+      "--fundo": "#ffffff", "--lateral": "#f4f4f5", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#e0e0e3", "--texto": "#0e0f12", "--fraco": "#55585f", "--ac": "#1c1e22", "--ac2": "#4f535b",
+      ...SINAL_CLARO,
     },
     esfera: { idle: [28, 30, 34], listening: [14, 15, 18], thinking: [79, 83, 91], speaking: [92, 84, 76] },
   },
 };
 
-// A esfera agora mora no painel da direita, que tem 318 px.
 const LADOS_ESFERA = { pequena: "180px", media: "230px", grande: "290px" };
 
 function aplicarVisual(cfg) {
@@ -236,7 +241,7 @@ function encherBarra(barra, fracao, faixa) {
 
     caixa.append(linha, barra, det);
     alvo.appendChild(caixa);
-    elMedida[m.id] = { val, barra, det };
+    elMedida[m.id] = { caixa, rot: m.rot, val, barra, det };
   }
 })();
 
@@ -252,6 +257,12 @@ function pintar(id, texto, porcento, detalhe) {
   if (!m) return;
   m.val.textContent = texto;
   m.det.textContent = detalhe || "";
+  // O monitor é compacto: o detalhe (núcleos, GB livres…) vai para o passar
+  // do mouse, em vez de uma linha a mais embaixo de cada barra.
+  m.caixa.title = detalhe ? `${m.rot}: ${texto} · ${detalhe}` : `${m.rot}: ${texto}`;
+  // Medida que este Mac não informa (temperatura sem root, GPU sem driver)
+  // não ocupa lugar: uma barra vazia para sempre só gasta espaço.
+  m.caixa.classList.toggle("oculta", porcento == null && /n\/d/.test(texto));
   if (porcento == null) {
     m.val.className = "val valorCor";
     encherBarra(m.barra, null);
@@ -301,6 +312,7 @@ function mostrarMetricas(m) {
     b.val.textContent = m.bateria.porcento + "%";
     b.val.className = "val valorCor " + faixaDe(1 - m.bateria.porcento / 100);
     b.det.textContent = m.bateria.estado + (m.bateria.restante ? ` · ${m.bateria.restante}` : "");
+    b.caixa.title = `Bateria: ${m.bateria.porcento}% · ${b.det.textContent}`;
   } else {
     pintar("bat", "tomada", null, "sem bateria");
   }
@@ -549,6 +561,18 @@ function registrar({ quem, texto, classe }) {
   rotulo.textContent =
     classe === "erro" ? "Erro" : quem === "eve" ? configAtual.nome || "Sexta-Feira" : "Você";
   linha.appendChild(rotulo);
+
+  // O olho dela ao lado de cada resposta: o mesmo símbolo vetorial da logo.
+  if (quem === "eve") {
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("class", "olho avatar-olho");
+    svg.setAttribute("aria-hidden", "true");
+    const use = document.createElementNS(ns, "use");
+    use.setAttribute("href", "#olho");
+    svg.appendChild(use);
+    linha.appendChild(svg);
+  }
 
   const txt = document.createElement("span");
   txt.className = "txt";
@@ -1146,7 +1170,8 @@ grupo("cfgDesempenho", null, (v) => {
     b.appendChild(document.createTextNode(t.desc));
     const amostra = document.createElement("span");
     amostra.className = "amostra";
-    for (const cor of [t.vars["--ac"], t.vars["--ok"], t.vars["--meio"], t.vars["--alto"]]) {
+    // A amostra mostra o tema de verdade: fundo, painel, destaque e o segundo destaque.
+    for (const cor of [t.vars["--fundo"], t.vars["--painel"], t.vars["--ac"], t.vars["--ac2"]]) {
       const i = document.createElement("i");
       i.style.background = cor;
       amostra.appendChild(i);

@@ -27,6 +27,16 @@
     --erro: #ff8f8f;
     --level: 0;
     --trilho: color-mix(in srgb, var(--texto) 10%, transparent);
+    /* Cores das barras: fixas e iguais em todos os temas (25/11/2026). As
+       --ok/--meio/--alto do tema servem para TEXTO, e no claro precisam ser
+       escuras para ler; numa barra, escuro vira lama. Então a barra tem as
+       suas, vivas nos dois modos. */
+    --barra-ok: #22d37f;
+    --barra-meio: #fbbf24;
+    --barra-alto: #ff5f5f;
+    --barra-neutra: var(--ac);
+    --sobre-ac: #04121c;
+    --olho-nucleo: #ffffff;
     --esfera-lado: 230px;
     --mono: ui-monospace, "SF Mono", Menlo, monospace;
     --texto-fonte: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
@@ -70,7 +80,9 @@
   }
   .lateral .arrasto { -webkit-app-region: drag; height: 46px; flex: 0 0 46px; display: flex; align-items: center; justify-content: flex-end; padding: 0 10px; }
   .marca { display: flex; align-items: center; gap: 10px; padding: 4px 16px 14px; }
-  .marca img { width: 34px; height: 34px; border-radius: 9px; box-shadow: 0 0 18px color-mix(in srgb, var(--ac) 25%, transparent); }
+  .olho { display: block; flex: none; }
+  :root:not([data-claro="1"]) .olho { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--ac) 55%, transparent)); }
+  .marca .olho { width: 38px; height: 38px; }
   .marca .nome { font-size: 16px; font-weight: 600; letter-spacing: .01em; }
   .marca .sub { font-size: 11.5px; color: var(--fraco); }
   .nav { padding: 0 8px; display: flex; flex-direction: column; gap: 1px; }
@@ -130,7 +142,7 @@
   /* Tela de conversa vazia: o olho dela e uma saudação, como a do Claude. */
   .vazio { display: none; flex-direction: column; align-items: center; text-align: center; padding-top: 12vh; gap: 14px; }
   .vazio.show { display: flex; }
-  .vazio img { width: 84px; height: 84px; border-radius: 20px; box-shadow: 0 0 40px color-mix(in srgb, var(--ac) 28%, transparent); }
+  .vazio .olho { width: 112px; height: 112px; }
   .vazio h1 { font-size: 28px; font-weight: 500; letter-spacing: -.01em; }
   .vazio p { color: var(--fraco); font-size: 14px; }
   .sugestoes { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 10px; }
@@ -149,10 +161,7 @@
     color: var(--texto); white-space: pre-wrap;
   }
   .linha-log.eve { position: relative; padding-left: 38px; }
-  .linha-log.eve::before {
-    content: ""; position: absolute; left: 0; top: 1px; width: 26px; height: 26px; border-radius: 7px;
-    background: url("logo.png") center / cover;
-  }
+  .linha-log.eve > .avatar-olho { position: absolute; left: -2px; top: -3px; width: 30px; height: 30px; }
   .linha-log.eve .quem { display: block; font-size: 12.5px; font-weight: 600; color: var(--texto); margin-bottom: 2px; }
   .linha-log.eve .txt { color: var(--texto); font-size: 14.5px; line-height: 1.7; }
   .linha-log.sis { text-align: center; color: var(--fraco); font-size: 12px; margin-bottom: 16px; }
@@ -188,13 +197,13 @@
   .barra-compositor .fim { margin-left: auto; display: flex; gap: 6px; align-items: center; }
   .enviar {
     width: 34px; height: 34px; border-radius: 10px; border: 0; cursor: pointer;
-    background: var(--ac); color: #071018; display: grid; place-items: center;
+    background: var(--ac); color: var(--sobre-ac); display: grid; place-items: center;
   }
   .enviar svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
   .enviar:hover { filter: brightness(1.1); }
   .mic { width: 34px; height: 34px; border-radius: 10px; }
-  .mic.ligado { color: #071018; background: var(--ok); }
-  .mic.ligado:hover { color: #071018; background: var(--ok); }
+  .mic.ligado { color: var(--sobre-ac); background: var(--barra-ok); }
+  .mic.ligado:hover { color: var(--sobre-ac); background: var(--barra-ok); }
   .anexado {
     display: none; align-items: center; gap: 8px; align-self: flex-start;
     font-size: 12.5px; padding: 5px 10px; border-radius: 9px; background: var(--painel); border: 1px solid var(--borda);
@@ -220,7 +229,7 @@
   .bloco > h3 small { margin-left: auto; font-weight: 400; color: var(--fraco); font-size: 12px; }
 
   /* A esfera: o centro do painel dela, com o estado embaixo. */
-  .palco { display: flex; flex-direction: column; align-items: center; padding: 0 20px 14px; position: relative; }
+  .palco { display: flex; flex-direction: column; align-items: center; padding: 0 16px 14px; position: relative; }
   .palco::before {
     content: ""; position: absolute; left: 50%; top: calc(var(--esfera-lado) / 2); width: var(--esfera-lado); height: var(--esfera-lado);
     transform: translate(-50%, -50%); border-radius: 50%;
@@ -228,7 +237,9 @@
     opacity: calc(.6 + var(--level) * .4); pointer-events: none;
   }
   .palco > * { position: relative; }
-  .palco canvas { width: var(--esfera-lado); height: var(--esfera-lado); max-width: 100%; cursor: pointer; display: block; }
+  /* aspect-ratio garante o quadrado mesmo quando o painel aperta a largura:
+     com max-width sozinho a altura ficava fixa e o canvas esticava. */
+  .palco canvas { width: min(var(--esfera-lado), 100%); height: auto; aspect-ratio: 1 / 1; cursor: pointer; display: block; }
   .estado { margin-top: 4px; font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--fraco); min-height: 16px; }
   body.listening .estado { color: var(--ok); }
   body.thinking .estado { color: var(--ac2); }
@@ -253,28 +264,39 @@
      estilo btop; agora é um trilho só, de pontas arredondadas, como o medidor
      de contexto do Claude. A COR do preenchimento é a do nível — verde, âmbar,
      vermelho — e muda junto com o uso, com transição. */
-  .medidas { display: flex; flex-direction: column; gap: 13px; }
-  .medida .linha { display: flex; align-items: baseline; gap: 6px; font-size: 13px; margin-bottom: 5px; }
-  .medida .rot { color: var(--texto); }
-  .medida .val { margin-left: auto; font: 12.5px var(--mono); color: var(--texto); }
-  .medida .det { font-size: 11.5px; color: var(--fraco); margin-top: 4px; }
+  /* Monitor COMPACTO (25/11/2026): duas colunas, barra fina e o detalhe só
+     no passar do mouse. Ocupava metade do painel; agora cabe num cartão. */
+  .medidas { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 18px; }
+  .medida { min-width: 0; cursor: default; }
+  .medida.oculta { display: none; }
+  .medida .linha { display: flex; align-items: baseline; gap: 6px; font-size: 12px; margin-bottom: 4px; }
+  .medida .rot { color: var(--fraco); }
+  .medida .val { margin-left: auto; font: 11.5px var(--mono); color: var(--texto); white-space: nowrap; }
+  .medida .det { display: none; }
+  .medidas .barra { height: 4px; }
   .barra {
     position: relative; height: 7px; border-radius: 99px; background: var(--trilho); overflow: hidden;
   }
   .barra > .enche {
     position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 99px;
-    background: var(--ok);
+    background: var(--barra-ok);
     transition: width .5s cubic-bezier(.2, .8, .2, 1), background-color .5s linear;
   }
-  .barra.ok > .enche { background: var(--ok); }
-  .barra.meio > .enche { background: var(--meio); }
-  .barra.alto > .enche { background: var(--alto); }
-  .barra.neutra > .enche { background: color-mix(in srgb, var(--ac) 70%, var(--fraco)); }
+  .barra.ok > .enche { background: var(--barra-ok); }
+  .barra.meio > .enche { background: var(--barra-meio); }
+  .barra.alto > .enche { background: var(--barra-alto); }
+  .barra.neutra > .enche { background: var(--barra-neutra); }
+  /* No escuro um brilho curto da própria cor: a barra parece acesa. */
+  :root:not([data-claro="1"]) .barra.ok > .enche { box-shadow: 0 0 8px color-mix(in srgb, var(--barra-ok) 55%, transparent); }
+  :root:not([data-claro="1"]) .barra.meio > .enche { box-shadow: 0 0 8px color-mix(in srgb, var(--barra-meio) 55%, transparent); }
+  :root:not([data-claro="1"]) .barra.alto > .enche { box-shadow: 0 0 8px color-mix(in srgb, var(--barra-alto) 55%, transparent); }
   .barra.sem { opacity: .4; }
   .valorCor.ok { color: var(--ok); }
   .valorCor.meio { color: var(--meio); }
   .valorCor.alto { color: var(--alto); }
   .infos { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12px; margin-top: 14px; }
+  .infos.linha-unica { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 12px; font-size: 11px; color: var(--fraco); }
+  .infos.linha-unica span { font-size: 11px; color: var(--fraco); text-align: left; }
   .infos b { color: var(--fraco); font-weight: 400; }
   .infos span { color: var(--texto); text-align: right; font-family: var(--mono); font-size: 11.5px; }
 
@@ -301,9 +323,16 @@
   .contexto .det { font-size: 11.5px; color: var(--fraco); margin-top: 8px; line-height: 1.5; }
 
   /* Claro: sombras mais leves e o trilho um pouco mais escuro. */
-  :root[data-claro="1"] { --trilho: color-mix(in srgb, var(--texto) 12%, transparent); }
+  :root[data-claro="1"] {
+    --trilho: #e3e5ea;
+    --barra-ok: #12b76a;
+    --barra-meio: #f59e0b;
+    --barra-alto: #f04438;
+    --sobre-ac: #ffffff;
+    --olho-nucleo: var(--ac);
+  }
   :root[data-claro="1"] .compositor { box-shadow: 0 4px 18px rgba(20, 20, 30, .07); }
-  :root[data-claro="1"] .enviar, :root[data-claro="1"] .mic.ligado { color: #fff; }
+
 
   /* Janela estreita: o painel da direita vira opcional. */
   body.sem-painel .painel { display: none; }
@@ -315,181 +344,185 @@
   #btnMudo.mudo .ondas { display: none; }
   #btnMudo.mudo .corte { display: inline; }
 
-  /* ---------- configurações, primeira vez, cartões e botões (de antes) ---------- */
-
-  .valorCor.ok { color: var(--ok); }
-  .valorCor.meio { color: var(--meio); }
-  .valorCor.alto { color: var(--alto); }
+  /* ---------- cartões de arquivo, botões de resposta e markdown ---------- */
   .linha-log .arquivo {
-    display: flex; align-items: center; gap: 10px;
-    margin: 8px 0 4px; padding: 8px 10px; max-width: 420px;
-    background: var(--painel); border: 1px solid var(--borda); border-radius: 6px;
-    font-family: var(--texto-fonte);
+    display: flex; align-items: center; gap: 12px;
+    margin: 10px 0 4px; padding: 10px 12px; max-width: 440px;
+    background: var(--painel); border: 1px solid var(--borda); border-radius: 12px;
   }
   .arquivo-icone {
-    flex: none; width: 34px; height: 40px; border-radius: 4px;
-    display: grid; place-items: center;
-    font: 600 10px/1 var(--mono); letter-spacing: .06em;
-    color: var(--ac); border: 1px solid color-mix(in srgb, var(--ac) 45%, transparent);
-    background: color-mix(in srgb, var(--ac) 9%, transparent);
+    flex: none; width: 36px; height: 42px; border-radius: 8px; display: grid; place-items: center;
+    font: 600 10px/1 var(--mono); letter-spacing: .04em; color: var(--ac);
+    background: color-mix(in srgb, var(--ac) 12%, transparent);
   }
   .arquivo-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-  .arquivo-nome {
-    color: var(--texto); font-size: 13px; font-weight: 500;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .arquivo-meta { color: var(--fraco); font-size: 11.5px; }
+  .arquivo-nome { color: var(--texto); font-size: 13.5px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .arquivo-meta { color: var(--fraco); font-size: 12px; }
   .arquivo-acoes { flex: none; display: flex; gap: 6px; }
   .arquivo-botao {
-    font: 500 12px/1 var(--texto-fonte); padding: 7px 11px; border-radius: 4px;
+    font: 500 12.5px/1 var(--texto-fonte); padding: 8px 13px; border-radius: 9px;
     cursor: pointer; border: 1px solid var(--borda); background: transparent; color: var(--texto);
   }
-  .arquivo-botao.primario {
-    border-color: var(--ac); color: var(--fundo); background: var(--ac);
-  }
-  .arquivo-botao:hover { filter: brightness(1.12); }
+  .arquivo-botao.primario { border-color: var(--ac); color: var(--sobre-ac); background: var(--ac); }
+  .arquivo-botao:hover { filter: brightness(1.1); }
   .arquivo-botao:focus-visible { outline: 2px solid var(--ac); outline-offset: 2px; }
   .arquivo-botao:disabled { opacity: .55; cursor: progress; }
-  .escolhas { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; padding-left: 10px; }
-  .escolhas .arquivo-botao { padding: 8px 13px; font-size: 12.5px; }
-  .linha-log code {
-    background: var(--fundo); border: 1px solid var(--borda); border-radius: 2px; padding: 0 3px;
-  }
-  .tela {
-    position: fixed; inset: 0; z-index: 30;
-    background: color-mix(in srgb, var(--fundo) 97%, transparent);
-    display: none; flex-direction: column; align-items: center;
-    padding: 46px 22px 18px;
-  }
-  .tela.show { display: flex; }
-  .tela > * { width: 100%; max-width: 560px; }
-  .tela h2 { font-size: 13px; letter-spacing: .24em; text-transform: uppercase; color: var(--ac); text-align: center; }
-  .tela .sub { color: var(--fraco); font-size: 11px; margin: 8px 0 14px; line-height: 1.6; }
-  .tela .sub a { color: var(--ac); text-decoration: none; cursor: pointer; }
-  .abas { display: flex; gap: 5px; margin-bottom: 14px; flex-wrap: wrap; justify-content: center; }
-  .aba {
-    background: none; border: 1px solid var(--borda); color: var(--fraco);
-    border-radius: 3px; padding: 6px 12px; cursor: pointer; font: inherit; font-size: 10px;
-    letter-spacing: .16em; text-transform: uppercase;
-  }
-  .aba.ativa { border-color: var(--ac); color: var(--ac); }
-  .folha { display: none; flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
-  .folha.ativa { display: block; }
-  .campo { margin-bottom: 14px; }
-  .divisor { height: 1px; background: var(--borda); margin: 20px 0 16px; }
-  .listaAgentes {
-    padding: 7px 8px 3px; display: flex; flex-direction: column; gap: 7px;
-    overflow-y: auto; min-height: 0; scrollbar-width: thin;
-  }
-  .listaAgentes::-webkit-scrollbar { width: 5px; }
-  .listaAgentes::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--fraco) 45%, transparent); border-radius: 5px;
-  }
-  .linha-log .txt .md-p { margin: 0 0 6px; }
+  .escolhas { display: flex; flex-wrap: wrap; gap: 8px; margin: -8px 0 22px; padding-left: 38px; }
+  .escolhas .arquivo-botao { padding: 9px 15px; font-size: 13px; border-radius: 99px; }
+  .linha-log code { font: 12.5px var(--mono); background: color-mix(in srgb, var(--texto) 8%, transparent); border-radius: 5px; padding: 1px 5px; }
+  .linha-log .txt .md-p { margin: 0 0 10px; }
   .linha-log .txt .md-p:last-child { margin-bottom: 0; }
-  .linha-log .txt .md-lista { margin: 0 0 6px; padding-left: 17px; }
+  .linha-log .txt .md-lista { margin: 0 0 10px; padding-left: 20px; }
   .linha-log .txt .md-lista:last-child { margin-bottom: 0; }
-  .linha-log .txt .md-lista li { margin: 1px 0; }
+  .linha-log .txt .md-lista li { margin: 3px 0; }
   .linha-log .txt .md-lista li::marker { color: var(--fraco); }
-  .linha-log .txt .md-titulo {
-    font-weight: 600; letter-spacing: .02em; margin: 8px 0 4px; color: var(--texto);
-  }
+  .linha-log .txt .md-titulo { font-weight: 600; font-size: 15.5px; margin: 14px 0 6px; color: var(--texto); }
   .linha-log .txt .md-titulo:first-child { margin-top: 0; }
   .linha-log .txt pre {
-    margin: 4px 0 6px; padding: 7px 9px; overflow-x: auto;
-    background: color-mix(in srgb, var(--texto) 7%, transparent);
-    border-radius: 5px; border: 1px solid var(--linha);
+    margin: 6px 0 10px; padding: 10px 12px; overflow-x: auto;
+    background: var(--lateral); border-radius: 10px; border: 1px solid var(--borda);
   }
-  .linha-log .txt pre code { background: none; border: 0; padding: 0; font-size: 11px; }
-  .provedores { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; }
-  .prov { border: 1px solid var(--linha); border-radius: 6px; overflow: hidden; }
-  .prov > .cabeca {
-    display: flex; align-items: center; gap: 9px; width: 100%;
-    padding: 9px 11px; background: none; border: 0; cursor: pointer;
-    font: inherit; color: var(--texto); text-align: left;
+  .linha-log .txt pre code { background: none; padding: 0; font-size: 12px; }
+
+  /* ---------- configurações: uma janela sobre o app, abas à esquerda ---------- */
+  .tela {
+    position: fixed; inset: 0; z-index: 30; display: none;
+    align-items: center; justify-content: center; padding: 40px 24px;
+    background: color-mix(in srgb, #000 55%, transparent);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
   }
-  .prov > .cabeca:hover { background: color-mix(in srgb, var(--texto) 5%, transparent); }
-  .prov .ponto {
-    width: 7px; height: 7px; border-radius: 50%; flex: none;
-    border: 1px solid var(--fraco);
+  :root[data-claro="1"] .tela { background: color-mix(in srgb, #000 22%, transparent); }
+  .tela.show { display: flex; }
+  .janela-config {
+    width: min(820px, 100%); height: min(640px, 100%);
+    background: var(--fundo); border: 1px solid var(--borda); border-radius: 18px;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, .45);
+    display: grid; grid-template-columns: 196px 1fr; grid-template-rows: auto 1fr auto;
+    grid-template-areas: "cabeca cabeca" "abas folha" "abas rodape";
+    overflow: hidden;
   }
-  .prov.tem .ponto { background: var(--ok); border-color: var(--ok); }
-  .prov .quem { letter-spacing: .04em; }
-  .prov .limite { margin-left: auto; font-size: 10px; color: var(--fraco); text-align: right; }
-  .prov .seta { font-size: 9px; color: var(--fraco); flex: none; }
-  .prov.aberto .seta { transform: rotate(90deg); }
-  .prov .corpo { display: none; padding: 0 11px 11px; }
-  .prov.aberto .corpo { display: block; }
-  .prov .corpo input { width: 100%; }
-  .prov .corpo .ajuda { margin-top: 6px; }
-  .campo > label {
-    display: block; font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
-    color: var(--fraco); margin-bottom: 5px;
+  .janela-config > .cabeca-config { grid-area: cabeca; padding: 20px 24px 14px; border-bottom: 1px solid var(--borda); }
+  .tela h2 { font-size: 18px; font-weight: 600; color: var(--texto); }
+  .tela .sub { color: var(--fraco); font-size: 13px; margin: 4px 0 12px; line-height: 1.55; }
+  .tela .sub a { color: var(--ac); text-decoration: none; cursor: pointer; }
+  .janela-config > .abas {
+    grid-area: abas; display: flex; flex-direction: column; gap: 2px;
+    padding: 12px 10px; background: var(--lateral); border-right: 1px solid var(--borda);
   }
-  .campo .ajuda { font-size: 10px; color: var(--fraco); margin-top: 4px; line-height: 1.5; }
-  input[type=text], input[type=password] {
-    width: 100%; padding: 8px 10px; border-radius: 3px;
-    border: 1px solid var(--borda); background: var(--fundo); color: var(--texto);
-    font: inherit; font-size: 12px; outline: none; user-select: text;
+  .aba {
+    background: none; border: 0; color: var(--fraco); text-align: left;
+    border-radius: 8px; padding: 8px 12px; cursor: pointer; font: inherit; font-size: 13.5px;
   }
-  input[type=text]:focus, input[type=password]:focus { border-color: var(--ac); }
-  input[type=range] { width: 190px; accent-color: var(--ac); vertical-align: middle; }
-  input[type=checkbox] { accent-color: var(--ac); }
-  .opcoes { display: flex; gap: 6px; flex-wrap: wrap; }
+  .aba:hover { color: var(--texto); background: color-mix(in srgb, var(--texto) 6%, transparent); }
+  .aba.ativa { color: var(--texto); background: color-mix(in srgb, var(--texto) 10%, transparent); }
+  /* As abas de motor de voz (macOS / ElevenLabs) ficam em linha, como um seletor. */
+  .folha .abas {
+    display: inline-flex; gap: 2px; padding: 3px; margin-bottom: 14px;
+    background: var(--lateral); border: 1px solid var(--borda); border-radius: 10px;
+  }
+  .folha .abas .aba { padding: 6px 14px; font-size: 13px; }
+  .folha { grid-area: folha; display: none; min-height: 0; overflow-y: auto; padding: 20px 24px; user-select: text; }
+  .folha.ativa { display: block; }
+  .rodape-tela {
+    grid-area: rodape; display: flex; justify-content: flex-end; gap: 10px;
+    padding: 12px 24px; border-top: 1px solid var(--borda);
+  }
+  .campo { margin-bottom: 18px; }
+  .campo > label { display: block; font-size: 13px; font-weight: 500; color: var(--texto); margin-bottom: 7px; }
+  .campo .ajuda, .ajuda { font-size: 12px; color: var(--fraco); margin-top: 6px; line-height: 1.5; }
+  .divisor { height: 1px; background: var(--borda); margin: 22px 0 18px; }
+  input[type=text], input[type=password], select {
+    width: 100%; padding: 9px 12px; border-radius: 10px;
+    border: 1px solid var(--borda); background: var(--campo); color: var(--texto);
+    font: inherit; font-size: 13.5px; outline: none; user-select: text;
+  }
+  input[type=text]:focus, input[type=password]:focus, select:focus { border-color: var(--ac); }
+  input[type=range] { width: 200px; accent-color: var(--ac); vertical-align: middle; }
+  input[type=checkbox] { accent-color: var(--ac); width: 15px; height: 15px; vertical-align: -2px; margin-right: 6px; }
+  .linha-cfg label { font-size: 13.5px; color: var(--texto); }
+  .opcoes { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
   .opcao {
     border: 1px solid var(--borda); background: var(--painel); color: var(--fraco);
-    border-radius: 3px; padding: 7px 10px; cursor: pointer; text-align: left;
-    font: inherit; font-size: 10px; line-height: 1.4;
+    border-radius: 12px; padding: 10px 12px; cursor: pointer; text-align: left;
+    font: inherit; font-size: 12px; line-height: 1.45; transition: border-color .15s;
   }
-  .opcao b { display: block; color: var(--texto); font-weight: 400; font-size: 11px; letter-spacing: .1em; }
-  .opcao.sel { border-color: var(--ac); color: var(--texto); }
-  .opcao .amostra { display: flex; gap: 3px; margin-top: 5px; }
-  .opcao .amostra i { width: 13px; height: 5px; border-radius: 1px; }
-  .linha-cfg { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-  .valor { font-size: 10px; color: var(--fraco); min-width: 34px; }
-  .lista { max-height: 230px; overflow-y: auto; border: 1px solid var(--borda); border-radius: 3px; }
+  .opcao:hover { border-color: color-mix(in srgb, var(--fraco) 60%, var(--borda)); }
+  .opcao b { display: block; color: var(--texto); font-weight: 500; font-size: 13.5px; margin-bottom: 2px; }
+  .opcao.sel { border-color: var(--ac); box-shadow: 0 0 0 1px var(--ac) inset; }
+  .opcao .amostra { display: flex; gap: 4px; margin-top: 8px; }
+  .opcao .amostra i { width: 16px; height: 6px; border-radius: 99px; }
+  .linha-cfg { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .valor { font: 12px var(--mono); color: var(--fraco); min-width: 40px; }
+  .lista { max-height: 260px; overflow-y: auto; border: 1px solid var(--borda); border-radius: 12px; background: var(--painel); }
   .item {
-    display: flex; align-items: center; gap: 9px; padding: 7px 9px; cursor: pointer;
-    border-bottom: 1px solid color-mix(in srgb, var(--borda) 55%, transparent); font-size: 11px;
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer;
+    border-bottom: 1px solid var(--borda); font-size: 13px;
   }
   .item:last-child { border-bottom: none; }
-  .item:hover { background: var(--painel); }
-  .item.sel { border-left: 2px solid var(--ac); }
+  .item:hover { background: color-mix(in srgb, var(--texto) 5%, transparent); }
+  .item.sel { box-shadow: 3px 0 0 var(--ac) inset; }
   .item .n { flex: 1; }
-  .item .t { font-size: 8.5px; letter-spacing: .1em; color: var(--fraco); }
-  .item .t.boa { color: var(--ok); }
+  .item .t { font-size: 10.5px; color: var(--fraco); padding: 1px 7px; border-radius: 99px; background: color-mix(in srgb, var(--texto) 7%, transparent); }
+  .item .t.boa { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
   .item .ouvir, .item .x {
     background: none; border: 1px solid var(--borda); color: var(--fraco);
-    border-radius: 2px; padding: 3px 7px; cursor: pointer; font: inherit; font-size: 9px;
+    border-radius: 8px; padding: 4px 10px; cursor: pointer; font: inherit; font-size: 12px;
   }
   .item .ouvir:hover, .item .x:hover { color: var(--ac); border-color: var(--ac); }
-  .rodape-tela {
-    flex: 0 0 auto; display: flex; gap: 10px; justify-content: center;
-    padding-top: 12px; margin-top: 10px; border-top: 1px solid var(--borda);
+  .provedores { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .prov { border: 1px solid var(--borda); border-radius: 12px; overflow: hidden; background: var(--painel); }
+  .prov > .cabeca {
+    display: flex; align-items: center; gap: 10px; width: 100%;
+    padding: 10px 13px; background: none; border: 0; cursor: pointer;
+    font: inherit; font-size: 13.5px; color: var(--texto); text-align: left;
   }
+  .prov > .cabeca:hover { background: color-mix(in srgb, var(--texto) 5%, transparent); }
+  .prov .ponto { width: 8px; height: 8px; border-radius: 50%; flex: none; border: 1.5px solid var(--fraco); }
+  .prov.tem .ponto { background: var(--barra-ok); border-color: var(--barra-ok); }
+  .prov .limite { margin-left: auto; font-size: 11.5px; color: var(--fraco); text-align: right; }
+  .prov .seta { font-size: 10px; color: var(--fraco); flex: none; transition: transform .15s; }
+  .prov.aberto .seta { transform: rotate(90deg); }
+  .prov .corpo { display: none; padding: 0 13px 13px; }
+  .prov.aberto .corpo { display: block; }
+  .prov .corpo input { width: 100%; }
   button.primario {
-    border: 1px solid var(--ac); border-radius: 3px; padding: 8px 16px; cursor: pointer;
-    background: color-mix(in srgb, var(--ac) 14%, transparent); color: var(--ac);
-    font: inherit; font-size: 10.5px; letter-spacing: .18em; text-transform: uppercase;
+    border: 0; border-radius: 10px; padding: 9px 18px; cursor: pointer;
+    background: var(--ac); color: var(--sobre-ac); font: inherit; font-size: 13.5px; font-weight: 500;
   }
-  button.primario:hover { background: color-mix(in srgb, var(--ac) 24%, transparent); }
-  button.primario:disabled { opacity: .3; cursor: default; }
+  button.primario:hover { filter: brightness(1.08); }
+  button.primario:disabled { opacity: .35; cursor: default; filter: none; }
   button.secundario {
-    border: 1px solid var(--borda); border-radius: 3px; padding: 8px 14px; cursor: pointer;
-    background: none; color: var(--fraco); font: inherit; font-size: 10.5px;
-    letter-spacing: .18em; text-transform: uppercase;
+    border: 1px solid var(--borda); border-radius: 10px; padding: 9px 16px; cursor: pointer;
+    background: var(--painel); color: var(--texto); font: inherit; font-size: 13.5px;
   }
-  button.secundario:hover { color: var(--texto); }
-  .setup { justify-content: center; text-align: center; gap: 12px; z-index: 40; }
+  button.secundario:hover { border-color: var(--fraco); }
+
+  /* ---------- primeira vez ---------- */
+  .setup { flex-direction: column; text-align: center; gap: 14px; z-index: 40; background: var(--fundo); backdrop-filter: none; }
   .setup.show { display: flex; }
-  .setup > * { max-width: 420px; }
-  .setup h1 { font-size: 20px; letter-spacing: .3em; color: var(--ac); }
-  .setup p { color: var(--fraco); font-size: 11px; line-height: 1.7; }
+  .setup > * { width: 100%; max-width: 420px; }
+  .setup .olho { width: 88px; height: 88px; }
+  .setup h1 { font-size: 26px; font-weight: 600; color: var(--texto); }
+  .setup p { color: var(--fraco); font-size: 13.5px; line-height: 1.6; }
   .setup input { text-align: center; }
   .setup button { width: auto; align-self: center; }
 </style>
 </head>
 <body tabindex="-1">
+  <!-- O olho dela, em vetor (25/11/2026): a logo e o avatar das respostas.
+       Desenhado aqui, e não a foto do ícone, para seguir a cor do tema e
+       ficar nítido em qualquer tamanho. -->
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="olho" viewBox="0 0 64 64">
+      <g fill="none" stroke-width="1.1" stroke-linecap="round" style="stroke: var(--ac)">
+        <path d="M4 32 C15.0 13.0 33.0 7.0 60 32" style="opacity:0.74"/><path d="M4 32 C24.0 57.0 45.0 51.0 60 32" style="opacity:0.74"/><path d="M4 32 C15.8 14.6 33.6 8.6 60 32" style="opacity:0.87"/><path d="M4 32 C24.8 55.4 44.6 49.4 60 32" style="opacity:0.87"/><path d="M4 32 C16.6 16.2 34.2 10.2 60 32" style="opacity:1.00"/><path d="M4 32 C25.6 53.8 44.2 47.8 60 32" style="opacity:1.00"/><path d="M4 32 C17.4 17.8 34.8 11.8 60 32" style="opacity:0.87"/><path d="M4 32 C26.4 52.2 43.8 46.2 60 32" style="opacity:0.87"/><path d="M4 32 C18.2 19.4 35.4 13.4 60 32" style="opacity:0.74"/><path d="M4 32 C27.2 50.6 43.4 44.6 60 32" style="opacity:0.74"/><path d="M4 32 C19.0 21.0 36.0 15.0 60 32" style="opacity:0.61"/><path d="M4 32 C28.0 49.0 43.0 43.0 60 32" style="opacity:0.61"/>
+        <circle cx="32" cy="32" r="12.5" style="opacity:.35"/>
+        <circle cx="32" cy="32" r="9" style="opacity:.7"/>
+      </g>
+      <circle cx="32" cy="32" r="8" style="fill: var(--ac); opacity:.22"/>
+      <circle cx="32" cy="32" r="5.2" style="fill: var(--olho-nucleo)"/>
+    </symbol>
+  </svg>
 
   <!-- ===================================================== conversas -->
   <aside class="lateral">
@@ -499,7 +532,7 @@
       </button>
     </div>
     <div class="marca">
-      <img src="logo.png" alt="" />
+      <svg class="olho" aria-hidden="true"><use href="#olho"/></svg>
       <div>
         <div class="nome" id="tituloNome">Sexta-Feira</div>
         <div class="sub" id="tituloSub">assistente pessoal</div>
@@ -547,7 +580,7 @@
     <div class="rolo" id="rolo-externo">
       <div class="coluna-chat">
         <div class="vazio" id="vazio">
-          <img src="logo.png" alt="" />
+          <svg class="olho" aria-hidden="true"><use href="#olho"/></svg>
           <h1 id="saudacao">Olá</h1>
           <p>Escreva, arraste um arquivo ou aperte <b>espaço</b> para falar.</p>
           <div class="sugestoes" id="sugestoes">
@@ -613,12 +646,12 @@
     </div>
 
     <div class="bloco">
-      <h3>Sistema</h3>
+      <h3>Sistema <small>passe o mouse para detalhes</small></h3>
       <div class="medidas" id="medidas"></div>
-      <div class="infos">
-        <b>Ligado há</b><span id="infoUp">—</span>
-        <b>Processos</b><span id="infoProc">—</span>
-        <b>Sistema</b><span id="infoSo">—</span>
+      <div class="infos linha-unica">
+        <span title="ligado há">⏱ <span id="infoUp">—</span></span>
+        <span title="processos">⚙ <span id="infoProc">—</span></span>
+        <span title="sistema"><span id="infoSo">—</span></span>
       </div>
     </div>
 
@@ -636,48 +669,51 @@
 
   <!-- ==================================================== configurações -->
   <div class="tela" id="telaConfig">
-    <h2>configurações</h2>
-    <div class="sub" style="text-align:center">Tudo fica salvo só neste Mac.</div>
+   <div class="janela-config">
+    <div class="cabeca-config">
+      <h2>Configurações</h2>
+      <div class="sub" style="margin-bottom:0">Tudo fica salvo só neste Mac.</div>
+    </div>
 
     <div class="abas">
-      <button class="aba ativa" data-folha="geral">geral</button>
-      <button class="aba" data-folha="voz">voz</button>
-      <button class="aba" data-folha="visual">visual</button>
-      <button class="aba" data-folha="lembretes">lembretes</button>
-      <button class="aba" data-folha="chave">cérebro</button>
+      <button class="aba ativa" data-folha="geral">Geral</button>
+      <button class="aba" data-folha="voz">Voz</button>
+      <button class="aba" data-folha="visual">Aparência</button>
+      <button class="aba" data-folha="lembretes">Lembretes</button>
+      <button class="aba" data-folha="chave">Cérebro</button>
     </div>
 
     <div class="folha ativa" id="folhaGeral">
       <div class="campo">
-        <label>nome dela</label>
+        <label>Nome dela</label>
         <input type="text" id="cfgNome" spellcheck="false" />
       </div>
       <div class="campo">
-        <label>como se pronuncia</label>
+        <label>Como se pronuncia</label>
         <input type="text" id="cfgPronuncia" spellcheck="false" />
         <div class="ajuda">A voz lê isto em vez do nome escrito. Útil quando o nome tem sigla ou pontos.</div>
       </div>
       <div class="campo">
-        <label>como ela te chama</label>
+        <label>Como ela te chama</label>
         <input type="text" id="cfgDono" spellcheck="false" placeholder="seu nome (opcional)" />
       </div>
       <div class="campo">
-        <label>jeito de falar</label>
+        <label>Jeito de falar</label>
         <div class="opcoes" id="cfgEstilo">
-          <button class="opcao" data-v="doce"><b>doce</b>calorosa e próxima</button>
-          <button class="opcao" data-v="direta"><b>direta</b>objetiva, sem rodeio</button>
-          <button class="opcao" data-v="divertida"><b>divertida</b>leve e espirituosa</button>
+          <button class="opcao" data-v="doce"><b>Doce</b>calorosa e próxima</button>
+          <button class="opcao" data-v="direta"><b>Direta</b>objetiva, sem rodeio</button>
+          <button class="opcao" data-v="divertida"><b>Divertida</b>leve e espirituosa</button>
         </div>
       </div>
       <div class="campo">
-        <label>microfone</label>
+        <label>Microfone</label>
         <div class="opcoes" id="cfgModoMic">
-          <button class="opcao" data-v="toque"><b>aperte e fale</b>espaço abre; fecha quando você cala</button>
-          <button class="opcao" data-v="aberto"><b>sempre aberto</b>fica ouvindo até você desligar</button>
+          <button class="opcao" data-v="toque"><b>Aperte e fale</b>espaço abre; fecha quando você cala</button>
+          <button class="opcao" data-v="aberto"><b>Sempre aberto</b>fica ouvindo até você desligar</button>
         </div>
       </div>
       <div class="campo">
-        <label>pausa até ela responder</label>
+        <label>Pausa até ela responder</label>
         <div class="linha-cfg">
           <input type="range" id="cfgPausa" min="1" max="6" step="0.5" />
           <span class="valor" id="vPausa"></span>
@@ -688,17 +724,17 @@
         </div>
       </div>
       <div class="campo linha-cfg">
-        <label style="margin:0"><input type="checkbox" id="cfgProativa" /> sugerir ideias sem eu pedir</label>
+        <label style="margin:0"><input type="checkbox" id="cfgProativa" /> Sugerir ideias sem eu pedir</label>
       </div>
       <div class="campo linha-cfg">
-        <label style="margin:0"><input type="checkbox" id="cfgNotificacoes" /> avisar por notificação do macOS</label>
+        <label style="margin:0"><input type="checkbox" id="cfgNotificacoes" /> Avisar por notificação do macOS</label>
       </div>
     </div>
 
     <div class="folha" id="folhaVoz">
       <div class="abas" style="margin-bottom:10px">
-        <button class="aba ativa" data-motor="macos">macos</button>
-        <button class="aba" data-motor="eleven">elevenlabs</button>
+        <button class="aba ativa" data-motor="macos">macOS</button>
+        <button class="aba" data-motor="eleven">ElevenLabs</button>
       </div>
 
       <div id="painelMacos">
@@ -708,15 +744,15 @@
         </div>
         <div class="lista" id="listaVozes"></div>
         <div class="campo linha-cfg" style="margin-top:12px">
-          <label style="margin:0">velocidade</label>
+          <label style="margin:0">Velocidade</label>
           <input type="range" id="cfgRate" min="120" max="260" step="5" />
           <span class="valor" id="vRate"></span>
         </div>
         <div class="campo linha-cfg">
-          <label style="margin:0">tom</label>
+          <label style="margin:0">Tom</label>
           <input type="range" id="cfgPitch" min="30" max="70" step="1" />
           <span class="valor" id="vPitch"></span>
-          <button class="secundario" id="btnOuvirTom">ouvir</button>
+          <button class="secundario" id="btnOuvirTom">Ouvir</button>
         </div>
       </div>
 
@@ -727,40 +763,40 @@
         </div>
         <div class="campo linha-cfg" id="conectarEleven">
           <input type="password" id="chaveEleven" placeholder="chave da ElevenLabs" spellcheck="false" style="max-width:280px" />
-          <button class="primario" id="btnEleven">conectar</button>
+          <button class="primario" id="btnEleven">Conectar</button>
         </div>
         <div class="lista" id="listaEleven"></div>
         <div class="campo linha-cfg" style="margin-top:12px">
-          <label style="margin:0">velocidade da fala</label>
+          <label style="margin:0">Velocidade da fala</label>
           <input type="range" id="cfgVelocidade" min="0.7" max="1.2" step="0.01" />
           <span class="valor" id="vVelocidade"></span>
         </div>
         <div class="campo linha-cfg">
-          <label style="margin:0"><input type="checkbox" id="cfgRapido" /> resposta mais rápida (menor latência)</label>
+          <label style="margin:0"><input type="checkbox" id="cfgRapido" /> Resposta mais rápida (menor latência)</label>
         </div>
-        <button class="primario" id="btnUsarEleven" disabled>usar esta voz</button>
+        <button class="primario" id="btnUsarEleven" disabled>Usar esta voz</button>
       </div>
     </div>
 
     <div class="folha" id="folhaVisual">
       <div class="campo">
-        <label>tema</label>
+        <label>Tema</label>
         <div class="opcoes" id="cfgTema"></div>
       </div>
       <div class="campo">
-        <label>tamanho da esfera</label>
+        <label>Tamanho da esfera</label>
         <div class="opcoes" id="cfgEsfera">
-          <button class="opcao" data-v="pequena"><b>pequena</b>180 px</button>
-          <button class="opcao" data-v="media"><b>média</b>230 px</button>
-          <button class="opcao" data-v="grande"><b>grande</b>290 px</button>
+          <button class="opcao" data-v="pequena"><b>Pequena</b>180 px</button>
+          <button class="opcao" data-v="media"><b>Média</b>230 px</button>
+          <button class="opcao" data-v="grande"><b>Grande</b>290 px</button>
         </div>
       </div>
       <div class="campo">
-        <label>desempenho do gráfico</label>
+        <label>Desempenho do gráfico</label>
         <div class="opcoes" id="cfgDesempenho">
-          <button class="opcao" data-v="economico"><b>econômico</b>18 fps, sem partículas — menos GPU</button>
-          <button class="opcao" data-v="normal"><b>equilibrado</b>30 fps</button>
-          <button class="opcao" data-v="fluido"><b>fluido</b>60 fps, mais detalhe</button>
+          <button class="opcao" data-v="economico"><b>Econômico</b>18 fps, sem partículas — menos GPU</button>
+          <button class="opcao" data-v="normal"><b>Equilibrado</b>30 fps</button>
+          <button class="opcao" data-v="fluido"><b>Fluido</b>60 fps, mais detalhe</button>
         </div>
         <div class="ajuda" id="ajudaDesempenho"></div>
       </div>
@@ -776,11 +812,11 @@
 
     <div class="folha" id="folhaChave">
       <div class="campo">
-        <label>chave da api</label>
+        <label>Chave da API</label>
         <input type="password" id="cfgChave" placeholder="AIza… / AQ.… (Gemini)  ou  sk-ant-… (Claude)" spellcheck="false" />
         <div class="ajuda" id="ajudaChave"></div>
       </div>
-      <button class="primario" id="btnSalvarChave">conectar</button>
+      <button class="primario" id="btnSalvarChave">Conectar</button>
       <div class="sub" style="margin-top:16px">
         Grátis, sem cartão: <a data-url="https://aistudio.google.com/apikey">aistudio.google.com › Get API key</a><br />
         Pago, com créditos: <a data-url="https://console.anthropic.com/settings/keys">console.anthropic.com › API Keys</a><br />
@@ -805,26 +841,26 @@
            limite; a chave aparece quando se clica nela. -->
       <div class="provedores" id="listaProvedores"></div>
 
-      <button class="secundario" id="btnSalvarReservas">salvar reservas</button>
+      <button class="secundario" id="btnSalvarReservas">Salvar reservas</button>
       <div class="ajuda" id="ajudaReservas"></div>
       <div class="ajuda">Campo em branco não mexe no que já está salvo. Para remover uma chave, escreva <b>-</b> e salve.</div>
 
       <div class="divisor"></div>
 
       <div class="campo">
-        <label>pesquisa na web</label>
+        <label>Pesquisa na web</label>
         <div class="ajuda" id="buscadoresAtivos" style="margin-bottom:8px"></div>
       </div>
 
       <div class="provedores" id="listaBuscadores"></div>
 
-      <button class="secundario" id="btnSalvarBusca">salvar buscadores</button>
+      <button class="secundario" id="btnSalvarBusca">Salvar buscadores</button>
       <div class="ajuda" id="ajudaBusca"></div>
 
       <div class="divisor"></div>
 
       <div class="campo">
-        <label>quem pensa primeiro</label>
+        <label>Quem pensa primeiro</label>
         <select id="cfgPrincipal"></select>
         <div class="ajuda">
           Os outros ficam de reserva, nesta ordem: groq, gemini, nvidia, mistral.
@@ -834,17 +870,18 @@
     </div>
 
     <div class="rodape-tela">
-      <button class="secundario" id="btnFecharConfig">fechar</button>
+      <button class="primario" id="btnFecharConfig">Pronto</button>
     </div>
+   </div>
   </div>
 
   <!-- ===================================================== primeira vez -->
   <div class="tela setup" id="setup">
-    <img src="logo.png" alt="" style="width:72px;height:72px;border-radius:18px;align-self:center;width:72px;max-width:72px" />
+    <svg class="olho" style="align-self:center" aria-hidden="true"><use href="#olho"/></svg>
     <h1>Sexta-Feira</h1>
     <p>Eu sou a Sexta-Feira. Para eu pensar, preciso de uma chave de API — ela fica salva só neste computador.</p>
     <input type="password" id="chaveSetup" placeholder="AIza… ou AQ.… (Gemini) · sk-ant-… (Claude)" spellcheck="false" />
-    <button class="primario" id="btnSetup">conectar</button>
+    <button class="primario" id="btnSetup">Conectar</button>
     <p>
       Grátis e sem cartão:
       <a data-url="https://aistudio.google.com/apikey" style="color:var(--ac);cursor:pointer">aistudio.google.com › Get API key</a>

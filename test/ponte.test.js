@@ -123,19 +123,50 @@ const razao = (a, b) => {
   return (x + 0.05) / (y + 0.05);
 };
 
-const paletas = [
-  ...interfaceJs.matchAll(
-    /"--fundo": "(#\w{6})", "--painel": "(#\w{6})", "--borda": "(#\w{6})",\s*\n\s*"--texto": "(#\w{6})", "--fraco": "(#\w{6})", "--ac": "(#\w{6})"/g
-  ),
-];
-assert.strictEqual(paletas.length, 10, `esperava 10 paletas (5 temas × 2 modos), achei ${paletas.length}`);
+// Cada bloco `vars: { … }` de TEMAS e CLAROS, lido como mapa. Até 25/11/2026
+// isto era uma regex de linha fixa, e a paleta que fugia do formato (a do
+// tema Sexta-Feira, com --lateral no meio) simplesmente não era conferida.
+const SINAIS = {
+  SINAL_ESCURO: interfaceJs.match(/const SINAL_ESCURO = \{([^}]*)\}/)?.[1] || "",
+  SINAL_CLARO: interfaceJs.match(/const SINAL_CLARO = \{([^}]*)\}/)?.[1] || "",
+};
+const paletas = [...interfaceJs.matchAll(/vars: \{([^}]*)\}/g)].map((m) => {
+  let corpo = m[1];
+  for (const [nome, valores] of Object.entries(SINAIS)) corpo = corpo.replace(`...${nome}`, valores);
+  return Object.fromEntries([...corpo.matchAll(/"(--[\w-]+)": "(#\w{6})"/g)].map((x) => [x[1], x[2]]));
+});
+assert.strictEqual(paletas.length, 12, `esperava 12 paletas (6 temas × 2 modos), achei ${paletas.length}`);
 
-for (const [, , painel, borda, texto, fraco, ac] of paletas) {
-  assert.ok(razao(texto, painel) >= 7, `texto ${texto} sobre ${painel}: ${razao(texto, painel).toFixed(1)}× (mínimo 7)`);
-  assert.ok(razao(fraco, painel) >= 4.5, `secundário ${fraco} sobre ${painel}: ${razao(fraco, painel).toFixed(1)}× (mínimo 4,5)`);
-  assert.ok(razao(ac, painel) >= 3, `destaque ${ac} sobre ${painel}: ${razao(ac, painel).toFixed(1)}× (mínimo 3)`);
+for (const v of paletas) {
+  const painel = v["--painel"], fundo = v["--fundo"];
+  for (const chave of ["--fundo", "--painel", "--borda", "--texto", "--fraco", "--ac", "--ok", "--meio", "--alto"]) {
+    assert.ok(v[chave], `paleta sem ${chave}: ${JSON.stringify(v)}`);
+  }
+  for (const base of [painel, fundo]) {
+    assert.ok(razao(v["--texto"], base) >= 7, `texto ${v["--texto"]} sobre ${base}: ${razao(v["--texto"], base).toFixed(1)}× (mínimo 7)`);
+    assert.ok(razao(v["--fraco"], base) >= 4.5, `secundário ${v["--fraco"]} sobre ${base}: ${razao(v["--fraco"], base).toFixed(1)}× (mínimo 4,5)`);
+    assert.ok(razao(v["--ac"], base) >= 3, `destaque ${v["--ac"]} sobre ${base}: ${razao(v["--ac"], base).toFixed(1)}× (mínimo 3)`);
+    // Os sinais viram texto (o 69% âmbar da memória): precisam ler.
+    for (const sinal of ["--ok", "--meio", "--alto"]) {
+      assert.ok(razao(v[sinal], base) >= 4.5, `${sinal} ${v[sinal]} sobre ${base}: ${razao(v[sinal], base).toFixed(1)}× (mínimo 4,5)`);
+    }
+  }
   // A borda não carrega texto, mas se ela some o desenho inteiro se desfaz.
-  assert.ok(razao(borda, painel) >= 1.25, `borda ${borda} some no painel ${painel}`);
+  assert.ok(razao(v["--borda"], painel) >= 1.25, `borda ${v["--borda"]} some no painel ${painel}`);
+}
+
+// As cores das BARRAS são fixas e precisam aparecer no trilho dos dois modos.
+for (const [modo, re] of [
+  ["escuro", /--barra-ok: (#\w{6});\s*--barra-meio: (#\w{6});\s*--barra-alto: (#\w{6});/],
+  ["claro", /--trilho: (#\w{6});\s*--barra-ok: (#\w{6});\s*--barra-meio: (#\w{6});\s*--barra-alto: (#\w{6});/],
+]) {
+  const m = html.match(re);
+  assert.ok(m, `faltam as cores das barras no modo ${modo}`);
+  const cores = modo === "claro" ? m.slice(2) : m.slice(1);
+  const fundoRef = modo === "claro" ? "#ffffff" : "#0a0b0d";
+  for (const cor of cores) {
+    assert.ok(razao(cor, fundoRef) >= 2, `barra ${cor} apagada no ${modo} (${razao(cor, fundoRef).toFixed(1)}×)`);
+  }
 }
 
 // --------------- 6d. as barras não podem ser apagadas por CSS

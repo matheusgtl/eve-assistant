@@ -1,4 +1,4 @@
-// esfera.js — a esfera de dados da E.V.E.
+// esfera.js — a esfera de redes neurais da Sexta-Feira.
 //
 // Três camadas, que é o que faz a leitura da referência:
 //   1. ARCOS de círculo máximo em orientações sorteadas — as curvas largas que
@@ -37,7 +37,14 @@
   const POEIRA = 70;         // pontinhos soltos
   const RAIOS_NUCLEO = 24;   // espículas saindo do centro
   const PULSOS_MAX = 26;
-  const DIST_FOCAL = 2.8;
+  // 25/11/2026: era 2,8. Perspectiva tão curta empurrava a frente da malha
+  // para fora, e como só a frente aparece (o fundo é apagado pela
+  // profundidade), a figura lia como um borrão oval. Com 4 a deformação cai
+  // pela metade e a esfera ganha um contorno de verdade (o limbo, abaixo).
+  const DIST_FOCAL = 4;
+  // Raio do contorno visto da câmera: a projeção de uma esfera de raio 1 a
+  // esta distância é um círculo de raio D/√(D²−1).
+  const LIMBO = DIST_FOCAL / Math.sqrt(DIST_FOCAL * DIST_FOCAL - 1);
   const FAIXAS = 8;
 
   const PERFIS = {
@@ -166,7 +173,7 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     cx = lado / 2;
     cy = lado / 2;
-    raioTela = lado * 0.37;
+    raioTela = lado * 0.4;
   }
   window.addEventListener("resize", redimensionar);
 
@@ -277,7 +284,7 @@
         if (anterior) {
           const prof = (anterior.f + atual.f) / 2;
           const alpha =
-            Math.max(0, (prof - 0.68) * 0.75) * arco.brilho * (0.5 + nivel * 0.5) * reforco();
+            Math.max(0, (prof - 0.76) * 0.85) * arco.brilho * (0.5 + nivel * 0.5) * reforco();
           (arco.acento ? teiaQuente : teia).add(anterior, atual, Math.min(1, alpha));
         }
         anterior = atual;
@@ -299,12 +306,12 @@
         pontosDesenhados++;
         if (anterior) {
           const prof = (anterior.f + atual.f) / 2;
-          const alpha = Math.max(0, (prof - 0.68) * 0.95) * (0.55 + nivel * 0.45) * reforco();
+          const alpha = Math.max(0, (prof - 0.76) * 1.05) * (0.55 + nivel * 0.45) * reforco();
           (trilha.acento ? circuitoQuente : circuito).add(anterior, atual, Math.min(1, alpha));
         }
         // O ponto em cada curva de 90° é o que faz parecer circuito, e não
         // uma linha quebrada qualquer.
-        if (atual.f > 0.7) cantos.push(atual);
+        if (atual.f > 0.74) cantos.push(atual); // corte só de segurança: quem apaga o fundo é a transparência
         anterior = atual;
       }
     }
@@ -319,7 +326,7 @@
       if (!lista) baldes.set(faixa, (lista = []));
       lista.push({ q, r });
     };
-    for (const q of cantos) guardar(q, Math.min(1, (q.f - 0.66) * 1.2), Math.max(0.5, 1.3 * q.f));
+    for (const q of cantos) guardar(q, Math.min(1, (q.f - 0.76) * 1.3), Math.max(0.5, 1.3 * q.f));
     for (const p of poeira) {
       p.lon += p.vel + nivel * 0.002;
       const q = projetar(p.lat, p.lon, p.raio * sopro);
@@ -327,7 +334,7 @@
       const cintila = 0.55 + 0.45 * Math.sin(tempo / 800 + p.fase);
       guardar(
         q,
-        Math.min(1, Math.max(0.03, (q.f - 0.62) * 1.1) * cintila * (0.6 + nivel * 0.4)),
+        Math.min(1, Math.max(0.03, (q.f - 0.72) * 1.2) * cintila * (0.6 + nivel * 0.4)),
         Math.max(0.4, 1.1 * q.f)
       );
     }
@@ -364,7 +371,7 @@
           de.lon + (ate.lon - de.lon) * p.p,
           p.t.raio * sopro
         );
-        if (q.f < 0.7) continue; // atrás da esfera: não acende
+        if (q.f < 0.74) continue; // atrás da esfera: não acende
         const r = Math.max(0.7, 2 * q.f);
         ctx.moveTo(q.x + r, q.y);
         ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
@@ -373,9 +380,24 @@
       ctx.fill();
     }
 
+    // --- o limbo: o contorno da esfera, um círculo de verdade ---------------
+    // Sem ele, a forma era só a malha da frente, e a malha muda de desenho a
+    // cada giro — às vezes mais larga, às vezes mais alta. O traço fino fixa
+    // a silhueta redonda; a malha corre por dentro dele.
+    const rLimbo = raioTela * LIMBO * sopro;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = rgba(cor, ((claro ? 0.42 : 0.3) + nivel * 0.25).toFixed(3));
+    ctx.beginPath();
+    ctx.arc(cx, cy, rLimbo, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.strokeStyle = rgba(cor, (claro ? 0.14 : 0.1).toFixed(3));
+    ctx.beginPath();
+    ctx.arc(cx, cy, rLimbo * 0.965, 0, Math.PI * 2);
+    ctx.stroke();
+
     // --- brilho de borda (o "limbo" do holograma) ---
-    const rBorda = raioTela * (1 + nivel * 0.1);
-    const halo = ctx.createRadialGradient(cx, cy, rBorda * 0.72, cx, cy, rBorda * 1.16);
+    const rBorda = rLimbo;
+    const halo = ctx.createRadialGradient(cx, cy, rBorda * 0.8, cx, cy, rBorda * 1.12);
     // No escuro é brilho; no claro, somar luz sobre branco não aparece, então
     // o mesmo gradiente vira uma sombra de contorno — mais forte para existir.
     const corHalo = claro ? realce() : cor;
@@ -384,7 +406,7 @@
     halo.addColorStop(1, rgba(corHalo, 0));
     ctx.fillStyle = halo;
     ctx.beginPath();
-    ctx.arc(cx, cy, rBorda * 1.16, 0, Math.PI * 2);
+    ctx.arc(cx, cy, rBorda * 1.12, 0, Math.PI * 2);
     ctx.fill();
 
     // --- 4. o núcleo em átomo ----------------------------------------------
@@ -408,7 +430,7 @@
           x0 * Math.sin(giro) + z1 * Math.cos(giro)
         );
         pontosDesenhados++;
-        if (anterior) orbitas.add(anterior, atual, Math.min(1, Math.max(0, (atual.f - 0.72) * 1.4)));
+        if (anterior) orbitas.add(anterior, atual, Math.min(1, Math.max(0, (atual.f - 0.8) * 1.6)));
         anterior = atual;
       }
     }
