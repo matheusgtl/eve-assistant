@@ -56,6 +56,9 @@ contextBridge.exposeInMainWorld("ev", {
   reminders: () => ipcRenderer.invoke("ev:reminders"),
   cancelReminder: (id) => ipcRenderer.invoke("ev:cancel-reminder", id),
 
+  // --- a rede neural (rede.js) ---
+  rede: () => ipcRenderer.invoke("ev:rede"),
+
   // --- eventos vindos do processo principal ---
   on: (evento, handler) => {
     const canais = {
@@ -76,6 +79,7 @@ contextBridge.exposeInMainWorld("ev", {
       arquivo: "ev:arquivo",
       escolhas: "ev:escolhas",
       chats: "ev:chats",
+      rede: "ev:rede",
     };
     const canal = canais[evento];
     if (canal) ipcRenderer.on(canal, (_e, payload) => handler(payload));

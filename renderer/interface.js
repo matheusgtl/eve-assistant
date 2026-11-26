@@ -1198,7 +1198,10 @@ for (const [id, campo] of Object.entries({ cfgNome: "nome", cfgPronuncia: "pronu
   });
 }
 
-for (const [id, campo] of Object.entries({ cfgProativa: "proativa", cfgNotificacoes: "notificacoes" })) {
+for (const [id, campo] of Object.entries({
+  cfgProativa: "proativa", cfgNotificacoes: "notificacoes",
+  cfgIniciativa: "iniciativa", cfgSegundoPlano: "segundoPlano", cfgLogin: "abrirNoLogin",
+})) {
   document.getElementById(id).addEventListener("change", (e) => salvar({ [campo]: e.target.checked }));
 }
 
@@ -1213,6 +1216,9 @@ function preencherConfig() {
   document.getElementById("cfgDono").value = c.dono || "";
   document.getElementById("cfgProativa").checked = !!c.proativa;
   document.getElementById("cfgNotificacoes").checked = !!c.notificacoes;
+  document.getElementById("cfgIniciativa").checked = c.iniciativa !== false;
+  document.getElementById("cfgSegundoPlano").checked = c.segundoPlano !== false;
+  document.getElementById("cfgLogin").checked = !!c.abrirNoLogin;
   pausaEl.value = c.pausaFala ?? 2.5;
   document.getElementById("vPausa").textContent = (c.pausaFala ?? 2.5) + "s";
 
@@ -1673,6 +1679,57 @@ function etiqueta(texto, classe) {
 }
 
 window.ev.on("agents", mostrarAgentes);
+
+// --- a rede neural (rede.js): o que ela sente e a vontade de falar ---
+const NOMES_REDE = {
+  ALERTA: "alerta", FOCO: "foco", CUIDADO: "cuidado", CURIOSA: "curiosidade", SAUDOSA: "saudade",
+  CALMA: "calma", RECEIO: "receio", RESPEITO: "respeito",
+  PAUSA: "pausa", DORMIR: "dormir", SAUDAR: "cumprimentar", AVISAR: "avisar", PAPO: "papo",
+};
+const DECISOES_REDE = ["PAUSA", "DORMIR", "SAUDAR", "AVISAR", "PAPO"];
+const MOTIVOS_REDE = {
+  desligada: "mensagens desligadas", ocupada: "ela estava ocupada", chamada: "você estava numa chamada",
+  longe: "você estava longe", conversando: "vocês tinham acabado de conversar", intervalo: "falou há pouco",
+  "intervalo do tipo": "já tinha dito isso há pouco", "limite do dia": "limite do dia", fato: "o fato não se confirmou",
+};
+
+function linhasDaRede(el, itens) {
+  if (!el) return;
+  el.innerHTML = "";
+  for (const { nome, hz } of itens) {
+    const item = document.createElement("div");
+    const linha = document.createElement("div");
+    linha.className = "linha";
+    const rot = document.createElement("span");
+    rot.textContent = NOMES_REDE[nome] || nome.toLowerCase();
+    const val = document.createElement("span");
+    val.textContent = `${Math.round(hz)} Hz`;
+    linha.append(rot, val);
+    const barra = criarBarra();
+    encherBarra(barra, Math.min(1, hz / 25), hz >= 10 ? "meio" : "neutra");
+    item.append(linha, barra);
+    el.appendChild(item);
+  }
+}
+
+function mostrarRede(e) {
+  if (!e) return;
+  document.getElementById("redeHumor").textContent = e.humor;
+  linhasDaRede(document.getElementById("redeInter"), e.inter.filter((p) => p.nome !== "INIB"));
+  linhasDaRede(document.getElementById("redeDecisoes"), e.motores.filter((m) => DECISOES_REDE.includes(m.nome)));
+  const partes = [e.descricao];
+  if (e.ultimaDecisao) {
+    const d = e.ultimaDecisao;
+    const quando = new Date(d.em).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+    partes.push(d.motivo
+      ? `Às ${quando} quis ${NOMES_REDE[d.motor]}, mas segurou: ${MOTIVOS_REDE[d.motivo] || d.motivo}.`
+      : `Às ${quando} decidiu ${NOMES_REDE[d.motor]}.`);
+  }
+  partes.push(`${e.hoje || 0} mensagem(ns) por conta própria hoje.`);
+  document.getElementById("redeDet").textContent = partes.join(" ");
+}
+window.ev.on("rede", mostrarRede);
+window.ev.rede().then(mostrarRede).catch(() => {});
 
 // --- chave da API ---
 async function salvarChave(idCampo) {

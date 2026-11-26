@@ -349,6 +349,32 @@ quando: ele pedir para organizar, limpar ou arrumar a pasta de downloads
 
 Skills e conversas salvas **não entram no índice da memória**, que tem orçamento próprio — uma semana de conversas salvas expulsaria os fatos dela do próprio contexto.
 
+## A rede neural: quando ela fala sem você chamar
+
+Desde 26/11/2026 a Sexta-Feira tem uma **rede neural pulsada** própria (`rede.js`), adaptada do [Pestinha](https://github.com/mille-okws/pestinha) (`core/nervous_system.py`). A máquina é a mesma de lá: neurônios de integração e disparo com vazamento (LIF), ruído de membrana, adaptação de limiar, inibição lateral entre motores, habituação dos receptores e aprendizado por recompensa de três fatores. O desenho é outro: lá a rede decide o que um bichinho de tela sente; aqui ela decide **quando a assistente fala com você por conta própria**. São 334 neurônios e ~8.700 sinapses, rodando em JavaScript no processo principal, sem internet e sem gastar token (custa poucos milissegundos por segundo).
+
+**Ela não pensa nem escreve.** Isso continua com os modelos (`brains.js`). A rede só sente e quer; quem escreve a mensagem é um modelo de frase com os números verdadeiros, e quem deixa sair são travas em código.
+
+| Camada | Arquivo | O que faz |
+|---|---|---|
+| Sentidos | `sentidos.js` | Só olha: nome do app da frente (`lsappinfo`), tempo parado (`powerMonitor`), bateria (`pmset`) e hora. Nada pede permissão do macOS, e nunca lê conteúdo de janela ou tecla. Vira 16 canais de 0 a 1: trabalho, lazer, web, atividade, ausência, volta, madrugada, primeiro uso do dia, bateria, conversa, cansaço (uso contínuo), saudade (dias sem conversar)… |
+| Rede | `rede.js` | Sentidos → interneurônios (alerta, foco, cuidado, curiosidade, saudade, calma, receio, respeito) → motores. Os de **humor** (atenta, concentrada, serena, preocupada…) aparecem no painel e no olho; os de **decisão** são as iniciativas: `PAUSA`, `DORMIR`, `SAUDAR`, `AVISAR` (bateria) e `PAPO`. |
+| Travas | `iniciativa.js` | A vontade tem que **durar** (40 Hz·s acima de 10 Hz, um pico não basta). O **fato tem que ser verdade** (pausa só com 90 min de uso contínuo medido; dormir só entre 23h e 5h; bateria só com leitura do `pmset` fora da tomada). **Respeito**: nunca numa chamada (Zoom, FaceTime, Teams…), nunca com você longe, nunca enquanto ela fala ou pensa, nunca até 5 min depois de vocês conversarem. **Intervalo**: 20 min entre quaisquer duas, um intervalo por tipo (pausa 1h30, dormir 3h, cumprimentar 4h, bateria 1h, papo 1 dia) e no máximo 8 por dia. |
+
+A mensagem chega como **notificação** e fica escrita na conversa aberta; ela só fala em voz alta se a janela estiver na sua frente.
+
+**Ela aprende com a sua resposta**, como o Pestinha aprende com o carinho. O contexto do momento em que ela falou (os sentidos acesos) fica guardado; se você responde em até 10 min, a ligação desses sentidos com aquela iniciativa se fortalece (agradeceu: +1; respondeu qualquer coisa: +0,3; clicou na notificação: +0,2) ou enfraquece ("agora não", "para de", "não precisa": −1, e acende o receio por 10 min). Ignorar pesa pouco (−0,1): a notificação pode nem ter sido vista. Os pesos aprendidos têm teto (+0,08 a −0,15 do limiar) e, junto com a habituação, ficam em `rede.json` na pasta de dados. Arquivo inválido é descartado inteiro e a rede começa do zero.
+
+**Os pesos foram medidos, não chutados.** `test/mente.test.js` roda cada cenário (trabalho longo, madrugada, volta, bateria, dois dias sem conversa) e confere que a iniciativa certa vence e passa do limiar — e os cenários em que ela tem que ficar quieta (só trabalhando, cansado mas longe, cansado mas conversando, com saudade mas trabalhando, jogando). Mudou um peso em `CONEXOES`? Rode esse teste.
+
+Desligar: Configurações › Geral › "Mandar mensagens por conta própria", ou o mesmo item no menu do olho. A rede continua rodando (é ela que dá o humor), só não fala.
+
+## Segundo plano e o olho na barra de menus
+
+**Clique no olho** abre a conversa (ou esconde, se ela já está na frente); o **clique direito** abre o menu: humor da rede, falar, nova conversa, voz silenciada, mensagens por conta própria, abrir junto com o Mac e sair. Fechar a janela não fecha o app: com "Ficar em segundo plano" ligado (padrão), o ícone **sai do Dock** e ela fica só no olho, ouvindo o ⌥Espaço, disparando lembretes e com a rede rodando. Sair de verdade é ⌘Q ou "Sair" no menu.
+
+"Abrir junto com o Mac" (desligado por padrão) registra o app nos itens de início de sessão; aberta assim, ela começa só no olho, sem janela. O Dock some **em tempo de execução** (`app.dock.hide()`), e não por `LSUIElement` no `Info.plist`: mexer no plist muda a assinatura e o macOS pediria as permissões de novo.
+
 ## O que ela faz sem pedir licença
 
 A régua é: **o que dá para desfazer, ela faz**. Criar e editar arquivos, mandar para o Lixo, abrir e fechar aplicativos, mudar ajustes, organizar pastas, rodar comandos — tudo na hora, sem perguntar.

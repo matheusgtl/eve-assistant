@@ -18,6 +18,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - `tools.js`: ferramentas e travas; `escolhas.js`: botões de resposta e o sim que só ele dá; `memoria.js`, `conversas.js`, `skills.js`: cofre do Obsidian
 - `registro.js`: formato do `~/Library/Logs/E.V.E/eve.log` (leia para diagnosticar)
 - `build/make-icon.swift`: ícone, logo e ícone da barra de menus a partir de `assets/logo-original.png`
+- `rede.js`: rede neural pulsada (do Pestinha); `sentidos.js`: o Mac como canais; `iniciativa.js`: travas e mensagens por conta própria. Mudou peso? `npm test mente`
 - `gastos.js`, `calculo.js`, `calendario.js`, `lembretes.js`, `web.js`, `pdf.js`, `sistema.js`, `tts.js`
 - `native/*.swift`: escuta, PDF e Calendário
 - `esfera.js`, `index.html` e `interface.js` na **raiz** são cópias ignoradas: edite as de `renderer/`

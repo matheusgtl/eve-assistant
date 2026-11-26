@@ -9,7 +9,7 @@
 // de microfone sempre aberto precisam concordar sobre o que está acontecendo —
 // se cada lado guardasse o seu palpite, divergiriam na primeira corrida.
 
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, Notification, dialog, screen, Tray, Menu, nativeImage } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, Notification, dialog, screen, Tray, Menu, nativeImage, powerMonitor } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -40,6 +40,8 @@ let escolhasDoTurno = null;
 // código (brains.js), então os botões dele também.
 const PERGUNTA_CONTINUAR = /ainda não terminei\. Quer que eu continue\?$/;
 const sistema = require("./sistema.js");
+const { Mente } = require("./iniciativa.js");
+const { appDaFrente } = require("./sentidos.js");
 const { Lembretes, formatar: formatarQuando } = require("./lembretes.js");
 const { Memoria } = require("./memoria.js");
 const { Skills, PASTA: PASTA_SKILLS } = require("./skills.js");
@@ -74,6 +76,12 @@ const PADROES = {
   modoMic: "toque", // toque (espaço) | aberto (microfone sempre ligado)
   pausaFala: 2.5,   // segundos de silêncio até ela entender que você terminou
   notificacoes: true,
+  // A rede neural (rede.js) pode mandar mensagem por conta própria: pausa,
+  // dormir, cumprimentar, bateria. As travas ficam em iniciativa.js.
+  iniciativa: true,
+  // Fechar a janela tira o ícone do Dock: ela fica só na barra de menus.
+  segundoPlano: true,
+  abrirNoLogin: false,
   voice: "Luciana",
   rate: 195,
   pitch: 50, // 30…70, pelo comando [[pbas]] do `say`
@@ -320,6 +328,9 @@ function configPublica() {
     modoMic: cfg.modoMic,
     pausaFala: cfg.pausaFala,
     notificacoes: cfg.notificacoes,
+    iniciativa: cfg.iniciativa !== false,
+    segundoPlano: cfg.segundoPlano !== false,
+    abrirNoLogin: !!cfg.abrirNoLogin,
     voice: cfg.voice,
     rate: cfg.rate,
     pitch: cfg.pitch,
@@ -698,14 +709,14 @@ function listarVozes() {
 // ---------------------------------------------------------------------------
 // Notificações
 // ---------------------------------------------------------------------------
-async function notificar({ titulo, mensagem }) {
+async function notificar({ titulo, mensagem, aoClicar }) {
   if (!loadConfig().notificacoes) return;
   try {
     if (Notification.isSupported()) {
       const n = new Notification({ title: titulo || loadConfig().nome || "Sexta-Feira", body: mensagem, silent: false });
       n.on("click", () => {
-        win?.show();
-        win?.focus();
+        mostrarJanela();
+        aoClicar?.();
       });
       n.show();
       return;
@@ -1189,6 +1200,12 @@ function resumirArgs(args) {
 
 async function ask(userText, canal = "texto") {
   if (!userText) return;
+  // A rede sabe que vocês conversaram; se era resposta a uma iniciativa, aprende.
+  try {
+    mente?.ouviu(userText);
+  } catch (err) {
+    log("rede: não consegui registrar a conversa:", err.message);
+  }
   if (!brain) {
     send("ev:setup", { needed: true });
     return;
@@ -1630,8 +1647,10 @@ function aposTrocarDeConversa(aberta, motivo) {
 // ---------------------------------------------------------------------------
 let tray = null;
 let saindo = false;
+let janelaJaMostrada = false;
 
 function mostrarJanela() {
+  if (process.platform === "darwin" && app.dock && !app.dock.isVisible()) app.dock.show();
   if (!win || win.isDestroyed()) createWindow();
   if (win.isMinimized()) win.restore();
   win.show();
@@ -1647,21 +1666,40 @@ function criarBandeja() {
     imagem.setTemplateImage(true);
     tray = new Tray(imagem);
     tray.setToolTip(loadConfig().nome || "Sexta-Feira");
+    // Clique no olho abre a conversa (ou esconde, se ela já está na frente);
+    // o menu fica no clique direito. Antes, qualquer clique abria o menu.
+    tray.on("click", alternarJanela);
+    tray.on("right-click", () => tray.popUpContextMenu(menuDaBandeja()));
     atualizarBandeja();
   } catch (err) {
     log("não consegui pôr o ícone na barra de menus:", err.message);
   }
 }
 
+function alternarJanela() {
+  if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) {
+    win.hide();
+    return;
+  }
+  mostrarJanela();
+}
+
+const ROTULO_ESTADO = { idle: "pronta", listening: "ouvindo…", thinking: "pensando…", speaking: "falando…" };
+
 function atualizarBandeja() {
   if (!tray || tray.isDestroyed()) return;
+  const nome = loadConfig().nome || "Sexta-Feira";
+  const humor = mente && estadoAtual === "idle" ? mente.rede.humor() : null;
+  tray.setToolTip(`${nome} — ${ROTULO_ESTADO[estadoAtual] || "pronta"}${humor ? ` · ${humor}` : ""}`);
+}
+
+function menuDaBandeja() {
   const cfg = loadConfig();
   const nome = cfg.nome || "Sexta-Feira";
-  const rotulo = { idle: "pronta", listening: "ouvindo…", thinking: "pensando…", speaking: "falando…" };
-  tray.setToolTip(`${nome} — ${rotulo[estadoAtual] || "pronta"}`);
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: `${nome} · ${rotulo[estadoAtual] || "pronta"}`, enabled: false },
+  const humor = mente ? mente.rede.humor() : null;
+  return Menu.buildFromTemplate([
+      { label: `${nome} · ${ROTULO_ESTADO[estadoAtual] || "pronta"}`, enabled: false },
+      ...(humor ? [{ label: `Humor da rede: ${humor}`, enabled: false }] : []),
       { type: "separator" },
       { label: `Abrir ${nome}`, click: mostrarJanela },
       { label: "Falar", accelerator: "Alt+Space", click: () => { mostrarJanela(); mic("start"); } },
@@ -1685,10 +1723,156 @@ function atualizarBandeja() {
           atualizarBandeja();
         },
       },
+      {
+        label: "Mensagens por conta própria",
+        type: "checkbox",
+        checked: cfg.iniciativa !== false,
+        click: (item) => {
+          const c = loadConfig();
+          c.iniciativa = item.checked;
+          saveConfig(c);
+          send("ev:config", configPublica());
+        },
+      },
+      {
+        label: "Abrir junto com o Mac",
+        type: "checkbox",
+        checked: !!cfg.abrirNoLogin,
+        click: (item) => {
+          const c = loadConfig();
+          c.abrirNoLogin = item.checked;
+          saveConfig(c);
+          definirAbrirNoLogin(item.checked);
+          send("ev:config", configPublica());
+        },
+      },
       { type: "separator" },
       { label: `Sair da ${nome}`, accelerator: "Command+Q", click: () => app.quit() },
-    ])
-  );
+    ]);
+}
+
+// ---------------------------------------------------------------------------
+// Segundo plano: Dock, abrir com o Mac
+// ---------------------------------------------------------------------------
+/// Fechar a janela tira o ícone do Dock (ela continua na barra de menus,
+/// ouvindo o ⌥Espaço e a rede rodando). Abrir pelo olho devolve o ícone.
+function esconderDoDock() {
+  if (process.platform !== "darwin" || !app.dock) return;
+  if (loadConfig().segundoPlano === false) return;
+  app.dock.hide();
+}
+
+function definirAbrirNoLogin(ligado) {
+  try {
+    app.setLoginItemSettings({ openAtLogin: !!ligado });
+    log("abrir junto com o Mac:", ligado ? "ligado" : "desligado");
+  } catch (err) {
+    log("não consegui mudar o abrir junto com o Mac:", err.message);
+  }
+}
+
+/// Aberta pelo login: começa só na barra de menus. O macOS 13+ não informa
+/// mais `wasOpenedAtLogin` com certeza, então vale também "o Mac ligou há
+/// menos de 3 minutos e a opção está ligada".
+function abertaPeloLogin() {
+  const cfg = loadConfig();
+  if (!cfg.abrirNoLogin) return false;
+  try {
+    if (app.getLoginItemSettings().wasOpenedAtLogin) return true;
+  } catch {}
+  return os.uptime() < 180;
+}
+
+// ---------------------------------------------------------------------------
+// A rede neural (rede.js + sentidos.js + iniciativa.js)
+// ---------------------------------------------------------------------------
+let mente = null;
+let menteTimer = null;
+let menteLeitura = { app: null, appEm: 0, bateria: null, bateriaEm: 0, salvoEm: 0 };
+const redePath = () => path.join(app.getPath("userData"), "rede.json");
+
+function salvarMente() {
+  if (!mente) return;
+  try {
+    fs.mkdirSync(app.getPath("userData"), { recursive: true });
+    const tmp = redePath() + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(mente.salvar()));
+    fs.renameSync(tmp, redePath());
+  } catch (err) {
+    log("rede: não consegui salvar:", err.message);
+  }
+}
+
+function lembretesNasProximasHoras(horas = 12) {
+  if (!lembretes) return 0;
+  const agora = Date.now();
+  return lembretes.listar().filter((l) => {
+    const t = new Date(l.iso).getTime();
+    return t >= agora && t - agora <= horas * 3_600_000;
+  }).length;
+}
+
+/// A mensagem que a rede decidiu (e as travas deixaram) mandar.
+function entregarIniciativa({ motor, texto }) {
+  log(`iniciativa (${motor}):`, texto);
+  const nome = loadConfig().nome || "Sexta-Feira";
+  notificar({
+    titulo: nome,
+    mensagem: texto,
+    aoClicar: () => mente?.abriuNotificacao(),
+  });
+  anotar("eve", texto, { iniciativa: motor });
+  send("ev:message", { quem: "eve", texto, iniciativa: motor });
+  // Só fala em voz alta se você está com ela na frente; senão, notificação.
+  if (win && !win.isDestroyed() && win.isVisible() && win.isFocused()) speak(texto);
+}
+
+async function tiqueDaMente() {
+  if (!mente) return;
+  const agora = Date.now();
+  // O app da frente a cada 3 s e a bateria a cada minuto: o resto é de graça.
+  if (agora - menteLeitura.appEm > 3000) {
+    menteLeitura.appEm = agora;
+    appDaFrente().then((nome) => (menteLeitura.app = nome)).catch(() => {});
+  }
+  if (agora - menteLeitura.bateriaEm > 60_000) {
+    menteLeitura.bateriaEm = agora;
+    sistema.bateria().then((b) => (menteLeitura.bateria = b)).catch(() => {});
+  }
+  const cfg = loadConfig();
+  try {
+    const decisao = mente.tique(
+      { idleS: powerMonitor.getSystemIdleTime(), app: menteLeitura.app, bateria: menteLeitura.bateria },
+      {
+        ligada: cfg.iniciativa !== false,
+        ocupada: estadoAtual !== "idle",
+        dono: cfg.dono || "",
+        lembretesHoje: lembretesNasProximasHoras(),
+      },
+      agora
+    );
+    if (decisao) entregarIniciativa(decisao);
+  } catch (err) {
+    log("rede: o tique falhou:", err.message);
+  }
+  if (win && !win.isDestroyed() && win.isVisible()) send("ev:rede", mente.estado());
+  if (agora - menteLeitura.salvoEm > 5 * 60_000) {
+    menteLeitura.salvoEm = agora;
+    salvarMente();
+  }
+  atualizarBandeja();
+}
+
+function iniciarMente() {
+  let salvo = {};
+  try {
+    salvo = JSON.parse(fs.readFileSync(redePath(), "utf8"));
+  } catch {}
+  mente = new Mente(salvo, { log });
+  menteLeitura.salvoEm = Date.now();
+  log("rede:", mente.rede.descrever());
+  clearInterval(menteTimer);
+  menteTimer = setInterval(tiqueDaMente, 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -1729,6 +1913,7 @@ function createWindow() {
     e.preventDefault();
     win.hide();
   });
+  win.on("hide", esconderDoDock);
 
   // Guarda o tamanho só quando ele para de mudar: gravar a cada pixel do
   // arrasto escreveria no disco dezenas de vezes por segundo.
@@ -1750,7 +1935,15 @@ function createWindow() {
   win.loadFile(path.join(__dirname, "renderer", "index.html"));
 
   // Sem isto a janela pode abrir sem o foco do teclado, e o espaço não chega.
+  // Aberta junto com o Mac, ela começa só na barra de menus.
+  const escondida = abertaPeloLogin() && !janelaJaMostrada;
+  janelaJaMostrada = true;
   win.once("ready-to-show", () => {
+    if (escondida) {
+      log("aberta junto com o Mac: só na barra de menus");
+      esconderDoDock();
+      return;
+    }
     win.show();
     win.focus();
     win.webContents.focus();
@@ -1772,6 +1965,7 @@ app.whenReady().then(() => {
     historico: { ler: lerHistorico, gravar: gravarHistorico },
   });
   iniciarLembretes();
+  iniciarMente();
   iniciarMemoria();
   agentes = new Agentes({
     arquivo: path.join(app.getPath("userData"), "agentes.json"),
@@ -1915,6 +2109,8 @@ app.on("window-all-closed", () => app.quit());
 
 app.on("before-quit", () => {
   saindo = true;
+  clearInterval(menteTimer);
+  salvarMente();
   tray?.destroy();
   stopSpeaking();
   clearInterval(painelTimer);
@@ -2021,13 +2217,15 @@ ipcMain.handle("ev:set-config", (_e, mudancas = {}) => {
   const permitidos = [
     "nome", "pronuncia", "dono", "estilo", "proativa",
     "tema", "modoMic", "pausaFala", "notificacoes", "voice", "rate", "pitch",
-    "mudo", "claro",
+    "mudo", "claro", "iniciativa", "segundoPlano", "abrirNoLogin",
   ];
   for (const campo of permitidos) {
     if (mudancas[campo] === undefined) continue;
     cfg[campo] = mudancas[campo];
   }
   if (mudancas.modoMic && mudancas.modoMic !== "aberto") micAberto = false;
+  if (mudancas.abrirNoLogin !== undefined) definirAbrirNoLogin(!!mudancas.abrirNoLogin);
+  if (mudancas.iniciativa !== undefined || mudancas.segundoPlano !== undefined) setImmediate(atualizarBandeja);
   // Ligar o mudo enquanto ela fala cala na hora: esperar a frase terminar
   // seria o contrário do que o botão promete.
   if (mudancas.mudo === true) stopSpeaking();
@@ -2407,6 +2605,7 @@ ipcMain.handle("ev:choose-file", async () => {
 });
 
 ipcMain.handle("ev:reminders", () => (lembretes ? lembretes.listar() : []));
+ipcMain.handle("ev:rede", () => (mente ? mente.estado() : null));
 ipcMain.handle("ev:cancel-reminder", (_e, id) => {
   const r = lembretes?.cancelar(id);
   return r;
