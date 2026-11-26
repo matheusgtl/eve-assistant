@@ -1073,6 +1073,7 @@ function iniciarMemoria() {
     nome: loadConfig().nome || "Sexta-Feira",
     onDebug: (msg) => log(msg),
   });
+  for (const e of eventosEsperandoCofre.splice(0)) cerebroRede.registrar(e);
   memoria
     .preparar()
     .then(() => gerarCerebro(memoria.pasta, { nome: loadConfig().nome || "Sexta-Feira" }))
@@ -1923,8 +1924,16 @@ function responderLocal(userText, canal, resposta, decisao) {
   if (win && !win.isDestroyed() && win.isVisible() && mente) send("ev:rede", estadoParaTela());
 }
 
+// Eventos que chegam antes de o cofre estar pronto esperam aqui. A rede
+// acorda (iniciarMente) antes da memória (iniciarMemoria), e o "acordou" de
+// cada abertura se perdia: o diário de 26/11 não tem nenhum.
+const eventosEsperandoCofre = [];
 function registrarNoCerebro(e) {
-  cerebroRede?.registrar(e);
+  if (!cerebroRede) {
+    if (eventosEsperandoCofre.length < 50) eventosEsperandoCofre.push(e);
+    return;
+  }
+  cerebroRede.registrar(e);
 }
 
 function atualizarCerebroRede() {
