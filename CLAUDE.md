@@ -14,7 +14,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 ## Onde fica
 - `main.js`: Electron, voz e canais; `preload.js`: ponte; `renderer/`: interface
 - `brains.js`: prompt, provedores e corrente de reserva; `agentes.js`: consumo
-- `chats.js`: conversas da barra lateral; `aprendizados.js`: erros e lições no cofre; `honestidade.js`: trava contra "feito" com ferramenta em erro
+- `chats.js`: conversas da barra lateral; `sessoes.js`: uma sessão (cérebro e turno) por conversa, para ela trabalhar em várias ao mesmo tempo; `aprendizados.js`: erros e lições no cofre; `honestidade.js`: trava contra "feito" com ferramenta em erro
 - `tools.js`: ferramentas e travas; `escolhas.js`: botões de resposta e o sim que só ele dá; `memoria.js`, `conversas.js`, `skills.js`: cofre do Obsidian
 - `registro.js`: formato do `~/Library/Logs/E.V.E/eve.log` (leia para diagnosticar)
 - `build/make-icon.swift`: ícone, logo e ícone da barra de menus a partir de `assets/logo-original.png`
@@ -32,6 +32,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - **Memória não apaga:** gravar no cofre passa por `memoria.js`.
 - Ela nunca diz que fez o que não fez: ferramenta que falha devolve erro claro.
 - **Pensamento local só lê** (e mexe só nos ajustes dela: voz e abrir com o Mac, com limiar de 85%). Intenção local que age no mundo (criar, mandar, apagar) é proibida: isso é dos agentes. `test/pensamento.test.js` tem a lista que nunca pode ser local.
+- **Conversas simultâneas:** estado de turno mora na sessão (`sessaoDoTurno()`), nunca em global do main. O sim de uma conversa não aprova o pedido de outra (`test/escolhas.test.js`).
 - Canal novo: `main.js`, `preload.js` e `renderer` juntos (`test/ponte.test.js` confere).
 - Permissão do macOS depende de `Info.plist` e assinatura: leia essa seção do README antes de mexer.
 - Corrigiu bug? Primeiro o teste que falha; comente a causa e a data do log.

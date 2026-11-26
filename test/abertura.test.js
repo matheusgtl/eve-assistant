@@ -12,6 +12,7 @@ const assert = require("node:assert");
 const L = 1200;
 const A = 800;
 const arcos = [];
+let curvas = 0;
 const ctx = {
   setTransform() {}, clearRect() {}, beginPath() {}, moveTo() {}, stroke() {}, fill() {},
   lineTo(x, y) {
@@ -32,6 +33,11 @@ const ctx = {
     assert.ok(!/NaN|undefined/.test(String(v)), `cor inválida ${v}`);
   },
   set lineWidth(v) {},
+  // As ligações são curvas desde 26/11: o controle e o fim também têm de ser números.
+  quadraticCurveTo(...v) {
+    v.forEach((n) => assert.ok(Number.isFinite(n), "curva inválida"));
+    curvas++;
+  },
 };
 
 function elemento(tag) {
@@ -115,7 +121,8 @@ eval(fs.readFileSync(path.join(__dirname, "..", "renderer", "abertura.js"), "utf
   const meio = (topoEsfera + fimTexto) / 2;
   assert.ok(Math.abs(meio - A / 2) < A * 0.06, `conjunto fora do centro na vertical: meio em ${meio.toFixed(0)} de ${A}`);
 
-  console.log(`✓ abertura: termina em ${(fim / 1000).toFixed(2)} s · centro do conjunto ${centroX.toFixed(0)},${meio.toFixed(0)} numa janela ${L}×${A}`);
+  assert.ok(curvas > 100, `as ligações deviam ser curvas: só ${curvas} curvas desenhadas`);
+  console.log(`✓ abertura: ${curvas} curvas · termina em ${(fim / 1000).toFixed(2)} s · centro do conjunto ${centroX.toFixed(0)},${meio.toFixed(0)} numa janela ${L}×${A}`);
 })().catch((err) => {
   console.error(err);
   process.exit(1);

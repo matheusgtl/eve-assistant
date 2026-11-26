@@ -104,6 +104,10 @@
   .chat:hover { background: color-mix(in srgb, var(--texto) 7%, transparent); }
   .chat.atual { background: color-mix(in srgb, var(--texto) 11%, transparent); }
   .chat .quando { display: block; font-size: 11px; color: var(--fraco); }
+  /* Conversa em que ela ainda trabalha (conversas simultâneas, 26/11) */
+  .chat .trabalhando { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--ac); margin-right: 6px; vertical-align: 1px; animation: trabalhando 1.2s ease-in-out infinite; }
+  @keyframes trabalhando { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .chat .trabalhando { animation: none; } }
   .usuario {
     display: flex; align-items: center; gap: 10px; padding: 12px 14px;
     border-top: 1px solid var(--borda);

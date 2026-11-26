@@ -15,6 +15,30 @@ for (const t of ["", "R", "qual o saldo?", "manda pro João depois", "para o Jo�
   assert.strictEqual(lerResposta(t), null, `não devia decidir nada: "${t}"`);
 }
 
+// ------------------------------------------------- duas conversas ao mesmo tempo (26/11/2026)
+// O sim dito numa conversa nunca aprova o que a OUTRA pediu, nem descarta.
+{
+  const c = new Confirmacoes();
+  let conversa = "A";
+  c.quemPede = () => conversa;
+  c.pedir("trash_file", { filepath: "/x" }); // pedido na conversa A
+  assert.strictEqual(c.aoFalarDele("sim", "B"), null, "sim na conversa B não decide o pedido de A");
+  assert.ok(c.temPedido, "o pedido de A continua esperando");
+  conversa = "B";
+  assert.ok(!c.liberar("trash_file", { filepath: "/x", confirmed: true }), "B não executa o que A pediu");
+  assert.strictEqual(c.aoFalarDele("sim", "A"), "sim", "de volta em A, o sim vale");
+  assert.ok(!c.liberar("trash_file", { filepath: "/x", confirmed: true }), "nem depois do sim, se quem chama é B");
+  assert.strictEqual(c.aoFalarDele("oi", "B"), null, "falar em B não apaga a aprovação de A");
+  conversa = "A";
+  assert.ok(c.liberar("trash_file", { filepath: "/x", confirmed: true }), "A executa o que ele aprovou em A");
+  assert.ok(!c.liberar("trash_file", { filepath: "/x", confirmed: true }), "uma vez só");
+  // sem conversa ligada (null), tudo como antes
+  const d = new Confirmacoes();
+  d.pedir("run_command", { command: "ls" });
+  assert.strictEqual(d.aoFalarDele("sim", "qualquer"), "sim");
+  assert.ok(d.liberar("run_command", { command: "ls", confirmed: true }));
+}
+
 // ------------------------------------------------- confirmação pendente
 {
   const c = new Confirmacoes();

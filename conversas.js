@@ -170,14 +170,16 @@ class Conversas {
 
   /// Salva a conversa em andamento. Chamada depois de cada resposta dela.
   /// Reescreve o arquivo da conversa ATUAL; as anteriores ficam como estão.
-  async salvar(itens, { ligacoes = [] } = {}) {
+  /// `desde` (26/11/2026, conversas simultâneas): cada conversa aberta tem o
+  /// seu começo; sem ele vale o da abertura do app.
+  async salvar(itens, { ligacoes = [], desde = this.desde } = {}) {
     if (!this.pasta || !itens?.length) return null;
     // Só o que foi dito DESDE que o app abriu. O histórico guarda 120 entradas
     // e atravessa reinícios; sem este corte, a sessão de hoje herdaria a de
     // ontem sempre que a pausa entre as duas fosse curta.
     const desta = itens.filter((i) => {
       const t = Date.parse(i.hora || "");
-      return !Number.isFinite(t) || t >= this.desde;
+      return !Number.isFinite(t) || t >= desde;
     });
     if (!desta.length) return null;
     const conversas = emConversas(emTurnos(desta));

@@ -55,14 +55,20 @@ function assinatura(nome, args = {}) {
 
 class Confirmacoes {
   constructor() {
-    this.pendente = null; // { nome, args, chave }
+    this.pendente = null; // { nome, args, chave, dono }
     this.aprovada = null; // chave liberada para UMA execução
+    this.aprovadaDono = null;
+    // De qual conversa é o pedido em andamento (26/11/2026, conversas
+    // simultâneas). O main.js liga isto à conversa do turno; sem ligação, null,
+    // e tudo funciona como antes.
+    this.quemPede = () => null;
   }
 
   /** A ferramenta pediu o sim: guarda o que precisa ser aprovado. */
   pedir(nome, args) {
-    this.pendente = { nome, args, chave: assinatura(nome, args) };
+    this.pendente = { nome, args, chave: assinatura(nome, args), dono: this.quemPede() };
     this.aprovada = null;
+    this.aprovadaDono = null;
   }
 
   /**
@@ -70,24 +76,35 @@ class Confirmacoes {
    * qualquer outra coisa (não, ou mudar de assunto) descarta. O sim vale só
    * para a resposta desta fala: aprovação velha não fica rondando.
    * Devolve "sim" | "nao" | "ignorado" | null (null = não havia pedido).
+   *
+   * `dono` é a conversa em que ele falou. Com duas conversas andando ao mesmo
+   * tempo, o "sim" dito numa NUNCA aprova o que a outra pediu — nem descarta:
+   * o pedido espera ele voltar para a conversa dele.
    */
-  aoFalarDele(texto) {
+  aoFalarDele(texto, dono = null) {
     const p = this.pendente;
+    const outra = (d) => d != null && dono != null && d !== dono;
+    if (p ? outra(p.dono) : outra(this.aprovadaDono)) return null;
     this.pendente = null;
     this.aprovada = null;
+    this.aprovadaDono = null;
     if (!p) return null;
     const r = lerResposta(texto);
     if (r === "sim") {
       this.aprovada = p.chave;
+      this.aprovadaDono = p.dono ?? dono;
       return "sim";
     }
     return r === "nao" ? "nao" : "ignorado";
   }
 
-  /** confirmed=true vale? Consome a aprovação: um sim, uma execução. */
+  /** confirmed=true vale? Consome a aprovação: um sim, uma execução — e só na conversa em que ele disse sim. */
   liberar(nome, args) {
     if (!this.aprovada || this.aprovada !== assinatura(nome, args)) return false;
+    const quem = this.quemPede();
+    if (this.aprovadaDono != null && quem != null && quem !== this.aprovadaDono) return false;
     this.aprovada = null;
+    this.aprovadaDono = null;
     return true;
   }
 

@@ -16,7 +16,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const readline = require("node:readline");
 
-const { createBrain, detectProvider, checkGemini, checkOpenAI, montarSystemPrompt, ORDEM_RESERVA, normalFrase } = require("./brains.js");
+const { createBrain, detectProvider, checkGemini, checkOpenAI, montarSystemPrompt, ORDEM_RESERVA, normalFrase, fioDe } = require("./brains.js");
 const {
   listarVozesEleven,
   vozesUsaveis,
@@ -29,13 +29,10 @@ const {
 const ferramentas = require("./tools.js");
 const { ROTULOS_CONFIRMACAO, filtroDeOpcoes } = require("./escolhas.js");
 const registro = require("./registro.js");
-// A pergunta em andamento, para o log fechar o bloco com tempo e ferramentas.
-let turnoAtual = null;
-
-// Os botões que a resposta em andamento vai deixar no chat: o pedido de sim de
-// uma ferramenta, ou o `[opções: …]` que ela escreveu. Saem no FIM da resposta,
-// para ficarem embaixo da fala e não no meio dela.
-let escolhasDoTurno = null;
+// O turno em andamento (para o log fechar o bloco) e os botões que a resposta
+// vai deixar no chat (o pedido de sim de uma ferramenta, ou o `[opções: …]`)
+// moram na SESSÃO de cada conversa desde 26/11/2026: s.turno e s.escolhas.
+// Ver "CONVERSAS SIMULTÂNEAS" abaixo.
 // "Executei vários passos e ainda não terminei. Quer que eu continue?" vem do
 // código (brains.js), então os botões dele também.
 const PERGUNTA_CONTINUAR = /ainda não terminei\. Quer que eu continue\?$/;
@@ -51,7 +48,7 @@ const { Agentes } = require("./agentes.js");
 const { lerPdf } = require("./pdf.js");
 const calendario = require("./calendario.js");
 const { Conversas } = require("./conversas.js");
-const { Chats } = require("./chats.js");
+const { Chats, TETO_ITENS } = require("./chats.js");
 const { Aprendizados, pareceCorrecao, gerarCerebro } = require("./aprendizados.js");
 const { Honestidade } = require("./honestidade.js");
 const web = require("./web.js");
@@ -144,42 +141,85 @@ let agentes = null;
 // Índice do cofre de .md já cortado no orçamento. Fica aqui, e não é lido na
 // hora, porque o prompt é montado dentro do pedido — ver atualizarIndiceMemoria.
 let indiceMemoria = null;
-// As notas do assunto da pergunta, já lidas (memoria.relevantes). Ficam de um
-// turno para o outro: a pergunta de continuação usa as do turno anterior.
-let notasAbertas = [];
-// A partir de quando o cérebro ATUAL acompanha a conversa. O que o histórico
-// tem de antes disso ele não viu, e entra no prompt ("O FIO DESTA CONVERSA")
-// para ele não começar do zero. Começa na abertura do app e anda em três
-// casos (25/11/2026): conversa nova ou trocada na barra lateral, "limpar", e
-// provedor que secou no meio da tarefa — o substituto chega sem histórico.
-let inicioDoCerebro = Date.now();
-// A pergunta em andamento e quando ela começou: a troca de provedor no meio
-// dela move o início para AQUI, porque a pergunta em si já vai na mensagem.
-let perguntaAtual = { texto: "", desde: Date.now() };
-// Notas e aprendizados que a conversa aberta tocou: viram links no diário dela
-// no Obsidian, que é o que liga a conversa ao resto do cérebro.
-const ligacoesDaConversa = new Set();
 let aprendizados = null;
 let indiceAprendizados = null;
-let correcaoNoTurno = false;
 let chats = null;
-// O que as ferramentas deste turno de fato fizeram (honestidade.js).
-let honestidade = new Honestidade();
 
-/// O que a conversa ABERTA tem de antes do cérebro atual, para o prompt. Só
-/// texto (cartão de arquivo não conta) e no máximo 1.800 caracteres — contados
+// ---------------------------------------------------------------------------
+// CONVERSAS SIMULTÂNEAS (26/11/2026) — a regra mora em sessoes.js
+// ---------------------------------------------------------------------------
+// Cada conversa tem a sua sessão (cérebro e estado do turno); trocar de
+// conversa não cancela a que saiu. Ela só fala em voz alta e só mexe na esfera
+// pela conversa que está na tela. A trava do sim continua sendo do código: um
+// "sim" numa conversa nunca aprova o que a outra pediu (escolhas.js).
+const { Sessoes } = require("./sessoes.js");
+
+function novaSessao(id) {
+  const agora = Date.now();
+  return {
+    id,
+    brain: null,
+    // A partir de quando o cérebro DESTA sessão acompanha a conversa. O que o
+    // histórico tem de antes disso ele não viu, e entra no prompt ("O FIO
+    // DESTA CONVERSA"). Anda em três casos (25/11/2026): conversa nova ou
+    // reaberta sem cérebro, "limpar", e provedor que secou no meio da tarefa.
+    inicio: agora,
+    // As notas do assunto, já lidas (memoria.relevantes): a pergunta de
+    // continuação usa as do turno anterior.
+    notas: [],
+    // Notas e aprendizados que a conversa tocou: viram links no diário dela.
+    ligacoes: new Set(),
+    // A pergunta em andamento e quando começou: a troca de provedor no meio
+    // dela move o início para AQUI, porque a pergunta já vai na mensagem.
+    pergunta: { texto: "", desde: agora },
+    // Os botões que a resposta vai deixar no chat (pedido de sim ou
+    // `[opções: …]`). Saem no FIM da resposta, embaixo da fala.
+    escolhas: null,
+    correcao: false,
+    // O que as ferramentas deste turno de fato fizeram (honestidade.js).
+    honestidade: new Honestidade(),
+    // O bloco do turno no log (registro.Turno).
+    turno: null,
+    ocupada: 0, // turnos de agente em andamento
+    desdeDiario: agora, // o arquivo dela no Obsidian começa aqui
+  };
+}
+
+const sessoes = new Sessoes({ criarSessao: novaSessao });
+const sessaoDoTurno = () => sessoes.doTurno();
+const naTela = (s) => sessoes.naTela(s);
+
+/// Os itens da conversa de uma sessão: o historico.json se é a aberta,
+/// o chats.json se ela está em segundo plano.
+function itensDe(s = sessaoDoTurno()) {
+  if (naTela(s) || !chats || !s.id) return lerHistorico();
+  return chats.itensDe(s.id);
+}
+
+function criarCerebro(s, cfg = loadConfig()) {
+  return createBrain(cfg, { prompt: (o = {}) => promptDoSistema({ ...o, sessao: s }) });
+}
+
+/// O que a conversa da sessão tem de antes do cérebro dela, para o prompt. Só
+/// texto (cartão de arquivo não conta) e no máximo FIO_CARACTERES — contados
 /// de trás para frente, porque o que importa é onde a conversa PAROU.
+///
+/// 26/11/2026: eram 1.800 caracteres e 12 falas, e voltar numa conversa
+/// longa trazia só as últimas duas ou três respostas. Agora 5.000 e 24 (a
+/// conta do custo em brains.js usa o mesmo número). No Groq, que conta tokens
+/// por minuto, continua curto: ver fioDe em brains.js.
 ///
 /// O limite de 48 horas que existia aqui saiu em 25/11/2026: com as conversas
 /// na barra lateral, voltar numa de semana passada é justamente o caso em que
 /// o fio mais importa.
-function conversaAnterior() {
-  const turnos = lerHistorico().filter((i) => {
+function conversaAnterior(s = sessaoDoTurno(), provedor = null) {
+  const { caracteres: FIO_CARACTERES, itens: FIO_ITENS } = fioDe(provedor);
+  const turnos = itensDe(s).filter((i) => {
     const t = new Date(i.hora).getTime();
-    return (i.quem === "voce" || i.quem === "eve") && !i.arquivo && t < inicioDoCerebro;
+    return (i.quem === "voce" || i.quem === "eve") && !i.arquivo && t < s.inicio;
   });
   const saida = [];
-  let resta = 1_800;
+  let resta = FIO_CARACTERES;
   for (const t of turnos.reverse()) {
     let texto = String(t.texto || "")
       .replace(/^\s*\|.*$/gm, "")     // tabela não cabe aqui
@@ -191,7 +231,7 @@ function conversaAnterior() {
     if (texto.length > resta) break;
     resta -= texto.length;
     saida.unshift({ quem: t.quem, texto, hora: t.hora });
-    if (saida.length >= 12) break;
+    if (saida.length >= FIO_ITENS) break;
   }
   return saida;
 }
@@ -404,6 +444,9 @@ function log(...parts) {
 // Estado
 // ---------------------------------------------------------------------------
 function setEstado(s, rotulo) {
+  // A esfera é da conversa que está na tela: a que trabalha em segundo plano
+  // não a põe para "pensar" (CONVERSAS SIMULTÂNEAS).
+  if (!naTela()) return;
   const mudou = s !== estadoAtual;
   estadoAtual = s;
   send("ev:state", { state: s, rotulo, micAberto });
@@ -416,7 +459,7 @@ function setEstado(s, rotulo) {
 function lerHistorico() {
   try {
     const h = JSON.parse(fs.readFileSync(historicoPath(), "utf8"));
-    return Array.isArray(h) ? h.slice(-120) : [];
+    return Array.isArray(h) ? h.slice(-TETO_ITENS) : [];
   } catch {
     return [];
   }
@@ -446,20 +489,31 @@ function arquivoLiberado(caminho) {
 function anotarArquivo(arquivo) {
   liberarArquivo(arquivo.caminho);
   anotar("eve", `📎 ${arquivo.nome}`, { arquivo });
-  send("ev:arquivo", arquivo);
+  sendDaConversa("ev:arquivo", arquivo);
   log("arquivo criado:", arquivo.caminho, `${arquivo.paginas || "?"} página(s)`, `${arquivo.bytes || 0} bytes`);
 }
 
 function anotar(quem, texto, extra = {}) {
   if (!texto) return;
   const item = { quem, texto, hora: new Date().toISOString(), ...extra };
+  const s = sessaoDoTurno();
   try {
+    // A conversa que ele deixou e ela continuou: a resposta entra NELA.
+    if (!naTela(s) && chats && s.id) {
+      chats.acrescentar(s.id, item);
+      return item;
+    }
     const h = lerHistorico();
     h.push(item);
     fs.mkdirSync(app.getPath("userData"), { recursive: true });
-    fs.writeFileSync(historicoPath(), JSON.stringify(h.slice(-120)));
+    fs.writeFileSync(historicoPath(), JSON.stringify(h.slice(-TETO_ITENS)));
   } catch {}
   return item;
+}
+
+/// Manda para a tela só o que é da conversa que está NA tela.
+function sendDaConversa(canal, dados) {
+  if (naTela()) send(canal, dados);
 }
 
 // ---------------------------------------------------------------------------
@@ -523,11 +577,16 @@ function speak(texto) {
   // Nada entra na fila — gerar o áudio e não tocar gastaria cota da ElevenLabs
   // por som que ninguém ia ouvir.
   if (loadConfig().mudo) return;
+  // Só a conversa que está na tela fala em voz alta; a outra escreve na dela.
+  if (!naTela()) return;
 
   const fala = limparParaFala(texto);
   if (!fala) return;
   filaFala.push(fala);
-  if (!tocando) tocarProxima();
+  // A fila toca FORA do contexto do turno que a acordou: senão, se ele trocar
+  // de conversa no meio, as falas seguintes (já de outra conversa) herdariam a
+  // sessão velha e seriam caladas pelo naTela acima.
+  if (!tocando) sessoes.fora(() => tocarProxima());
 }
 
 /// Gera (ou escolhe) o áudio de uma fala. Devolve o caminho de um MP3 quando a
@@ -1016,8 +1075,9 @@ function explicarErro(err) {
 // ---------------------------------------------------------------------------
 /// O prompt é montado na hora de cada pedido, com nome, estilo, data, estado
 /// da máquina e lembretes pendentes já dentro.
-function promptDoSistema({ canal } = {}) {
+function promptDoSistema({ canal, provedor, sessao } = {}) {
   const cfg = loadConfig();
+  const s = sessao || sessaoDoTurno();
   return montarSystemPrompt({
     nome: cfg.nome,
     pronuncia: cfg.pronuncia,
@@ -1029,11 +1089,11 @@ function promptDoSistema({ canal } = {}) {
     lembretes: lembretes ? lembretes.listar().slice(0, 8) : [],
     memoria: indiceMemoria,
     skills: indiceSkills,
-    notasAbertas,
-    conversaAnterior: conversaAnterior(),
-    tituloConversa: chats?.aberta().titulo || "",
+    notasAbertas: s.notas,
+    conversaAnterior: conversaAnterior(s, provedor),
+    tituloConversa: (naTela(s) ? chats?.aberta().titulo : chats?.tituloDeId(s.id)) || "",
     aprendizados: indiceAprendizados,
-    correcao: correcaoNoTurno,
+    correcao: s.correcao,
     agora: new Date(),
   });
 }
@@ -1142,7 +1202,11 @@ async function atualizarIndiceMemoria() {
 
 function initBrain() {
   const cfg = loadConfig();
-  brain = createBrain(cfg, { prompt: promptDoSistema });
+  // Chave ou provedor mudou: as sessões paradas esquecem o cérebro antigo (a
+  // que trabalha termina com o dela); a aberta ganha um novo.
+  sessoes.esquecerParadas();
+  brain = criarCerebro(sessoes.aberta, cfg);
+  sessoes.aberta.brain = brain;
   if (brain) {
     // Quem pensa primeiro, e com qual modelo. Sem esta linha o log mostra as
     // TROCAS de provedor e não o ponto de partida: para saber quem estava na
@@ -1221,7 +1285,7 @@ async function ask(userText, canal = "texto") {
   // está esperando um sim/não ou há arquivo anexado — isso é do agente.
   let textoParaAgente = userText;
   if (pensamento) {
-    const decisao = pensamento.avaliar(userText, { bloqueado: !!escolhasDoTurno || !!anexoPendente });
+    const decisao = pensamento.avaliar(userText, { bloqueado: !!sessoes.aberta.escolhas || !!anexoPendente });
     if (decisao.acao === "local") {
       const resposta = await pensamento.responder(decisao, userText, contextoDoPensamento());
       if (resposta) {
@@ -1242,6 +1306,23 @@ async function ask(userText, canal = "texto") {
     return;
   }
 
+  // O turno é DESTA conversa até o fim, mesmo que ele troque de conversa no
+  // meio (CONVERSAS SIMULTÂNEAS, no topo).
+  const s = sessoes.aberta;
+  const andando = sessoes.rodar(s, () => turnoDoAgente(s, { userText, textoParaAgente, canal, ferramentasDoTurno }));
+  enviarChats(); // o ponto de "trabalhando" na barra lateral
+  try {
+    await andando;
+  } finally {
+    aoTerminarTurno(s);
+  }
+}
+
+async function turnoDoAgente(s, { userText, textoParaAgente, canal, ferramentasDoTurno }) {
+  // O cérebro da sessão, não o da tela: se ele trocar de conversa, este turno
+  // continua com o seu.
+  const brain = s.brain;
+
   // Pergunta nova cala a resposta anterior — senão ela responde por cima.
   stopSpeaking();
 
@@ -1253,8 +1334,8 @@ async function ask(userText, canal = "texto") {
   // (05/11, a fatura que estava anotada e ela perguntou o valor).
   if (memoria) {
     try {
-      notasAbertas = await memoria.relevantes(userText, { anteriores: notasAbertas.map((n) => n.nome) });
-      if (notasAbertas.length) log("memória: abertas para esta pergunta:", notasAbertas.map((n) => n.nome).join(", "));
+      s.notas = await memoria.relevantes(userText, { anteriores: s.notas.map((n) => n.nome) });
+      if (s.notas.length) log("memória: abertas para esta pergunta:", s.notas.map((n) => n.nome).join(", "));
     } catch (err) {
       log("memória: não consegui escolher as notas:", err.message);
     }
@@ -1263,35 +1344,35 @@ async function ask(userText, canal = "texto") {
   // o que dispensa qualquer passo de sincronização (e reiniciar o app).
   await atualizarIndiceSkills();
   await atualizarIndiceAprendizados();
-  correcaoNoTurno = pareceCorrecao(userText);
-  if (correcaoNoTurno) log("aprendizado: a fala parece uma correção");
-  for (const n of notasAbertas) ligacoesDaConversa.add(n.nome);
+  s.correcao = pareceCorrecao(userText);
+  if (s.correcao) log("aprendizado: a fala parece uma correção");
+  for (const n of s.notas) s.ligacoes.add(n.nome);
 
   // Abre o bloco desta pergunta no log — inclusive o que ele ESCREVEU, que antes
   // não aparecia (só a fala, pela linha da escuta).
   const turno = new registro.Turno(++turnosNaSessao, userText, canal);
-  turnoAtual = turno;
+  s.turno = turno;
   log(turno.abertura);
 
   // Respondeu a um pedido de sim? Quem decide é esta fala, não o modelo.
-  const decisao = ferramentas.confirmacoes.aoFalarDele(userText);
+  const decisao = ferramentas.confirmacoes.aoFalarDele(userText, s.id);
   if (decisao) log("confirmação:", decisao, "←", JSON.stringify(userText.slice(0, 40)));
-  escolhasDoTurno = null;
-  send("ev:escolhas", null); // botões antigos saem: a pergunta já foi respondida
+  s.escolhas = null;
+  sendDaConversa("ev:escolhas", null); // botões antigos saem: a pergunta já foi respondida
 
   const anexo = await lerAnexoPendente();
   // Antes do anotar: o item desta pergunta tem hora >= desde, e por isso não
   // entra no "fio" se o provedor trocar no meio dela (a pergunta já vai na
   // própria mensagem).
-  perguntaAtual = { texto: userText, desde: Date.now() };
+  s.pergunta = { texto: userText, desde: Date.now() };
   anotar("voce", userText, { canal, anexo: anexo?.nome });
   enviarChats();
-  send("ev:message", { quem: "voce", texto: userText, anexo: anexo?.nome });
+  sendDaConversa("ev:message", { quem: "voce", texto: userText, anexo: anexo?.nome });
   setEstado("thinking");
 
   let vazias = 0;
   let ultimaFalaTeveConteudo = false;
-  honestidade = new Honestidade();
+  s.honestidade = new Honestidade();
   let respostaDoTurno = "";
   const ditasNesteTurno = new Set();
 
@@ -1299,7 +1380,7 @@ async function ask(userText, canal = "texto") {
   const opcoesDaFala = filtroDeOpcoes(
     (texto) => falar(texto),
     (opcoes) => {
-      if (!escolhasDoTurno) escolhasDoTurno = { opcoes, tipo: "oferta" };
+      if (!s.escolhas) s.escolhas = { opcoes, tipo: "oferta" };
     }
   );
 
@@ -1313,7 +1394,7 @@ async function ask(userText, canal = "texto") {
     if (reagiu) return;
     const quem = brain?.provedorAtivo || loadConfig().provider || "o provedor";
     log(`aviso de demora: ${quem} sem resposta em 10 s`);
-    send("ev:notice", {
+    sendDaConversa("ev:notice", {
       message: `${quem} está demorando para responder. Continuo esperando; se não vier, a reserva assume.`,
     });
   }, 10_000);
@@ -1347,13 +1428,13 @@ async function ask(userText, canal = "texto") {
           return;
         }
         ultimaFalaTeveConteudo = true;
-        if (!escolhasDoTurno && PERGUNTA_CONTINUAR.test(String(texto).trim())) {
-          escolhasDoTurno = { opcoes: ["Continua", "Pode parar"], tipo: "oferta" };
+        if (!s.escolhas && PERGUNTA_CONTINUAR.test(String(texto).trim())) {
+          s.escolhas = { opcoes: ["Continua", "Pode parar"], tipo: "oferta" };
         }
         turno.falou(texto);
         respostaDoTurno += " " + texto;
         anotar("eve", texto);
-        send("ev:message", { quem: "eve", texto });
+        sendDaConversa("ev:message", { quem: "eve", texto });
         speak(texto);
   };
 
@@ -1368,9 +1449,9 @@ async function ask(userText, canal = "texto") {
       onTool: (nome, args) => {
         reagiu = true;
         ferramentasDoTurno.push(nome);
-        honestidade.chamou(nome, args);
+        s.honestidade.chamou(nome, args);
         log("ferramenta:", nome, resumirArgs(args));
-        send("ev:tool", { name: nome });
+        sendDaConversa("ev:tool", { name: nome });
         setEstado("thinking", nome);
       },
       onDebug: (msg) => log("cérebro:", msg),
@@ -1401,9 +1482,9 @@ async function ask(userText, canal = "texto") {
       onProvedor: (provedor) => {
         // O provedor novo não tem o histórico do anterior, mas recebe o fio da
         // conversa no prompt: tudo o que foi dito antes desta pergunta.
-        inicioDoCerebro = perguntaAtual.desde;
+        s.inicio = s.pergunta.desde;
         log("provedor trocado para", provedor, "(o fio da conversa vai no prompt)");
-        send("ev:notice", { message: `troquei para ${provedor} — o provedor anterior bateu o limite.` });
+        sendDaConversa("ev:notice", { message: `troquei para ${provedor} — o provedor anterior bateu o limite.` });
       },
       onModel: (model) => {
         const cfg = loadConfig();
@@ -1425,7 +1506,7 @@ async function ask(userText, canal = "texto") {
     if (err?.cancelado) {
       log("pedido cancelado pelo usuário");
       log(turno.fim("cancelado", brain?.provedorAtivo));
-      send("ev:notice", { message: "cancelado." });
+      sendDaConversa("ev:notice", { message: "cancelado." });
       setEstado("idle");
       return;
     }
@@ -1439,7 +1520,9 @@ async function ask(userText, canal = "texto") {
       enviarAgentes();
     }
     const { tela, voz } = explicarErro(err);
-    send("ev:error", { message: tela });
+    // Em segundo plano, o erro fica escrito na conversa dele para ele ver ao voltar.
+    if (!naTela(s)) anotar("eve", `⚠️ ${tela}`);
+    sendDaConversa("ev:error", { message: tela });
     speak(voz);
     setEstado("idle");
     return;
@@ -1453,18 +1536,18 @@ async function ask(userText, canal = "texto") {
   // verdade, na tela e na voz. Em 25/11, 23:34, ela disse "Tudo certo. Removi…"
   // com três de quatro trash_file em erro. Conta também como erro DELA no
   // diário de aprendizados, para virar alerta se repetir.
-  const correcao = honestidade.aviso(respostaDoTurno);
+  const correcao = s.honestidade.aviso(respostaDoTurno);
   if (correcao) {
     log("honestidade: resposta sem admitir falha; corrigindo:", correcao);
     anotar("eve", correcao);
-    send("ev:message", { quem: "eve", texto: correcao });
+    sendDaConversa("ev:message", { quem: "eve", texto: correcao });
     speak(correcao);
-    if (!escolhasDoTurno) escolhasDoTurno = { opcoes: ["Tenta de novo", "Deixa assim"], tipo: "oferta" };
+    if (!s.escolhas) s.escolhas = { opcoes: ["Tenta de novo", "Deixa assim"], tipo: "oferta" };
     aprendizados
       ?.registrarFalha({
         ferramenta: "resposta",
         erro: "disse que fez, mas a ferramenta tinha falhado (a trava corrigiu)",
-        pedido: perguntaAtual.texto,
+        pedido: s.pergunta.texto,
       })
       .then(() => atualizarIndiceAprendizados());
   }
@@ -1476,12 +1559,12 @@ async function ask(userText, canal = "texto") {
     log(`resposta só com enchimento (${vazias} trechos); avisando em vez de ficar muda`);
     const aviso = "Não consegui formular a resposta. Pode repetir?";
     anotar("eve", aviso);
-    send("ev:message", { quem: "eve", texto: aviso });
+    sendDaConversa("ev:message", { quem: "eve", texto: aviso });
     speak(aviso);
   }
-  if (escolhasDoTurno) {
-    log("botões:", escolhasDoTurno.opcoes.join(" | "));
-    send("ev:escolhas", escolhasDoTurno);
+  if (s.escolhas) {
+    log("botões:", s.escolhas.opcoes.join(" | "));
+    sendDaConversa("ev:escolhas", s.escolhas);
   }
   log(turno.fim("ok", brain?.provedorAtivo));
   // O que o agente fez ensina a rede de linguagem (ver aposAgente).
@@ -1494,7 +1577,7 @@ async function ask(userText, canal = "texto") {
   // No mudo não existe fala, e quem devolve a esfera para "parada" é o fim da
   // fala — sem isto ela ficaria "pensando" para sempre, e no modo de microfone
   // aberto a escuta nunca reabriria.
-  if (loadConfig().mudo) {
+  if (loadConfig().mudo && naTela(s)) {
     setEstado("idle");
     aoTerminarFala();
   }
@@ -1508,10 +1591,33 @@ async function ask(userText, canal = "texto") {
   //
   // Sem await: ele não precisa esperar o disco para ouvir a resposta.
   conversas
-    ?.salvar(lerHistorico(), { ligacoes: [...ligacoesDaConversa] })
+    ?.salvar(itensDe(s), { ligacoes: [...s.ligacoes], desde: s.desdeDiario })
     .catch((err) => log("conversa não salva:", err.message));
-  correcaoNoTurno = false;
+  s.correcao = false;
   enviarChats();
+}
+
+/// Fim de um turno de agente. Se a conversa dele já não está na tela, ela
+/// avisa que terminou lá — na tela e, com a janela escondida, por notificação
+/// que abre a conversa certa.
+function aoTerminarTurno(s) {
+  enviarChats();
+  if (naTela(s)) return;
+  const titulo = chats?.tituloDeId(s.id) || "a outra conversa";
+  log(`conversa em segundo plano terminou: ${JSON.stringify(titulo)}`);
+  send("ev:notice", { message: `Terminei em “${titulo}”.` });
+  if (!win || win.isDestroyed() || !win.isVisible() || !win.isFocused()) {
+    notificar({
+      titulo: loadConfig().nome || "Sexta-Feira",
+      mensagem: `Terminei em “${titulo}”.`,
+      aoClicar: () => {
+        const aberta = chats?.abrir(s.id);
+        if (aberta) aposTrocarDeConversa(aberta, "aberta");
+        mostrarJanela();
+      },
+    });
+  }
+  sessoes.aposentar();
 }
 
 // ---------------------------------------------------------------------------
@@ -1667,37 +1773,44 @@ function iniciarLembretes() {
 // ---------------------------------------------------------------------------
 function gravarHistorico(itens) {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
-  fs.writeFileSync(historicoPath(), JSON.stringify((itens || []).slice(-120)));
+  fs.writeFileSync(historicoPath(), JSON.stringify((itens || []).slice(-TETO_ITENS)));
+}
+
+/// A lista da barra lateral, com a marca das conversas em que ela ainda
+/// está trabalhando (o pontinho que pulsa, como no Claude).
+function listarChats() {
+  if (!chats) return [];
+  return chats.listar().map((c) => ({ ...c, ocupada: sessoes.ocupada(c.id) }));
 }
 
 function enviarChats() {
   if (!chats) return;
   try {
-    send("ev:chats", chats.listar());
+    send("ev:chats", listarChats());
   } catch (err) {
     log("conversas: não consegui listar:", err.message);
   }
 }
 
-/// Depois de abrir outra conversa (ou uma nova): o cérebro esquece a anterior
-/// e passa a receber o fio DESTA pelo prompt — é o que impede o agente de se
-/// perder na troca. A conversa que saiu não é apagada: fica no chats.json.
+/// Depois de abrir outra conversa (ou uma nova). Até 26/11/2026 isto
+/// CANCELAVA o pedido em andamento e zerava o único cérebro. Agora a conversa
+/// que sai continua trabalhando, se estava (CONVERSAS SIMULTÂNEAS), e a que
+/// entra volta com a sessão dela — o cérebro com o histórico inteiro, se ainda
+/// está guardado; senão um cérebro novo que recebe o fio pelo prompt. Nada é
+/// apagado: a conversa que saiu fica no chats.json.
 function aposTrocarDeConversa(aberta, motivo) {
   stopSpeaking();
-  brain?.cancelar?.();
-  brain?.reset();
-  inicioDoCerebro = Date.now();
-  notasAbertas = [];
-  ligacoesDaConversa.clear();
-  // O diário no Obsidian começa um arquivo novo a partir daqui.
-  if (conversas) conversas.desde = Date.now();
-  escolhasDoTurno = null;
-  send("ev:escolhas", null);
+  const { s, saiu, voltou } = sessoes.trocar(aberta.id, (nova) => (nova.brain = criarCerebro(nova)));
+  if (saiu.ocupada) log(`conversa em segundo plano: ${JSON.stringify(chats?.tituloDeId(saiu.id) || "")} continua trabalhando`);
+  // Parada e reaberta: o diário no Obsidian começa um arquivo novo daqui.
+  if (voltou && !s.ocupada) s.desdeDiario = Date.now();
+  brain = s.brain;
+  send("ev:escolhas", s.escolhas);
   for (const item of aberta.itens) liberarArquivo(item.arquivo?.caminho);
   send("ev:history", aberta.itens);
   enviarChats();
-  setEstado("idle");
-  log(`conversa ${motivo}: ${JSON.stringify(aberta.titulo)} (${aberta.itens.length} itens; o fio vai no prompt)`);
+  setEstado(s.ocupada ? "thinking" : "idle");
+  log(`conversa ${motivo}: ${JSON.stringify(aberta.titulo)} (${aberta.itens.length} itens; ${s.ocupada ? "ainda trabalhando nela" : "o fio vai no prompt"})`);
 }
 
 // ---------------------------------------------------------------------------
@@ -1877,6 +1990,8 @@ function contextoDoPensamento() {
     dono: cfg.dono || "",
     nome: cfg.nome || "Sexta-Feira",
     rede: () => (mente ? mente.estado() : null),
+    // Só leitura: títulos e quais ainda trabalham (intenções conversas e trabalhando).
+    conversas: () => (chats ? listarChats() : null),
     sistema: () => sistema.amostrar(),
     bateria: () => sistema.bateria(),
     lembretes: () => (lembretes ? lembretes.listar() : null),
@@ -1907,7 +2022,7 @@ function contextoDoPensamento() {
 /// mesmo histórico de uma resposta de agente, com a marca de onde veio.
 function responderLocal(userText, canal, resposta, decisao) {
   log(`pensamento: respondeu sozinha (${decisao.intencao}, ${Math.round(decisao.confianca * 100)}%):`, JSON.stringify(resposta.slice(0, 80)));
-  escolhasDoTurno = null;
+  sessoes.aberta.escolhas = null;
   send("ev:escolhas", null);
   anotar("voce", userText, { canal });
   send("ev:message", { quem: "voce", texto: userText });
@@ -1920,7 +2035,7 @@ function responderLocal(userText, canal, resposta, decisao) {
     setEstado("idle");
     aoTerminarFala();
   } else speak(resposta);
-  conversas?.salvar(lerHistorico(), { ligacoes: [...ligacoesDaConversa] }).catch(() => {});
+  conversas?.salvar(lerHistorico(), { ligacoes: [...sessoes.aberta.ligacoes], desde: sessoes.aberta.desdeDiario }).catch(() => {});
   if (win && !win.isDestroyed() && win.isVisible() && mente) send("ev:rede", estadoParaTela());
 }
 
@@ -2135,6 +2250,12 @@ app.whenReady().then(() => {
     arquivo: path.join(app.getPath("userData"), "chats.json"),
     historico: { ler: lerHistorico, gravar: gravarHistorico },
   });
+  // A sessão da conversa que já estava aberta ganha o id dela.
+  try {
+    sessoes.identificarAberta(chats.carregar().atual.id);
+  } catch (err) {
+    log("conversas: não consegui ler a aberta:", err.message);
+  }
   iniciarLembretes();
   iniciarMente();
   iniciarPensamento();
@@ -2150,6 +2271,8 @@ app.whenReady().then(() => {
   // o app: a lista de liberados nasce do que foi gravado.
   for (const item of lerHistorico()) liberarArquivo(item.arquivo?.caminho);
 
+  // O pedido de sim é da conversa que pediu (escolhas.js).
+  ferramentas.confirmacoes.quemPede = () => sessoes.ctx.getStore()?.id ?? null;
   ferramentas.configurar({
     onArquivo: anotarArquivo,
     // Lixo pela função do sistema, não pelo Finder: ver trash_file (25/11/2026).
@@ -2158,14 +2281,16 @@ app.whenReady().then(() => {
     // CHAMADA, e não dava para saber se deu certo.
     onResultado: ({ nome, ms, resultado }) => {
       const r = registro.resultadoDeFerramenta(resultado);
-      turnoAtual?.ferramenta(r.ok);
-      honestidade.resultado(nome, r);
+      // A sessão do turno que chamou a ferramenta (pode não ser a da tela).
+      const s = sessaoDoTurno();
+      s.turno?.ferramenta(r.ok);
+      s.honestidade.resultado(nome, r);
       log(`  ↳ ${nome} ${r.ok ? "✓" : "✗"} ${ms} ms · ${r.texto}`);
       // Aprender com o erro: toda falha vai para o diário de erros no cofre, e
       // a que se repete volta no prompt como alerta (aprendizados.js).
       if (!r.ok) {
         aprendizados
-          ?.registrarFalha({ ferramenta: nome, erro: r.texto.replace(/^erro:\s*/, ""), pedido: perguntaAtual.texto })
+          ?.registrarFalha({ ferramenta: nome, erro: r.texto.replace(/^erro:\s*/, ""), pedido: s.pergunta.texto })
           .then(() => atualizarIndiceAprendizados());
       }
       // A nota que ela gravou entra nas ligações da conversa.
@@ -2173,14 +2298,14 @@ app.whenReady().then(() => {
         try {
           const dados = typeof resultado === "string" ? JSON.parse(resultado) : resultado;
           const nota = dados?.nota || dados?.nome || dados?.arquivo;
-          if (typeof nota === "string") ligacoesDaConversa.add(nota.replace(/\.md$/, ""));
+          if (typeof nota === "string") s.ligacoes.add(nota.replace(/\.md$/, ""));
           if (/aprendizados/.test(String(nota))) aprendizados?.gerarMapa().then(() => atualizarIndiceAprendizados());
         } catch {}
       }
     },
     // A ferramenta pediu o sim dele: os botões Sim/Não entram no fim desta resposta.
     onPedidoDeSim: ({ nome }) => {
-      escolhasDoTurno = { opcoes: ROTULOS_CONFIRMACAO, tipo: "confirmacao" };
+      sessaoDoTurno().escolhas = { opcoes: ROTULOS_CONFIRMACAO, tipo: "confirmacao" };
       log("confirmação pedida:", nome);
     },
     lembretes,
@@ -2193,7 +2318,8 @@ app.whenReady().then(() => {
     // skill pedir para ela REDIGITAR a conversa daria um resumo do que ela
     // lembra, não a conversa.
     conversa: {
-      historico: lerHistorico,
+      // A conversa do turno que pediu, não necessariamente a da tela.
+      historico: () => itensDe(),
       pasta: () => path.join(memoria?.pasta || app.getPath("userData"), "Conversas"),
     },
     notificar,
@@ -2302,7 +2428,7 @@ app.on("before-quit", () => {
 // ---------------------------------------------------------------------------
 ipcMain.handle("ev:mic", (_e, acao) => mic(acao));
 // As conversas da barra lateral.
-ipcMain.handle("ev:chats", () => (chats ? chats.listar() : []));
+ipcMain.handle("ev:chats", () => listarChats());
 ipcMain.handle("ev:chat-new", () => {
   if (!chats) return { ok: false };
   aposTrocarDeConversa(chats.nova(), "nova");
@@ -2366,8 +2492,9 @@ ipcMain.handle("ev:interrupt", () => {
 });
 
 ipcMain.handle("ev:reset", () => {
+  brain?.cancelar?.();
   brain?.reset();
-  inicioDoCerebro = Date.now();
+  sessoes.aberta.inicio = Date.now();
   try {
     fs.writeFileSync(historicoPath(), "[]");
   } catch {}

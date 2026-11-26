@@ -2035,8 +2035,15 @@ function mostrarChats(lista) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "chat" + (c.atual ? " atual" : "");
-    b.title = c.titulo;
+    b.title = c.ocupada ? `${c.titulo} — ela ainda está trabalhando nesta conversa` : c.titulo;
     b.textContent = c.titulo;
+    // Ela continua trabalhando numa conversa que ele deixou: um ponto pulsa.
+    if (c.ocupada) {
+      const ponto = document.createElement("span");
+      ponto.className = "trabalhando";
+      ponto.setAttribute("aria-label", "trabalhando");
+      b.prepend(ponto);
+    }
     const q = document.createElement("span");
     q.className = "quando";
     q.textContent = quandoFoi(c.atualizada);
@@ -2088,9 +2095,11 @@ function mostrarNomes() {
   atualizarVazio();
 }
 
-/// O histórico guarda até 120 itens por conversa; o fio que vai para um
-/// agente novo é o fim dela. A barra mostra quanto da conversa já existe.
-const TETO_CONVERSA = 120;
+/// O histórico guarda até 300 itens por conversa (TETO_ITENS em chats.js; eram
+/// 120 até 26/11/2026, e uma tarde de conversa já marcava "120 de 120"). A
+/// barra mostra quanto da conversa já existe. O que o agente lembra é outro
+/// corte, por tamanho: ~15 mil tokens do fim da conversa (brains.js).
+const TETO_CONVERSA = 300;
 function mostrarContexto() {
   const n = Math.min(itensNaConversa, TETO_CONVERSA);
   const f = n / TETO_CONVERSA;

@@ -307,14 +307,17 @@ teste("trava: fatos de cada iniciativa", () => {
   }
 });
 
+// 26/11/2026: o ritmo afrouxou a pedido dele (intervalo geral 20 → 10 min,
+// PAUSA 90 → 60 min). As duas travas continuam valendo; só os horários do
+// teste acompanham os números novos.
 teste("intervalo geral e por tipo", () => {
   const ini = new Iniciativa();
   assert.ok(decidir(ini, fatosPausa()));
-  assert.strictEqual(decidir(ini, fatosPausa({ agora: hora(15, 10), voltou: {} }), {}, "SAUDAR"), null);
+  assert.strictEqual(decidir(ini, fatosPausa({ agora: hora(15, 5), voltou: {} }), {}, "SAUDAR"), null);
   assert.strictEqual(ini.ultimaDecisao.motivo, "intervalo");
-  assert.strictEqual(decidir(ini, fatosPausa({ agora: hora(15, 40) })), null);
+  assert.strictEqual(decidir(ini, fatosPausa({ agora: hora(15, 30) })), null);
   assert.strictEqual(ini.ultimaDecisao.motivo, "intervalo do tipo");
-  assert.ok(decidir(ini, fatosPausa({ agora: hora(15, 40), voltou: {} }), {}, "SAUDAR"));
+  assert.ok(decidir(ini, fatosPausa({ agora: hora(15, 30), voltou: {} }), {}, "SAUDAR"));
 });
 
 teste(`no máximo ${MAX_POR_DIA} por dia`, () => {

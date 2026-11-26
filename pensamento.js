@@ -34,8 +34,13 @@ const DIM = 2048; // traços por hash
 const OCULTOS_INICIO = 24;
 const OCULTOS_MAX = 96;
 const OCULTOS_PASSO = 8;
-const LIMIAR_INICIO = 0.75;
-const LIMIAR_MIN = 0.6;
+// 26/11/2026, "quero que ela pense mais e com menos travas": partida de 0,75
+// para 0,70 e piso de 0,60 para 0,55. A cobertura e a margem NÃO mudaram: são
+// elas que seguram "que horas são em Tóquio" e "bateria de carro" nos agentes.
+// Os ajustes (voz, abrir com o Mac) continuam em 85%.
+const LIMIAR_INICIO = 0.7;
+const LIMIAR_INICIO_ANTIGO = 0.75; // quem tinha o padrão antigo sem ter sido corrigido desce para o novo
+const LIMIAR_MIN = 0.55;
 const LIMIAR_MAX = 0.95;
 const MARGEM = 0.3;
 const MAX_EXEMPLOS = 1500;
@@ -52,7 +57,7 @@ const COBERTURA_MIN = 0.75;
 const AJUSTES = new Set(["silenciar", "voz", "login_ligar", "login_desligar"]);
 const COBERTURA_AJUSTE = 1;
 const LIMIAR_AJUSTE = 0.85;
-const MAX_PALAVRAS = 10; // palavras com conteúdo (sem "a", "de", "por favor"...)
+const MAX_PALAVRAS = 12; // palavras com conteúdo (sem "a", "de", "por favor"...); eram 10
 const VAZIAS = new Set(
   "a o as os e de da do das dos em no na nos nas um uma uns umas que me te se pra pro para por favor voce vc ta esta estao eh e ai sexta feira oi ola ne ja agora so com sobre aqui la isso isto esse essa meu minha meus minhas".split(" ")
 );
@@ -132,6 +137,23 @@ const SEMENTES = {
     "desativa abrir com o mac", "nao quero que voce abra sozinha", "tira do inicio do mac", "nao inicia com o mac",
     "desliga a funcao de abrir com o mac",
   ],
+  // 26/11/2026: três coisas que ela sabe responder em código, sem agente.
+  capacidades: [
+    "o que voce consegue fazer", "o que voce sabe fazer", "quais sao suas funcoes", "como voce pode me ajudar",
+    "o que voce faz", "no que voce pode me ajudar", "quais suas habilidades", "me fala o que voce consegue fazer",
+    "o que da pra fazer com voce", "para que voce serve",
+  ],
+  conversas: [
+    "quais foram nossas ultimas conversas", "sobre o que a gente conversou", "lista nossas conversas",
+    "o que conversamos hoje", "quais conversas eu tenho", "mostra minhas conversas", "do que a gente falou",
+    "nossas conversas recentes", "sobre o que falamos ultimamente",
+  ],
+  // As conversas simultâneas: em qual ela ainda está trabalhando.
+  trabalhando: [
+    "voce ainda esta trabalhando", "ja terminou", "o que voce esta fazendo agora", "esta ocupada",
+    "ainda esta pesquisando", "terminou aquilo", "voce esta trabalhando em alguma coisa", "ainda ta fazendo",
+    "ja acabou", "o que voce esta fazendo",
+  ],
   outro: [
     "me lembra de comprar pao amanha", "me lembra de ligar pro joao as 15h", "cria um lembrete para segunda",
     "pesquisa sobre buracos negros", "procura o preco do iphone", "quem ganhou o jogo ontem", "o que e fotossintese",
@@ -145,7 +167,8 @@ const SEMENTES = {
     "copia isso", "roda o backup", "instala o node", "quanto e o dolar hoje", "lembra que eu gosto de cafe",
     "salva essa conversa", "cria uma skill", "usa a skill de backup", "por que o ceu e azul", "me explica a bateria de litio",
     "quanto custa uma bateria nova", "que horas abre o mercado", "qual o melhor horario para dormir",
-    "como voce funciona", "quem te criou", "o que voce consegue fazer", "faz uma lista de compras", "me da uma ideia",
+    "como voce funciona", "quem te criou", "faz uma lista de compras", "me da uma ideia",
+    "o que voce faria no meu lugar", "termina o texto", "termina de escrever o email", "faz o que eu pedi",
   ],
 };
 
@@ -320,7 +343,8 @@ const MESES = ["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julh
 const saudacaoDaHora = (h) => (h >= 5 && h < 12 ? "Bom dia" : h >= 12 && h < 18 ? "Boa tarde" : "Boa noite");
 
 /// Cada intenção é código que lê o dado de verdade. `c` vem do main.js:
-/// { agora, dono, nome, rede(), sistema(), bateria(), lembretes(), agenda(), mudo(bool) }.
+/// { agora, dono, nome, rede(), sistema(), bateria(), lembretes(), agenda(), mudo(bool),
+///   conversas() → [{titulo, atualizada, ocupada, atual}] }.
 const RESPOSTAS = {
   async saudacao(c) {
     const h = new Date(c.agora).getHours();
@@ -401,6 +425,30 @@ const RESPOSTAS = {
     });
     return `Nos próximos dias: ${lista.join("; ")}${eventos.length > 4 ? ` e mais ${eventos.length - 4}` : ""}.`;
   },
+  async capacidades(c) {
+    const nome = c.nome || "Sexta-Feira";
+    return (
+      `Eu sou a ${nome}, sua assistente. Posso pesquisar na web, ler e criar arquivos e PDFs, cuidar de lembretes e da agenda, ` +
+      "anotar no seu cérebro do Obsidian, controlar gastos e fazer contas, abrir apps e mexer no Mac com o seu sim, " +
+      "e trabalhar em mais de uma conversa ao mesmo tempo. O que é rápido (hora, bateria, sistema, lembretes) eu respondo sozinha."
+    );
+  },
+  async conversas(c) {
+    const lista = c.conversas?.();
+    if (!Array.isArray(lista)) return null;
+    const ditas = lista.filter((x) => x.mensagens > 0);
+    if (!ditas.length) return "Ainda não temos conversas guardadas.";
+    const primeiras = ditas.slice(0, 5).map((x) => `“${x.titulo}”${x.ocupada ? " (ainda trabalhando)" : ""}`);
+    return `As mais recentes: ${primeiras.join("; ")}${ditas.length > 5 ? `, e mais ${ditas.length - 5}` : ""}. Estão na barra lateral.`;
+  },
+  async trabalhando(c) {
+    const lista = c.conversas?.();
+    if (!Array.isArray(lista)) return null;
+    const ocupadas = lista.filter((x) => x.ocupada && !x.atual);
+    if (!ocupadas.length) return "Não estou trabalhando em nenhuma outra conversa agora: tudo que você pediu já terminou.";
+    const nomes = ocupadas.map((x) => `“${x.titulo}”`).join(", ");
+    return `Ainda estou trabalhando em ${ocupadas.length === 1 ? "uma conversa" : `${ocupadas.length} conversas`}: ${nomes}. Aviso quando terminar.`;
+  },
   async silenciar(c) {
     c.mudo(true);
     return "Certo, fico só no texto. Para voltar a falar, é só pedir.";
@@ -435,7 +483,10 @@ class Pensamento {
       const v = Number(valido ? salvo.limiares?.[k] : NaN);
       const inicio = AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_INICIO;
       const minimo = AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_MIN;
-      this.limiares[k] = Number.isFinite(v) ? Math.min(LIMIAR_MAX, Math.max(minimo, v)) : inicio;
+      // O padrão antigo (0,75) que nunca foi mexido desce para o novo; o que
+      // subiu por correção dele continua onde está.
+      const herdado = !AJUSTES.has(k) && Math.abs(v - LIMIAR_INICIO_ANTIGO) < 1e-9 ? LIMIAR_INICIO : v;
+      this.limiares[k] = Number.isFinite(herdado) ? Math.min(LIMIAR_MAX, Math.max(minimo, herdado)) : inicio;
     }
     const st = (valido && salvo.estatisticas) || {};
     this.estatisticas = {

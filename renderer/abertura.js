@@ -13,7 +13,8 @@
 // fixa, e o conjunto parecia caído para um lado.
 //
 // Os números são os de verdade (neurônios, assembleias); o desenho é canvas
-// 2D, como a esfera, e o laço para sozinho quando termina.
+// 2D, como a esfera, e o laço para sozinho quando termina. As ligações são
+// curvas (Bézier), não retas.
 
 (function () {
   if (!window.ev?.abertura) return;
@@ -142,8 +143,30 @@
     for (let i = 0; i < total * 1.4; i++) {
       const a = (Math.random() * total) | 0;
       const b = Math.min(total - 1, a + 1 + ((Math.random() * 40) | 0));
-      ligacoes.push([a, b, 0.35 + Math.random() * 0.75]);
+      // o terceiro valor é quando a ligação começa a se desenhar; o quarto, a
+      // curvatura dela (um lado ou o outro, nunca reta)
+      const curva = (0.12 + Math.random() * 0.22) * (Math.random() < 0.5 ? -1 : 1);
+      ligacoes.push([a, b, 0.35 + Math.random() * 0.75, curva]);
     }
+
+    // LIGAÇÕES CURVAS (26/11: "as linhas que ligam os neurônios mais lisas e
+    // curvas"). Cada ligação é uma Bézier quadrática: o ponto de controle sai
+    // do meio da reta, de lado, e — quando a esfera já fechou — também para
+    // fora do centro, para a curva acompanhar a casca em vez de cortá-la.
+    const controle = (p, q, curva, fecha) => {
+      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+      const dx = q.x - p.x, dy = q.y - p.y;
+      const ox = mx - cx, oy = my - cy;
+      return {
+        x: mx - dy * curva + ox * 0.35 * fecha,
+        y: my + dx * curva + oy * 0.35 * fecha,
+      };
+    };
+    // ponto da curva em u (0..1)
+    const naCurva = (p, c, q, u) => {
+      const v = 1 - u;
+      return { x: v * v * p.x + 2 * v * u * c.x + u * u * q.x, y: v * v * p.y + 2 * v * u * c.y + u * u * q.y };
+    };
 
     const t0 = performance.now();
     const DURACAO = 2.6;
@@ -174,26 +197,37 @@
         };
       });
 
-      // ligações se desenhando
-      ctx.lineWidth = 0.6;
-      ctx.strokeStyle = cor(0.16 * (1 - fecha * 0.5));
+      // ligações se desenhando, como curvas (de Casteljau: o pedaço de 0 a
+      // prog de uma Bézier quadrática é outra quadrática, com controle no meio
+      // do caminho até o controle original)
+      ctx.lineWidth = 0.8;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = cor(0.18 * (1 - fecha * 0.45));
       ctx.beginPath();
-      for (const [a, b, quando] of ligacoes) {
+      const curvas = [];
+      for (const [a, b, quando, curva] of ligacoes) {
         const prog = suave((t - quando) / 0.3);
-        if (prog <= 0 || pos[a].vis < 1 || pos[b].vis < 1) continue;
-        ctx.moveTo(pos[a].x, pos[a].y);
-        ctx.lineTo(pos[a].x + (pos[b].x - pos[a].x) * prog, pos[a].y + (pos[b].y - pos[a].y) * prog);
+        if (prog <= 0 || pos[a].vis < 1 || pos[b].vis < 1) { curvas.push(null); continue; }
+        const p = pos[a], q = pos[b];
+        const c = controle(p, q, curva, fecha);
+        curvas.push({ p, c, q });
+        const c1 = { x: p.x + (c.x - p.x) * prog, y: p.y + (c.y - p.y) * prog };
+        const fim = naCurva(p, c, q, prog);
+        ctx.moveTo(p.x, p.y);
+        ctx.quadraticCurveTo(c1.x, c1.y, fim.x, fim.y);
       }
       ctx.stroke();
 
-      // sinais correndo nas ligações já prontas
+      // sinais correndo pelas curvas já prontas
       ctx.fillStyle = "rgba(255,255,255,.85)";
       ctx.beginPath();
       for (let i = 0; i < ligacoes.length; i += 7) {
-        const [a, b, quando] = ligacoes[i];
-        if (t < quando + 0.3) continue;
+        const quando = ligacoes[i][2];
+        const k2 = curvas[i];
+        if (!k2 || t < quando + 0.3) continue;
         const u = ((t - quando) * 2 + i * 0.13) % 1;
-        const x = pos[a].x + (pos[b].x - pos[a].x) * u, y = pos[a].y + (pos[b].y - pos[a].y) * u;
+        const { x, y } = naCurva(k2.p, k2.c, k2.q, u);
         ctx.moveTo(x + 1.3, y);
         ctx.arc(x, y, 1.3, 0, Math.PI * 2);
       }

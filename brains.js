@@ -500,7 +500,10 @@ function guardaDeRepeticao(executar = runTool) {
 // responder sem o histórico do que responder tarde com ele.
 const ESPERA_MAXIMA = 5; // segundos
 
-const TETO_HISTORICO = 60_000; // caracteres (~15 mil tokens)
+// 26/11/2026: de 60 mil para 100 mil caracteres (~25 mil tokens). Ele sentia
+// a conversa "curta"; a NVIDIA não conta tokens por minuto e o nemotron aguenta
+// mais de 100 mil tokens. O Groq continua com o teto dele (tetoDoTpm).
+const TETO_HISTORICO = 100_000; // caracteres (~25 mil tokens)
 // Limite de tokens por MINUTO de cada provedor, somando todos os pedidos.
 // Só entra aqui quem tem limite apertado o bastante para mudar a decisão.
 const TPM_POR_PROVEDOR = {
@@ -549,7 +552,19 @@ let fixoSemFerramentasCache = null;
 // abertas sozinhas (até 3.000 caracteres) e o fim da conversa anterior (até
 // 1.500). Fica reservado no custo fixo, senão o teto do Groq contaria com um
 // espaço de histórico que essas duas coisas já ocuparam.
-const RESERVA_CONTEXTO_EM_TOKENS = Math.round((3_000 + 1_500 + 200) / 4);
+// O fio da conversa (main.js, conversaAnterior). 26/11/2026: de 1.800 para
+// 5.000 caracteres, porque voltar numa conversa longa trazia só o fim dela —
+// MAS só para quem não tem limite de tokens por minuto. No Groq o fio continua
+// curto (1.500): cada caractere a mais no prompt é um a menos de histórico na
+// voz de conversa, e o teste do orçamento dele (provedores.test.js) mede isso.
+const FIO_CARACTERES = 5_000;
+const FIO_ITENS = 24;
+const FIO_APERTADO = { caracteres: 1_500, itens: 12 };
+const fioDe = (provedor) =>
+  Object.prototype.hasOwnProperty.call(TPM_POR_PROVEDOR, provedor || "")
+    ? FIO_APERTADO
+    : { caracteres: FIO_CARACTERES, itens: FIO_ITENS };
+const RESERVA_CONTEXTO_EM_TOKENS = Math.round((3_000 + FIO_APERTADO.caracteres + 200) / 4);
 function custoFixoEmTokens(comFerramentas = true) {
   const emTokens = (t) => Math.round(String(t).length / CARACTERES_POR_TOKEN);
   // A voz de conversa não leva ferramenta nenhuma: o fixo dela é só o prompt.
@@ -1441,7 +1456,7 @@ class GeminiBrain {
       let corpoDoPedido = null;
       const data = await this.gerar(
         (corpoDoPedido = {
-          systemInstruction: { parts: [{ text: this.prompt({ canal }) }] },
+          systemInstruction: { parts: [{ text: this.prompt({ canal, provedor: "gemini" }) }] },
           contents: this.contents,
           tools: geminiTools(),
           // Resposta falada é curta; teto menor fecha a geração mais cedo.
@@ -1935,7 +1950,7 @@ class OpenAIBrain {
       let corpoDoPedido = null;
       const { texto, chamadas, uso, limites } = await this.gerarComModeloValido(
         (corpoDoPedido = {
-          messages: [{ role: "system", content: this.prompt({ canal }) }, ...this.messages],
+          messages: [{ role: "system", content: this.prompt({ canal, provedor: this.provider }) }, ...this.messages],
           ...(this.semFerramentas ? {} : { tools: ferramentasOpenAI() }),
           temperature: 0.6,
           max_tokens: canal === "texto" ? 2048 : 1024,
@@ -2035,7 +2050,7 @@ class ClaudeBrain {
       const response = await this.client.messages.create({
         model: this.model,
         max_tokens: 4096,
-        system: this.prompt({ canal }),
+        system: this.prompt({ canal, provedor: "anthropic" }),
         thinking: { type: "adaptive" },
         output_config: { effort: "medium" },
         tools: toolDefinitions,
@@ -2627,6 +2642,9 @@ module.exports = {
   FORMATO_CLAUDE,
   TETO_HISTORICO,
   TETO_POR_PROVEDOR,
+  FIO_CARACTERES,
+  FIO_ITENS,
+  fioDe,
   RESERVA_CONTEXTO_EM_TOKENS,
   TPM_POR_PROVEDOR,
   PEDIDOS_POR_MINUTO,

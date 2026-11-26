@@ -5,7 +5,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { Chats, tituloDe } = require("../chats.js");
+const { Chats, tituloDe, TETO_ITENS } = require("../chats.js");
 
 const pasta = fs.mkdtempSync(path.join(os.tmpdir(), "chats-"));
 let historico = [
@@ -97,6 +97,40 @@ assert.ok(tituloDe([{ quem: "voce", texto: "a ".repeat(60) }]).endsWith("…"));
   c.abrir(b);
   assert.deepStrictEqual(ordem(), ["Primeira", "Terceira", "Segunda"], "abrir de novo não reordena");
   fs.rmSync(p2, { recursive: true, force: true });
+}
+
+// CONVERSAS SIMULTÂNEAS (26/11/2026): a resposta de uma conversa que ele deixou
+// (ela continuou trabalhando) entra NA conversa dela, guardada, e não na aberta.
+{
+  const p3 = fs.mkdtempSync(path.join(os.tmpdir(), "chats-sim-"));
+  let h = [];
+  let relogio = Date.parse("2026-11-26T18:00:00Z");
+  const c = new Chats({
+    arquivo: path.join(p3, "chats.json"),
+    historico: { ler: () => h.slice(), gravar: (i) => (h = i.slice()) },
+    agora: () => new Date(relogio),
+  });
+  const item = (quem, texto) => ({ quem, texto, hora: new Date((relogio += 1000)).toISOString() });
+  h.push(item("voce", "pesquisa as notícias"));
+  const a = c.listar()[0].id;
+  c.nova();
+  h.push(item("voce", "outra coisa"));
+  assert.ok(c.acrescentar(a, item("eve", "aqui estão as notícias")), "acrescenta na guardada");
+  assert.deepStrictEqual(h.map((i) => i.texto), ["outra coisa"], "a aberta não recebe a resposta da outra");
+  assert.deepStrictEqual(c.itensDe(a).map((i) => i.texto), ["pesquisa as notícias", "aqui estão as notícias"]);
+  assert.strictEqual(c.listar()[0].id, a, "a que recebeu resposta sobe na lista");
+  assert.strictEqual(c.tituloDeId(a), "Pesquisa as notícias");
+  const b = c.listar().find((x) => x.atual).id;
+  assert.ok(c.acrescentar(b, item("eve", "na aberta")));
+  assert.strictEqual(h[h.length - 1].texto, "na aberta", "na aberta vai para o historico");
+  assert.strictEqual(c.acrescentar("nao-existe", item("eve", "x")), false, "conversa que não existe: nada é escrito");
+  c.abrir(a);
+  assert.deepStrictEqual(h.map((i) => i.texto), ["pesquisa as notícias", "aqui estão as notícias"], "ao voltar, a resposta está lá");
+  // teto por conversa
+  for (let i = 0; i < TETO_ITENS + 20; i++) c.acrescentar(b, item("eve", "x" + i));
+  assert.strictEqual(c.itensDe(b).length, TETO_ITENS);
+  assert.ok(TETO_ITENS >= 300, "a conversa guarda pelo menos 300 itens (eram 120)");
+  fs.rmSync(p3, { recursive: true, force: true });
 }
 
 fs.rmSync(pasta, { recursive: true, force: true });

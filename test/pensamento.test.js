@@ -38,6 +38,9 @@ const hora = (h, m = 0) => new Date(2026, 10, 26, h, m).getTime();
     ["abre junto com o mac", "login_ligar"], ["não abre mais com o mac", "login_desligar"],
     // o pedido exato de 26/11, 00:29, que o agente tentou resolver com sudo launchctl
     ["ligue a funçao nas configs para vc abrir assim que o mac é iniciado por favor", "login_ligar"],
+    // 26/11/2026: o que ela passou a responder sozinha
+    ["o que você consegue fazer?", "capacidades"], ["sobre o que a gente conversou", "conversas"],
+    ["você ainda está trabalhando?", "trabalhando"], ["já terminou?", "trabalhando"],
   ];
   for (const [frase, intencao] of LOCAIS) {
     await teste(`"${frase}" ela responde sozinha (${intencao})`, () => {
@@ -46,6 +49,31 @@ const hora = (h, m = 0) => new Date(2026, 10, 26, h, m).getTime();
       assert.strictEqual(d.intencao, intencao);
     });
   }
+
+  await teste("o que ela sabe responder sobre as conversas vem dos dados de verdade", async () => {
+    const lista = [
+      { titulo: "Notícias de hoje", mensagens: 2, ocupada: true, atual: false },
+      { titulo: "Python básico", mensagens: 6, ocupada: false, atual: true },
+      { titulo: "Nova conversa", mensagens: 0, ocupada: false, atual: false },
+    ];
+    const c = { conversas: () => lista, agora: hora(18) };
+    assert.match(await RESPOSTAS.trabalhando(c), /“Notícias de hoje”/);
+    assert.doesNotMatch(await RESPOSTAS.trabalhando(c), /Python/, "a da tela não é 'outra conversa'");
+    assert.match(await RESPOSTAS.trabalhando({ conversas: () => lista.map((x) => ({ ...x, ocupada: false })) }), /nenhuma outra/);
+    const r = await RESPOSTAS.conversas(c);
+    assert.match(r, /Notícias de hoje.*ainda trabalhando/);
+    assert.doesNotMatch(r, /Nova conversa/, "conversa vazia não conta");
+    assert.strictEqual(await RESPOSTAS.conversas({}), null, "sem dado, vai para os agentes");
+  });
+
+  await teste("quem tinha o limiar antigo (75%) desce para o novo; correção dele continua valendo", () => {
+    const salvo = new Pensamento().salvar();
+    salvo.limiares = { ...salvo.limiares, hora: 0.75, data: 0.83, login_ligar: 0.85 };
+    const pe = new Pensamento(salvo);
+    assert.strictEqual(pe.limiares.hora, LIMIAR_INICIO);
+    assert.strictEqual(pe.limiares.data, 0.83, "o que subiu por correção não desce");
+    assert.strictEqual(pe.limiares.login_ligar, LIMIAR_AJUSTE, "ajuste continua em 85%");
+  });
 
   // Pedidos de AÇÃO e perguntas que só parecem dela: sempre para os agentes.
   const DOS_AGENTES = [
@@ -250,7 +278,7 @@ const hora = (h, m = 0) => new Date(2026, 10, 26, h, m).getTime();
       assert.match(rede, /# A rede neural da Sexta-Feira/);
       assert.match(rede, /\[\[linguagem\]\]/);
       const ling = fs.readFileSync(path.join(tmp, "rede", "linguagem.md"), "utf8");
-      assert.match(ling, /\| hora \| 75% \|/);
+      assert.ok(ling.includes(`| hora | ${Math.round(LIMIAR_INICIO * 100)}% |`), "a nota mostra o limiar de partida de verdade");
     });
     await teste("a pasta rede/ fica fora do índice da memória", async () => {
       const { Memoria } = require("../memoria.js");

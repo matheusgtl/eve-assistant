@@ -22,29 +22,38 @@ const { Rede } = require("./rede.js");
 const { Sentidos } = require("./sentidos.js");
 
 const MIN = 60_000;
-const LIMIAR_HZ = 10; // vontade mínima
-const ACUMULO = 40; // Hz·s acima do limiar para decidir (~8 s a 15 Hz)
-const INTERVALO_GERAL = 20 * MIN;
-const MAX_POR_DIA = 8;
+// 26/11/2026, "quero que ela interaja melhor e com menos travas": as travas
+// de RITMO afrouxaram (vontade, intervalos, limite do dia). As de RESPEITO e de
+// VERDADE ficam como estavam: nunca em chamada, nunca com ele longe, nunca
+// enquanto ela trabalha, e só o que é verdade (FATO) — essas não são travas
+// de timidez, são o que faz a iniciativa não virar incômodo nem mentira.
+// Antes: limiar 10 Hz, acúmulo 40, intervalo 20 min, 8 por dia, 5 min depois
+// de uma conversa; PAUSA 90/90 min, DORMIR 3 h, SAUDAR 4 h, AVISAR 60 min,
+// PAPO 24/24 h.
+const LIMIAR_HZ = 8; // vontade mínima
+const ACUMULO = 34; // Hz·s acima do limiar (~3 s a 20 Hz); um pico de 1 s a 40 Hz (32) ainda não basta
+const INTERVALO_GERAL = 10 * MIN;
+const MAX_POR_DIA = 14;
+const DEPOIS_DE_CONVERSAR = 2 * MIN;
 const JANELA_RESPOSTA = 10 * MIN;
 const INTERVALO = {
-  PAUSA: 90 * MIN,
-  DORMIR: 3 * 60 * MIN,
-  SAUDAR: 4 * 60 * MIN,
-  AVISAR: 60 * MIN,
-  PAPO: 24 * 60 * MIN,
+  PAUSA: 60 * MIN,
+  DORMIR: 90 * MIN,
+  SAUDAR: 3 * 60 * MIN,
+  AVISAR: 30 * MIN,
+  PAPO: 8 * 60 * MIN,
 };
 
 // As condições de VERDADE de cada iniciativa (trava 2).
 const FATO = {
-  PAUSA: (f) => f.sessaoMin >= 90,
+  PAUSA: (f) => f.sessaoMin >= 75,
   DORMIR: (f) => {
     const h = new Date(f.agora).getHours();
     return (h >= 23 || h < 5) && f.idleS < 60;
   },
   SAUDAR: (f) => !!(f.voltou || f.primeiroDoDia),
   AVISAR: (f) => f.naBateria && Number.isFinite(f.bateria) && f.bateria <= 20,
-  PAPO: (f) => f.semConversaH >= 24,
+  PAPO: (f) => f.semConversaH >= 8,
 };
 
 // Escolha determinística por instante (testável); varia ao longo do dia.
@@ -127,7 +136,7 @@ class Iniciativa {
     if (ocupada) return "ocupada";
     if (f.categoria === "CHAMADA") return "chamada";
     if (f.idleS >= 120 && motor !== "SAUDAR") return "longe";
-    if (agora - (this.ultimaConversaEm || 0) < 5 * MIN) return "conversando";
+    if (agora - (this.ultimaConversaEm || 0) < DEPOIS_DE_CONVERSAR) return "conversando";
     if (agora - this.ultima < INTERVALO_GERAL) return "intervalo";
     if (agora - (this.ultimaPor[motor] || 0) < INTERVALO[motor]) return "intervalo do tipo";
     const dia = new Date(agora).toDateString();
