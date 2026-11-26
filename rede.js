@@ -202,6 +202,23 @@ const RUIDO = 0.025;
 const TAU_LEITURA = 0.5; // s: suavização da taxa
 const SEMENTE = 23; // outra semente = outra "pessoa"
 
+// CRESCIMENTO (26/11/2026). Uma associação aprendida que ficou forte ganha
+// neurônios próprios: uma ASSEMBLEIA de 6 neurônios entre aquele sentido e
+// aquela iniciativa — excitatória se você gostou, inibitória se dispensou.
+// É o que faz a rede crescer com o uso em vez de só mexer em pesos; a
+// assembleia nasce uma vez, fica salva e aparece na esfera e no Obsidian.
+const LIMIAR_CRESCER = 0.04; // metade do teto do aprendizado
+const MAX_ASSEMBLEIAS = 24;
+const NEURONIOS_ASSEMBLEIA = 6;
+const nomeAssembleia = (canal, motor) => `A:${canal}>${motor}`;
+
+/// Semente estável a partir de um texto: a mesma assembleia nasce igual sempre.
+function sementeDe(texto) {
+  let h = 2166136261;
+  for (let i = 0; i < texto.length; i++) h = Math.imul(h ^ texto.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
+
 // Gerador com semente (mulberry32): a ESTRUTURA da rede é sempre a mesma; o
 // ruído usa Math.random e muda a cada vez, como lá.
 function semeado(semente) {
@@ -236,8 +253,9 @@ function normal(rand) {
 const limitar = (x, a = 0, b = 1) => (x < a ? a : x > b ? b : x);
 
 class Rede {
-  constructor({ semente = SEMENTE, aleatorio = Math.random } = {}) {
+  constructor({ semente = SEMENTE, aleatorio = Math.random, assembleias = [] } = {}) {
     const rng = semeado(semente);
+    this.assembleias = Rede.assembleiasValidas(assembleias);
     const gauss = normal(rng);
     this.semente = semente;
     this.aleatorio = aleatorio;
@@ -255,6 +273,10 @@ class Rede {
     for (const [nome, [n]] of Object.entries(SENSORIAL)) add(nome, "sentido", n, "sens");
     for (const [nome, tipo, n] of INTER) add(nome, "inter", n, tipo);
     for (const [nome, n] of MOTORES) add(nome, "motor", n, "exc");
+    // Assembleias crescidas: sempre no FIM, para não mudar a rede de base.
+    for (const a of this.assembleias) {
+      add(nomeAssembleia(a.canal, a.motor), "assembleia", NEURONIOS_ASSEMBLEIA, a.sinal > 0 ? "exc" : "inh");
+    }
 
     this.N = cursor;
     this.Ns = this.pools.filter((p) => p.grupo === "sentido").reduce((s, p) => s + p.n, 0);
@@ -279,6 +301,7 @@ class Rede {
     };
     for (const [nome, , , tau, b, bt] of INTER) porNeuronio(nome, tau, b, bt);
     for (const [nome, , tau, b, bt] of MOTORES) porNeuronio(nome, tau, b, bt);
+    for (const a of this.assembleias) porNeuronio(nomeAssembleia(a.canal, a.motor), 150, 0.01, 3.0);
 
     this.sTaxa = new Float64Array(Ns);
     this.sD = new Float64Array(Ns);
@@ -312,6 +335,25 @@ class Rede {
       }
     };
     for (const [pre, pos, peso, dens] of CONEXOES) ligar(pre, pos, peso, dens);
+    // Cada assembleia com seu próprio sorteio: crescer uma não mexe nas outras.
+    for (const a of this.assembleias) {
+      const nome = nomeAssembleia(a.canal, a.motor);
+      const rngA = semeado(sementeDe(nome));
+      const gaussA = normal(rngA);
+      const ligarA = (pre, pos, peso) => {
+        const x = this.pool(pre);
+        const y = this.pool(pos);
+        for (let i = 0; i < x.n; i++) {
+          for (let j = 0; j < y.n; j++) {
+            const dentro = rngA() < 0.6;
+            const forca = Math.exp(0.25 * gaussA()) / Math.exp(0.25 ** 2 / 2);
+            if (dentro) this.Wbase[(x.inicio + i) * Nl + (y.inicio + j - Ns)] += peso * forca;
+          }
+        }
+      };
+      ligarA(a.canal, nome, 0.12);
+      ligarA(nome, a.motor, a.sinal > 0 ? 0.3 : -0.3);
+    }
     for (const a of this.nomesMotores) {
       for (const b of this.nomesMotores) {
         // humor compete com humor, decisão com decisão
@@ -351,6 +393,7 @@ class Rede {
     this.disparou = new Uint8Array(this.N);
     this.ganho = new Float64Array(Ns).fill(1); // eficácia dos receptores (habituação)
     this.contagem = new Float64Array(this.pools.length);
+    this.disparos = new Uint16Array(this.N); // por neurônio, até alguém ler (a esfera)
     this.taxa = new Float64Array(this.pools.length);
     this.poolDe = new Int32Array(this.N);
     this.pools.forEach((p, k) => this.poolDe.fill(k, p.inicio, p.inicio + p.n));
@@ -401,6 +444,7 @@ class Rede {
         a[j] += this.adaptB[j];
         disparou[Ns + j] = 1;
         this.contagem[this.poolDe[Ns + j]]++;
+        if (this.disparos[Ns + j] < 65535) this.disparos[Ns + j]++;
       } else {
         disparou[Ns + j] = 0;
       }
@@ -414,6 +458,7 @@ class Rede {
       if (fogo) {
         ganho[i] *= 1 - this.sD[i];
         this.contagem[this.poolDe[i]]++;
+        if (this.disparos[i] < 65535) this.disparos[i]++;
       }
       ganho[i] += (1 - ganho[i]) * this.sRec[i];
     }
@@ -455,6 +500,63 @@ class Rede {
       let s = 0;
       for (let i = p.inicio; i < p.inicio + p.n; i++) s += this.ganho[i];
       out[c] = s / p.n;
+    }
+    return out;
+  }
+
+  /// Disparos de cada neurônio desde a última leitura (e zera). É o que a
+  /// esfera acende: um ponto por neurônio, aceso pelos disparos de verdade.
+  lerDisparos() {
+    const copia = Array.from(this.disparos);
+    this.disparos.fill(0);
+    return copia;
+  }
+
+  /// A forma da rede para desenhar: populações e ligações entre elas.
+  topologia() {
+    const idx = this.indice;
+    const ligacoes = [];
+    for (const [pre, pos, peso] of CONEXOES) ligacoes.push([idx[pre], idx[pos], peso]);
+    for (const a of this.assembleias) {
+      const nome = nomeAssembleia(a.canal, a.motor);
+      ligacoes.push([idx[a.canal], idx[nome], 0.12], [idx[nome], idx[a.motor], a.sinal > 0 ? 0.3 : -0.3]);
+    }
+    for (const [chave, peso] of Object.entries(this.aprendido)) {
+      if (Math.abs(peso) < 0.005) continue;
+      const [c, m] = chave.split(">");
+      ligacoes.push([idx[c], idx[m], peso]);
+    }
+    return {
+      versao: `${this.N}:${this.assembleias.length}`,
+      pools: this.pools.map((p) => ({ nome: p.nome, grupo: p.grupo, tipo: p.tipo, n: p.n })),
+      ligacoes,
+    };
+  }
+
+  /// Associações que já merecem neurônios próprios (e ainda não têm).
+  /// Não muda nada: quem reconstrói a rede é a Mente (iniciativa.js).
+  paraCrescer() {
+    const tem = new Set(this.assembleias.map((a) => `${a.canal}>${a.motor}`));
+    const novas = [];
+    for (const [chave, peso] of Object.entries(this.aprendido)) {
+      if (tem.has(chave) || Math.abs(peso) < LIMIAR_CRESCER) continue;
+      if (this.assembleias.length + novas.length >= MAX_ASSEMBLEIAS) break;
+      const [canal, motor] = chave.split(">");
+      novas.push({ canal, motor, sinal: peso > 0 ? 1 : -1 });
+    }
+    return novas;
+  }
+
+  static assembleiasValidas(lista) {
+    if (!Array.isArray(lista)) return [];
+    const vistas = new Set();
+    const out = [];
+    for (const a of lista) {
+      if (!a || !(a.canal in SENSORIAL) || !DECISOES.has(a.motor)) continue;
+      const chave = `${a.canal}>${a.motor}`;
+      if (vistas.has(chave) || out.length >= MAX_ASSEMBLEIAS) continue;
+      vistas.add(chave);
+      out.push({ canal: a.canal, motor: a.motor, sinal: Number(a.sinal) < 0 ? -1 : 1, nasceuEm: Number(a.nasceuEm) || null });
     }
     return out;
   }
@@ -525,7 +627,7 @@ class Rede {
     }
     const aprendido = {};
     for (const [k, p] of Object.entries(this.aprendido)) if (p) aprendido[k] = Math.round(p * 1e6) / 1e6;
-    return { versao: VERSAO, semente: this.semente, salvoEm: agora, eficacia, aprendido };
+    return { versao: VERSAO, semente: this.semente, salvoEm: agora, eficacia, aprendido, assembleias: this.assembleias };
   }
 
   /// Valida tudo antes de aplicar: se algo não fecha, nada muda e ela segue
@@ -570,8 +672,12 @@ class Rede {
   }
 
   descrever() {
-    return `LIF ${this.N} neurônios, ${this.nSinapses} sinapses, ${this.canais.length} sentidos, ${this.decisoes.length} iniciativas`;
+    const cresceu = this.assembleias.length ? `, ${this.assembleias.length} assembleias crescidas` : "";
+    return `LIF ${this.N} neurônios, ${this.nSinapses} sinapses, ${this.canais.length} sentidos, ${this.decisoes.length} iniciativas${cresceu}`;
   }
 }
 
-module.exports = { Rede, SENSORIAL, INTER, MOTORES, CONEXOES, DECISOES, ROTULOS, APRENDE_MIN, APRENDE_MAX };
+module.exports = {
+  Rede, SENSORIAL, INTER, MOTORES, CONEXOES, DECISOES, ROTULOS, APRENDE_MIN, APRENDE_MAX,
+  LIMIAR_CRESCER, MAX_ASSEMBLEIAS, nomeAssembleia,
+};

@@ -397,4 +397,24 @@ teste("estado para o painel e salvar/carregar da mente inteira", () => {
   assert.strictEqual(outra.sentidos.ultimoDia, mente.sentidos.ultimoDia);
 });
 
+teste("aprender forte faz a rede crescer, avisar o diário e manter tudo ao reabrir", () => {
+  const eventos = [];
+  const mente = new Mente({}, { aoEvento: (e) => eventos.push(e) });
+  const antes = mente.rede.N;
+  for (let i = 0; i < 5; i++) mente.aprender({ motor: "DORMIR", recompensa: -1, contexto: { MADRUGADA: 1 } }, hora(1));
+  assert.strictEqual(mente.rede.N, antes + 6, "uma assembleia = seis neurônios novos");
+  const a = mente.rede.assembleias[0];
+  assert.deepStrictEqual([a.canal, a.motor, a.sinal], ["MADRUGADA", "DORMIR", -1], "dispensa forte nasce inibitória");
+  assert.strictEqual(eventos.filter((e) => e.tipo === "cresceu").length, 1, "nasce uma vez só");
+  assert.ok(mente.rede.aprendido["MADRUGADA>DORMIR"] < 0, "o aprendido sobrevive à reconstrução");
+  const reaberta = new Mente(JSON.parse(JSON.stringify(mente.salvar())));
+  assert.strictEqual(reaberta.rede.N, mente.rede.N);
+  assert.strictEqual(reaberta.rede.topologia().versao, mente.rede.topologia().versao);
+});
+
+teste("assembleia inválida no arquivo é descartada", () => {
+  const r = new Rede({ assembleias: [{ canal: "NADA", motor: "PAUSA" }, { canal: "TRABALHO", motor: "ATENTA" }, { canal: "TRABALHO", motor: "PAUSA", sinal: 1 }, { canal: "TRABALHO", motor: "PAUSA", sinal: 1 }] });
+  assert.strictEqual(r.assembleias.length, 1);
+});
+
 console.log(`\nmente: ${ok} verificações passaram`);

@@ -41,6 +41,8 @@ let escolhasDoTurno = null;
 const PERGUNTA_CONTINUAR = /ainda não terminei\. Quer que eu continue\?$/;
 const sistema = require("./sistema.js");
 const { Mente } = require("./iniciativa.js");
+const { Pensamento } = require("./pensamento.js");
+const { CerebroRede } = require("./cerebroRede.js");
 const { appDaFrente } = require("./sentidos.js");
 const { Lembretes, formatar: formatarQuando } = require("./lembretes.js");
 const { Memoria } = require("./memoria.js");
@@ -1065,6 +1067,12 @@ function iniciarMemoria() {
   // ver um cérebro só: memória, aprendizados, conversas e skills ligados pela
   // nota CEREBRO.md.
   aprendizados = new Aprendizados({ pasta: memoria.pasta, onDebug: (msg) => log(msg) });
+  // A rede neural anota no mesmo cérebro, na pasta rede/ (cerebroRede.js).
+  cerebroRede = new CerebroRede({
+    pasta: memoria.pasta,
+    nome: loadConfig().nome || "Sexta-Feira",
+    onDebug: (msg) => log(msg),
+  });
   memoria
     .preparar()
     .then(() => gerarCerebro(memoria.pasta, { nome: loadConfig().nome || "Sexta-Feira" }))
@@ -1206,6 +1214,28 @@ async function ask(userText, canal = "texto") {
   } catch (err) {
     log("rede: não consegui registrar a conversa:", err.message);
   }
+
+  // O PENSAMENTO LOCAL (pensamento.js): a rede de linguagem dela responde o que
+  // já sabe resolver em código, sem chamar os agentes. Bloqueado quando ela
+  // está esperando um sim/não ou há arquivo anexado — isso é do agente.
+  let textoParaAgente = userText;
+  if (pensamento) {
+    const decisao = pensamento.avaliar(userText, { bloqueado: !!escolhasDoTurno || !!anexoPendente });
+    if (decisao.acao === "local") {
+      const resposta = await pensamento.responder(decisao, userText, contextoDoPensamento());
+      if (resposta) {
+        responderLocal(userText, canal, resposta, decisao);
+        return;
+      }
+    } else if (decisao.pergunta) {
+      // "Não era isso": a pergunta original vai para os agentes, com a correção.
+      textoParaAgente = `Eu tinha perguntado "${decisao.pergunta}" e a resposta automática não serviu. ${userText}`;
+      log(`pensamento: corrigido (${decisao.motivo}); a pergunta original vai para os agentes`);
+    } else {
+      log(`pensamento: para os agentes (${decisao.motivo}${decisao.intencao ? `, ${decisao.intencao} ${Math.round((decisao.confianca || 0) * 100)}%` : ""})`);
+    }
+  }
+  const ferramentasDoTurno = [];
   if (!brain) {
     send("ev:setup", { needed: true });
     return;
@@ -1311,7 +1341,7 @@ async function ask(userText, canal = "texto") {
   };
 
   try {
-    await brain.ask(userText, {
+    await brain.ask(textoParaAgente, {
       canal,
       anexo,
       onSay: (texto) => opcoesDaFala.say(texto),
@@ -1319,6 +1349,7 @@ async function ask(userText, canal = "texto") {
       // saber, lendo depois, se ela tinha AGIDO ou só conversado. Era o buraco
       // de diagnóstico mais caro que este app tinha.
       onTool: (nome, args) => {
+        ferramentasDoTurno.push(nome);
         honestidade.chamou(nome, args);
         log("ferramenta:", nome, resumirArgs(args));
         send("ev:tool", { name: nome });
@@ -1433,6 +1464,13 @@ async function ask(userText, canal = "texto") {
     send("ev:escolhas", escolhasDoTurno);
   }
   log(turno.fim("ok", brain?.provedorAtivo));
+  // O que o agente fez ensina a rede de linguagem (ver aposAgente).
+  try {
+    const aprendeu = pensamento?.aposAgente(userText, ferramentasDoTurno);
+    if (aprendeu) log(`pensamento: aprendeu com o agente que isto é "${aprendeu}"`);
+  } catch (err) {
+    log("pensamento: não consegui aprender com o agente:", err.message);
+  }
   // No mudo não existe fala, e quem devolve a esfera para "parada" é o fim da
   // fala — sem isto ela ficaria "pensando" para sempre, e no modo de microfone
   // aberto a escuta nunca reabriria.
@@ -1784,6 +1822,95 @@ function abertaPeloLogin() {
 }
 
 // ---------------------------------------------------------------------------
+// O pensamento local (pensamento.js) e o diário da rede no Obsidian
+// ---------------------------------------------------------------------------
+let pensamento = null;
+let cerebroRede = null;
+const linguagemPath = () => path.join(app.getPath("userData"), "linguagem.json");
+
+function iniciarPensamento() {
+  let salvo = {};
+  try {
+    salvo = JSON.parse(fs.readFileSync(linguagemPath(), "utf8"));
+  } catch {}
+  const t0 = Date.now();
+  pensamento = new Pensamento(salvo, { log: (m) => log("pensamento:", m), aoEvento: registrarNoCerebro });
+  const e = pensamento.estado();
+  log(`pensamento: rede de linguagem com ${e.ocultos} ocultos, ${e.exemplos} exemplos, acerto ${e.acerto}% (${Date.now() - t0} ms)`);
+}
+
+function salvarPensamento() {
+  if (!pensamento) return;
+  try {
+    const tmp = linguagemPath() + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(pensamento.salvar()));
+    fs.renameSync(tmp, linguagemPath());
+  } catch (err) {
+    log("pensamento: não consegui salvar:", err.message);
+  }
+}
+
+/// O que as intenções locais podem ler — dados de verdade, nada inventado.
+function contextoDoPensamento() {
+  const cfg = loadConfig();
+  return {
+    dono: cfg.dono || "",
+    nome: cfg.nome || "Sexta-Feira",
+    rede: () => (mente ? mente.estado() : null),
+    sistema: () => sistema.amostrar(),
+    bateria: () => sistema.bateria(),
+    lembretes: () => (lembretes ? lembretes.listar() : null),
+    agenda: async () => {
+      if (!calendario) return null;
+      return calendario.listar({});
+    },
+    mudo: (ligado) => {
+      const c = loadConfig();
+      c.mudo = !!ligado;
+      saveConfig(c);
+      if (c.mudo) stopSpeaking();
+      send("ev:config", configPublica());
+      atualizarBandeja();
+    },
+  };
+}
+
+/// A resposta que a rede de linguagem deu sozinha: mesma tela, mesma voz e
+/// mesmo histórico de uma resposta de agente, com a marca de onde veio.
+function responderLocal(userText, canal, resposta, decisao) {
+  log(`pensamento: respondeu sozinha (${decisao.intencao}, ${Math.round(decisao.confianca * 100)}%):`, JSON.stringify(resposta.slice(0, 80)));
+  escolhasDoTurno = null;
+  send("ev:escolhas", null);
+  anotar("voce", userText, { canal });
+  send("ev:message", { quem: "voce", texto: userText });
+  anotar("eve", resposta, { local: decisao.intencao });
+  send("ev:message", { quem: "eve", texto: resposta, local: decisao.intencao });
+  enviarChats();
+  // Como no fim do ask(): no mudo não há fala para devolver a esfera e reabrir
+  // a escuta (microfone aberto), então isso acontece aqui.
+  if (loadConfig().mudo) {
+    setEstado("idle");
+    aoTerminarFala();
+  } else speak(resposta);
+  conversas?.salvar(lerHistorico(), { ligacoes: [...ligacoesDaConversa] }).catch(() => {});
+  if (win && !win.isDestroyed() && win.isVisible() && mente) send("ev:rede", estadoParaTela());
+}
+
+function registrarNoCerebro(e) {
+  cerebroRede?.registrar(e);
+}
+
+function atualizarCerebroRede() {
+  if (!cerebroRede || !mente) return;
+  const nome = loadConfig().nome || "Sexta-Feira";
+  cerebroRede.atualizarIndice(mente.estado(), pensamento?.estado() || null, pensamento?.nota(nome) || null);
+}
+
+function estadoParaTela() {
+  return { ...mente.estado(), ...mente.paraEsfera(), linguagem: pensamento?.estado() || null };
+}
+
+// ---------------------------------------------------------------------------
 // A rede neural (rede.js + sentidos.js + iniciativa.js)
 // ---------------------------------------------------------------------------
 let mente = null;
@@ -1855,10 +1982,16 @@ async function tiqueDaMente() {
   } catch (err) {
     log("rede: o tique falhou:", err.message);
   }
-  if (win && !win.isDestroyed() && win.isVisible()) send("ev:rede", mente.estado());
+  if (win && !win.isDestroyed() && win.isVisible()) send("ev:rede", estadoParaTela());
+  else mente.rede.lerDisparos(); // escondida: zera a contagem, a esfera não está olhando
   if (agora - menteLeitura.salvoEm > 5 * 60_000) {
     menteLeitura.salvoEm = agora;
     salvarMente();
+    salvarPensamento();
+  }
+  if (agora - (menteLeitura.cerebroEm || 0) > 10 * 60_000) {
+    menteLeitura.cerebroEm = agora;
+    atualizarCerebroRede();
   }
   atualizarBandeja();
 }
@@ -1868,9 +2001,11 @@ function iniciarMente() {
   try {
     salvo = JSON.parse(fs.readFileSync(redePath(), "utf8"));
   } catch {}
-  mente = new Mente(salvo, { log });
+  mente = new Mente(salvo, { log, aoEvento: registrarNoCerebro });
   menteLeitura.salvoEm = Date.now();
   log("rede:", mente.rede.descrever());
+  menteLeitura.cerebroEm = Date.now() - 9 * 60_000; // o REDE.md sai um minuto depois de abrir
+  registrarNoCerebro({ tipo: "despertar", descricao: mente.rede.descrever(), em: Date.now() });
   clearInterval(menteTimer);
   menteTimer = setInterval(tiqueDaMente, 1000);
 }
@@ -1966,6 +2101,7 @@ app.whenReady().then(() => {
   });
   iniciarLembretes();
   iniciarMente();
+  iniciarPensamento();
   iniciarMemoria();
   agentes = new Agentes({
     arquivo: path.join(app.getPath("userData"), "agentes.json"),
@@ -2111,6 +2247,8 @@ app.on("before-quit", () => {
   saindo = true;
   clearInterval(menteTimer);
   salvarMente();
+  salvarPensamento();
+  atualizarCerebroRede();
   tray?.destroy();
   stopSpeaking();
   clearInterval(painelTimer);
@@ -2605,7 +2743,38 @@ ipcMain.handle("ev:choose-file", async () => {
 });
 
 ipcMain.handle("ev:reminders", () => (lembretes ? lembretes.listar() : []));
-ipcMain.handle("ev:rede", () => (mente ? mente.estado() : null));
+ipcMain.handle("ev:rede", () => (mente ? estadoParaTela() : null));
+
+/// A animação de abertura sai uma vez por dia: na primeira vez que a janela
+/// aparece (não quando o app abre escondido no login). O dia vira às 5h, como
+/// nos sentidos: abrir à 1h da manhã ainda é "ontem".
+ipcMain.handle("ev:abertura", () => {
+  const cfg = loadConfig();
+  const agora = new Date();
+  const dia = new Date(agora.getTime() - 5 * 3_600_000).toDateString();
+  if (cfg.ultimaAbertura === dia) return { mostrar: false };
+  cfg.ultimaAbertura = dia;
+  saveConfig(cfg);
+  const h = agora.getHours();
+  const oi = h >= 5 && h < 12 ? "Bom dia" : h >= 12 && h < 18 ? "Boa tarde" : "Boa noite";
+  const e = mente?.estado();
+  const nasceram = e?.assembleias?.length || 0;
+  const linguagem = pensamento?.estado();
+  const rodape = [
+    e ? `${e.neuronios} neurônios` : null,
+    nasceram ? `${nasceram} ${nasceram === 1 ? "grupo nasceu" : "grupos nasceram"} do que aprendi com você` : null,
+    linguagem?.locais ? `${linguagem.locais} respostas sem agente` : null,
+  ].filter(Boolean).join(" · ");
+  log("abertura do dia: animação");
+  return {
+    mostrar: true,
+    saudacao: `${oi}${cfg.dono ? `, ${cfg.dono}` : ""}`,
+    data: agora.toLocaleDateString("pt-BR", { weekday: "long", day: "numeric", month: "long" }),
+    rodape,
+    neuronios: e?.neuronios || 334,
+    nasceram: (e?.assembleias?.length || 0) * 6,
+  };
+});
 ipcMain.handle("ev:cancel-reminder", (_e, id) => {
   const r = lembretes?.cancelar(id);
   return r;

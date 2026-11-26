@@ -24,6 +24,16 @@
 //
 // Ela reage a duas coisas: à voz do usuário (volume medido no motor de escuta)
 // e à fala da E.V.E (envoltória gerada na interface — indicador, não medida).
+//
+// A REDE DE VERDADE (26/11/2026). Desde que a Sexta-Feira tem uma rede neural
+// própria (rede.js), a poeira e os sinais sorteados deram lugar a ela: cada
+// ponto aceso é um NEURÔNIO da rede, agrupado com a sua população (sentidos em
+// cima, interneurônios no equador, motores embaixo, assembleias que nasceram
+// do aprendizado entre o sentido e o motor que ligam), e acende com os
+// disparos reais medidos no último segundo. Os sinais que correm são as
+// LIGAÇÕES reais: saem mais de quem está disparando, na proporção do peso;
+// excitatórios em branco, inibitórios na cor quente. Neurônio novo nasce com
+// um anel. Sem dados da rede (antes do primeiro tique), volta a decoração.
 
 (function () {
   const canvas = document.getElementById("esfera");
@@ -155,6 +165,200 @@
     });
   }
 
+  // --- A rede real -------------------------------------------------------
+  const COR_NASCIMENTO = [120, 255, 190];
+  // Poucas faixas de transparência na camada da rede: cada faixa × cor é uma
+  // pintura, e a esfera inteira tem teto de pinturas por quadro (esfera.test).
+  const FAIXAS_NEURONIO = 3;
+  const FAIXAS_FIO = 2;
+  let rede = null; // { versao, neuronios: [], pools: [], ligacoes: [] }
+  const sinais = []; // pulsos entre neurônios de verdade
+  const SINAIS_MAX = 40;
+  let ultimoTempoRede = null;
+
+  // Ruído determinístico por índice: o mesmo neurônio cai sempre no mesmo lugar.
+  const fixo = (i, k) => {
+    const x = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453;
+    return x - Math.floor(x);
+  };
+
+  /// Onde cada população mora na casca. Bandas por grupo, com as populações
+  /// espalhadas em longitude; a assembleia fica entre o sentido e o motor dela.
+  function montarRede(topo) {
+    const pools = topo.pools.map((p, i) => ({ ...p, i, neuronios: [], taxa: 0 }));
+    const faixas = { sentido: [0.55, 1.1], inter: [-0.3, 0.3], motor: [-1.1, -0.55] };
+    for (const grupo of Object.keys(faixas)) {
+      const doGrupo = pools.filter((p) => p.grupo === grupo);
+      doGrupo.forEach((p, k) => {
+        const [a, b] = faixas[grupo];
+        p.lat = a + (b - a) * ((k * 0.618) % 1);
+        p.lon = (k / doGrupo.length) * Math.PI * 2 + (grupo === "inter" ? 0.4 : grupo === "motor" ? 0.9 : 0);
+        p.raio = 1;
+      });
+    }
+    const porNome = Object.fromEntries(pools.map((p) => [p.nome, p]));
+    for (const p of pools.filter((x) => x.grupo === "assembleia")) {
+      const [canal, motor] = p.nome.slice(2).split(">");
+      const a = porNome[canal];
+      const b = porNome[motor];
+      p.lat = a && b ? (a.lat + b.lat) / 2 : 0;
+      p.lon = a && b ? Math.atan2(Math.sin(a.lon) + Math.sin(b.lon), Math.cos(a.lon) + Math.cos(b.lon)) : 0;
+      p.raio = 1.07;
+    }
+    const antigos = new Set((rede?.pools || []).map((p) => p.nome));
+    const neuronios = [];
+    for (const p of pools) {
+      const novo = rede && !antigos.has(p.nome);
+      for (let k = 0; k < p.n; k++) {
+        const id = neuronios.length;
+        const n = {
+          pool: p,
+          lat: p.lat + (fixo(id, 1) - 0.5) * 0.26,
+          lon: p.lon + (fixo(id, 2) - 0.5) * 0.3,
+          raio: p.raio + (fixo(id, 3) - 0.5) * 0.04,
+          taxa: 0, // disparos por segundo, medidos
+          brilho: 0,
+          nasceu: novo ? 1 : 0, // anel de nascimento
+        };
+        p.neuronios.push(n);
+        neuronios.push(n);
+      }
+    }
+    const ligacoes = (topo.ligacoes || [])
+      .filter(([a, b, w]) => pools[a] && pools[b] && Math.abs(w) >= 0.04)
+      .map(([a, b, w]) => ({ de: pools[a], para: pools[b], peso: w }));
+    rede = { versao: topo.versao, pools, neuronios, ligacoes };
+    sinais.length = 0;
+  }
+
+  function receberRede(dados) {
+    if (!dados || !dados.topologia) return;
+    if (!rede || rede.versao !== dados.topologia.versao) montarRede(dados.topologia);
+    const d = dados.disparos || [];
+    rede.neuronios.forEach((n, i) => (n.taxa = Number(d[i]) || 0));
+    for (const p of rede.pools) p.taxa = p.neuronios.reduce((s, n) => s + n.taxa, 0) / Math.max(1, p.n);
+  }
+
+  /// Ponto entre dois neurônios pela superfície (interpolação esférica simples).
+  function entre(a, b, t) {
+    const ax = Math.cos(a.lat) * Math.cos(a.lon), ay = Math.sin(a.lat), az = Math.cos(a.lat) * Math.sin(a.lon);
+    const bx = Math.cos(b.lat) * Math.cos(b.lon), by = Math.sin(b.lat), bz = Math.cos(b.lat) * Math.sin(b.lon);
+    const x = ax + (bx - ax) * t, y = ay + (by - ay) * t, z = az + (bz - az) * t;
+    const m = Math.hypot(x, y, z) || 1;
+    const arco = 1 + Math.sin(Math.PI * t) * 0.12; // o sinal sobe um pouco acima da casca
+    const r = (a.raio + (b.raio - a.raio) * t) * arco;
+    return { lat: Math.asin(Math.max(-1, Math.min(1, y / m))), lon: Math.atan2(z, x), raio: r };
+  }
+
+  /// Desenha a rede real: ligações ativas, neurônios e sinais.
+  function desenharRede(tempo, cor, sopro) {
+    const dt = ultimoTempoRede === null ? 33 : Math.min(200, Math.max(0, tempo - ultimoTempoRede));
+    ultimoTempoRede = tempo;
+    const quente = ACENTO;
+
+    // ligações: só aparecem com o pré-sináptico disparando
+    // Um fio só para as duas: quem diz se a ligação excita ou inibe é a cor
+    // do sinal que corre por ela (branco ou quente), não o fio parado.
+    const fios = novoAgrupador(FAIXAS_FIO);
+    for (const l of rede.ligacoes) {
+      const atividade = Math.min(1, l.de.taxa / 25) * Math.min(1, Math.abs(l.peso) * 4);
+      if (atividade < 0.05) continue;
+      const a = projetar(l.de.lat, l.de.lon, l.de.raio * sopro);
+      const b = projetar(l.para.lat, l.para.lon, l.para.raio * sopro);
+      pontosDesenhados += 2;
+      const alpha = Math.min(1, Math.max(0, ((a.f + b.f) / 2 - 0.74) * 1.2) * atividade * 0.7 * reforco());
+      fios.add(a, b, alpha);
+    }
+    fios.pintar(cor, 0.8);
+
+    // sinais nascem nas ligações, na proporção do disparo real × peso
+    if (perfil.particulas) {
+      for (const l of rede.ligacoes) {
+        if (sinais.length >= SINAIS_MAX) break;
+        const chance = (l.de.taxa / 25) * Math.abs(l.peso) * 3 * (dt / 1000);
+        if (Math.random() < chance) {
+          const de = l.de.neuronios[(Math.random() * l.de.n) | 0];
+          const para = l.para.neuronios[(Math.random() * l.para.n) | 0];
+          if (de && para) sinais.push({ de, para, t: 0, inib: l.peso < 0 });
+        }
+      }
+    }
+
+    // neurônios: piscam com a taxa medida (Poisson), apagam em ~150 ms
+    // Duas cores só: excitatório na cor do estado, inibitório na quente. O
+    // nascimento aparece no anel (cor própria), não numa terceira cor de ponto.
+    const baldes = [new Map(), new Map()];
+    const corDe = (n) => (n.pool.tipo === "inh" ? 1 : 0);
+    const aneis = [];
+    for (const n of rede.neuronios) {
+      if (Math.random() < n.taxa * (dt / 1000)) n.brilho = 1;
+      n.brilho *= Math.exp(-dt / 150);
+      if (n.nasceu > 0) n.nasceu = Math.max(0, n.nasceu - dt / 4000);
+      const q = projetar(n.lat, n.lon, n.raio * sopro);
+      pontosDesenhados++;
+      if (q.f < 0.74) continue;
+      const base = 0.12 + Math.min(0.35, n.taxa / 60);
+      const alpha = Math.min(1, (base + n.brilho * 0.75) * Math.min(1, (q.f - 0.72) * 1.6) * reforco());
+      const r = Math.max(0.6, (1 + n.brilho * 1.4) * q.f);
+      const k = corDe(n);
+      const faixa = Math.min(FAIXAS_NEURONIO - 1, (alpha * FAIXAS_NEURONIO) | 0);
+      let lista = baldes[k].get(faixa);
+      if (!lista) baldes[k].set(faixa, (lista = []));
+      lista.push({ q, r });
+      if (n.nasceu > 0) aneis.push({ q, r: r + (1 - n.nasceu) * 10, a: n.nasceu });
+    }
+    const cores = [cor, quente];
+    baldes.forEach((mapa, k) => {
+      for (const [faixa, itens] of mapa) {
+        ctx.fillStyle = rgba(cores[k], ((faixa + 0.5) / FAIXAS_NEURONIO).toFixed(3));
+        ctx.beginPath();
+        for (const { q, r } of itens) {
+          ctx.moveTo(q.x + r, q.y);
+          ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+    });
+    if (aneis.length) {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(COR_NASCIMENTO, 0.5);
+      ctx.beginPath();
+      for (const { q, r } of aneis) {
+        ctx.moveTo(q.x + r, q.y);
+        ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+    }
+
+    // sinais viajando
+    const exc = [];
+    const inib = [];
+    for (let i = sinais.length - 1; i >= 0; i--) {
+      const s = sinais[i];
+      s.t += dt / 550;
+      if (s.t >= 1) {
+        s.para.brilho = Math.max(s.para.brilho, 0.6); // chegou: o alvo acende
+        sinais.splice(i, 1);
+        continue;
+      }
+      const p = entre(s.de, s.para, s.t);
+      const q = projetar(p.lat, p.lon, p.raio * sopro);
+      pontosDesenhados++;
+      if (q.f < 0.74) continue;
+      (s.inib ? inib : exc).push({ q, r: Math.max(0.7, 1.8 * q.f) });
+    }
+    for (const [lista, c] of [[exc, realce()], [inib, quente]]) {
+      if (!lista.length) continue;
+      ctx.fillStyle = rgba(c, (0.6 + nivel * 0.3).toFixed(3));
+      ctx.beginPath();
+      for (const { q, r } of lista) {
+        ctx.moveTo(q.x + r, q.y);
+        ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+  }
+
   /// Os sinais correm pelas trilhas — é o que a referência não mostra (é uma
   /// imagem parada) e que esta precisa ter: alguma coisa viva circulando.
   const pulsos = [];
@@ -227,12 +431,12 @@
     return 1 + nivel * 0.1 + nivel * onda * 0.09;
   }
 
-  function novoAgrupador() {
+  function novoAgrupador(faixas = FAIXAS) {
     const baldes = new Map();
     return {
       add(a, b, alpha) {
         if (alpha < 0.015) return;
-        const faixa = Math.min(FAIXAS - 1, (alpha * FAIXAS) | 0);
+        const faixa = Math.min(faixas - 1, (alpha * faixas) | 0);
         let lista = baldes.get(faixa);
         if (!lista) baldes.set(faixa, (lista = []));
         lista.push(a, b);
@@ -240,7 +444,7 @@
       pintar(cor, largura) {
         ctx.lineWidth = largura;
         for (const [faixa, pontos] of baldes) {
-          ctx.strokeStyle = rgba(cor, ((faixa + 0.5) / FAIXAS).toFixed(3));
+          ctx.strokeStyle = rgba(cor, ((faixa + 0.5) / faixas).toFixed(3));
           ctx.beginPath();
           for (let k = 0; k < pontos.length; k += 2) {
             ctx.moveTo(pontos[k].x, pontos[k].y);
@@ -327,7 +531,7 @@
       lista.push({ q, r });
     };
     for (const q of cantos) guardar(q, Math.min(1, (q.f - 0.76) * 1.3), Math.max(0.5, 1.3 * q.f));
-    for (const p of poeira) {
+    for (const p of rede ? [] : poeira) {
       p.lon += p.vel + nivel * 0.002;
       const q = projetar(p.lat, p.lon, p.raio * sopro);
       pontosDesenhados++;
@@ -348,8 +552,9 @@
       ctx.fill();
     }
 
-    // --- 3. sinais correndo pelas trilhas ----------------------------------
-    if (perfil.particulas) {
+    // --- 3. a rede de verdade, ou os sinais decorativos sem ela ------------
+    if (rede) desenharRede(tempo, cor, sopro);
+    else if (perfil.particulas) {
       const alvo = Math.min(PULSOS_MAX, Math.round((ativa ? 10 : 4) + nivel * 16));
       while (pulsos.length < alvo) pulsos.push(novoPulso());
       while (pulsos.length > alvo) pulsos.pop();
@@ -512,6 +717,9 @@
       perfil = PERFIS[modo] || PERFIS.normal;
       redimensionar();
     },
+    // { topologia, disparos } de rede.js, a cada segundo (main.js → ev:rede).
+    rede: receberRede,
+    neuronios: () => (rede ? rede.neuronios.length : 0),
     custo: () => ({
       fps: perfil.fps,
       fpsParado: perfil.parado,

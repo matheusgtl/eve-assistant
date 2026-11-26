@@ -811,11 +811,15 @@ window.ev.on("heard", ({ text, final }) => {
   parcialEl.textContent = final ? "" : text || "";
 });
 
-window.ev.on("message", ({ quem, texto, lembrete, anexo }) => {
+window.ev.on("message", ({ quem, texto, lembrete, anexo, local, iniciativa }) => {
   parcialEl.textContent = "";
   itensNaConversa++;
   mostrarContexto();
   registrar({ quem, texto: anexo ? `[${anexo}] ${texto}` : texto, classe: lembrete ? "lembrete" : "" });
+  // De onde veio: a rede de linguagem dela (sem agente) ou uma iniciativa da
+  // rede pulsada. Aparece como as ferramentas, logo abaixo da fala.
+  if (local) mostrarFerramenta(`rede neural · pensou sozinha (${local})`);
+  else if (iniciativa) mostrarFerramenta(`rede neural · por conta própria (${String(iniciativa).toLowerCase()})`);
   atualizarLembretes();
 });
 
@@ -1714,6 +1718,8 @@ function linhasDaRede(el, itens) {
 
 function mostrarRede(e) {
   if (!e) return;
+  // A esfera desenha a rede de verdade: um ponto por neurônio, aceso pelos disparos.
+  window.esfera?.rede?.(e);
   document.getElementById("redeHumor").textContent = e.humor;
   linhasDaRede(document.getElementById("redeInter"), e.inter.filter((p) => p.nome !== "INIB"));
   linhasDaRede(document.getElementById("redeDecisoes"), e.motores.filter((m) => DECISOES_REDE.includes(m.nome)));
@@ -1726,6 +1732,11 @@ function mostrarRede(e) {
       : `Às ${quando} decidiu ${NOMES_REDE[d.motor]}.`);
   }
   partes.push(`${e.hoje || 0} mensagem(ns) por conta própria hoje.`);
+  if (e.assembleias?.length) partes.push(`${e.assembleias.length} grupo(s) de neurônios nasceram do que ela aprendeu.`);
+  if (e.linguagem) {
+    const l = e.linguagem;
+    partes.push(`Pensou sozinha ${l.hoje.locais}× hoje; ${l.hoje.agentes}× chamou os agentes. Rede de linguagem: ${l.ocultos} neurônios, ${l.exemplos} exemplos.`);
+  }
   document.getElementById("redeDet").textContent = partes.join(" ");
 }
 window.ev.on("rede", mostrarRede);

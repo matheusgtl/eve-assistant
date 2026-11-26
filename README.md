@@ -369,6 +369,40 @@ A mensagem chega como **notificação** e fica escrita na conversa aberta; ela s
 
 Desligar: Configurações › Geral › "Mandar mensagens por conta própria", ou o mesmo item no menu do olho. A rede continua rodando (é ela que dá o humor), só não fala.
 
+### A esfera é a rede de verdade
+
+Desde 26/11 a poeira e os sinais sorteados da esfera deram lugar à rede: **cada ponto aceso é um neurônio** (sentidos em cima, interneurônios no equador, motores embaixo) e pisca com a taxa de disparo medida no último segundo. Os sinais que correm são as **ligações reais**, saindo mais de quem está disparando, na proporção do peso: brancos excitam, quentes inibem. O main manda topologia e disparos a cada segundo (`ev:rede`), só com a janela visível. Arcos, trilhas e o núcleo continuam como casca. A camada nova cabe no mesmo orçamento de pintura (`test/esfera.test.js`: menos de 40 por quadro) porque usa poucas faixas de transparência e um fio só para as duas cores.
+
+### A rede cresce com o que aprende
+
+Quando uma associação aprendida fica forte (metade do teto), nasce uma **assembleia**: 6 neurônios novos entre aquele sentido e aquela iniciativa — excitatória se você gostou, inibitória se dispensou. A `Mente` reconstrói a rede com eles e devolve o que ela já sabia (aprendido e habituação). Na esfera, neurônio novo nasce com um anel verde. Teto de 24 assembleias. Ficam salvas em `rede.json`; assembleia inválida no arquivo é descartada.
+
+### Tudo anotado no cérebro
+
+A rede escreve no cofre, em `<memória>/rede/`, ligada pela nota `CEREBRO.md` (`[[REDE]]`): `REDE.md` (gerado: o que ela sente, aprendeu, quantos neurônios), `dias/AAAA-MM-DD.md` (diário: cada iniciativa e o que ela sentia, cada resposta sua e quanto ela aprendeu, cada pergunta que ela respondeu sozinha, cada correção, cada neurônio que nasceu), `assembleias/<sentido>-<iniciativa>.md` (uma nota por grupo que nasceu, escrita uma vez e nunca sobrescrita) e `linguagem.md` (o que ela já resolve sozinha). Só acrescenta, nunca apaga. A pasta fica **fora do índice da memória** (`FORA_DA_MEMORIA`): o diário cresce todo dia e não pode viajar em toda pergunta.
+
+## Pensamento local: menos agentes, mais ela
+
+Desde 26/11 toda fala passa primeiro pela **rede de linguagem dela** (`pensamento.js`): palavras e pares de palavras → uma camada oculta → uma **intenção**. Se é uma intenção que ela resolve em código e a confiança passa do limiar, ela responde sozinha, sem internet nem token. Senão, os agentes de sempre. Na conversa aparece `⚙ rede neural · pensou sozinha (hora)` abaixo da resposta.
+
+**O que ela resolve sozinha:** cumprimentar, agradecer, despedir, como ela está (pela rede pulsada), o que a rede sente e aprendeu, hora, data, bateria, CPU/memória/disco, lembretes pendentes, agenda (se o Calendário tiver permissão) e ligar/desligar a voz. **Tudo que age no mundo é dos agentes**: criar lembrete, mandar mensagem, abrir, apagar, pesquisar, calcular, gastos.
+
+**Por que isso não é o roteamento reprovado em 02/11.** Lá, a voz de conversa decidia se havia ação e às vezes dizia que tinha feito o que não fez. Aqui a resposta local **não é texto de modelo**: cada intenção é uma função que lê o dado de verdade (relógio, `pmset`, `lembretes.listar()`, o helper do Calendário) e o põe em frase. Sem dado (sem permissão, erro), a função devolve `null` e a pergunta vai para os agentes. Não existe intenção local que crie, mande ou apague. `test/pensamento.test.js` tem uma lista de pedidos de ação ("me lembra de…", "manda oi pro…", "abre o…", "apaga…") que **nunca** podem ser respondidos localmente.
+
+**Travas antes de responder sozinha:** confiança acima do limiar daquela intenção (começa em 75%); folga de 30 pontos sobre a segunda intenção; frase de até 14 palavras; **cobertura** — das palavras que importam, 75% ela já viu naquela intenção ("que horas são em Tóquio" acerta "hora" com 93%, mas "tóquio" nunca apareceu ali, então vai para os agentes); e nada local enquanto ela espera um sim/não ou há arquivo anexado.
+
+**Como ela se aperfeiçoa:**
+- **Observando os agentes.** Quando um agente resolve a pergunta com uma ferramenta só de leitura que ela também tem (`system_status`, `list_reminders`, `listar_eventos`), a frase vira exemplo daquela intenção; o vocabulário cresce, e a próxima parecida ela responde sozinha.
+- **Aprendendo o que não é dela.** Se ela achava que era dela e o agente precisou de outra ferramenta, a frase vira exemplo de "outro".
+- **Com você.** "Não era isso" até 2 min depois de uma resposta local manda a pergunta original para os agentes, sobe o limiar daquela intenção em 8 pontos e guarda a frase como "outro". Cada resposta local que você não corrige desce o limiar 1 ponto (mínimo 60%).
+- **Crescendo.** Na partida ela treina com as frases de partida mais tudo que aprendeu (`linguagem.json`, até 1.500); se não consegue separar os exemplos (acerto abaixo de 97%), ganha 8 neurônios ocultos, até 96. Intenção nova é um neurônio de saída novo.
+
+O painel da rede mostra quantas vezes ela pensou sozinha e quantas chamou os agentes no dia. A regra das duas vozes continua valendo para tudo que chega aos agentes.
+
+## A abertura do dia
+
+Na primeira vez que a janela aparece no dia (o dia vira às 5h), uma animação de ~4,5 s: os neurônios surgem camada por camada, se ligam, os sinais correm e tudo se fecha na esfera; aí vem o bom dia com a data e os números reais (neurônios, grupos que nasceram, respostas sem agente). Clique ou qualquer tecla pula. Com "reduzir movimento" ligado no macOS, só o texto. Aberta escondida pelo login, a animação espera a janela aparecer. Quem decide é o main (`ev:abertura`, grava `ultimaAbertura` no config); o desenho é `renderer/abertura.js`.
+
 ## Segundo plano e o olho na barra de menus
 
 **Clique no olho** abre a conversa (ou esconde, se ela já está na frente); o **clique direito** abre o menu: humor da rede, falar, nova conversa, voz silenciada, mensagens por conta própria, abrir junto com o Mac e sair. Fechar a janela não fecha o app: com "Ficar em segundo plano" ligado (padrão), o ícone **sai do Dock** e ela fica só no olho, ouvindo o ⌥Espaço, disparando lembretes e com a rede rodando. Sair de verdade é ⌘Q ou "Sair" no menu.

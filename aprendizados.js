@@ -292,6 +292,7 @@ async function gerarCerebro(raiz, { nome = "Sexta-Feira" } = {}) {
     "- [[MEMORIA]] — o que ela sabe (processos e fatos)",
     "- [[APRENDIZADOS]] — os erros e o jeito certo",
     "- [[CONVERSAS]] — o diário de cada conversa",
+    "- [[REDE]] — a rede neural: o que ela sente, aprendeu e quantos neurônios cresceram",
     "- [[Skills/_como-criar-uma-skill|Skills]] — os comandos que você criou",
     "",
   ];

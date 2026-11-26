@@ -19,6 +19,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - `registro.js`: formato do `~/Library/Logs/E.V.E/eve.log` (leia para diagnosticar)
 - `build/make-icon.swift`: ícone, logo e ícone da barra de menus a partir de `assets/logo-original.png`
 - `rede.js`: rede neural pulsada (do Pestinha); `sentidos.js`: o Mac como canais; `iniciativa.js`: travas e mensagens por conta própria. Mudou peso? `npm test mente`
+- `pensamento.js`: rede de linguagem que responde sozinha (só leitura, em código) antes dos agentes; `cerebroRede.js`: diário da rede em `<cofre>/rede/`; `renderer/abertura.js`: animação do primeiro uso do dia
 - `gastos.js`, `calculo.js`, `calendario.js`, `lembretes.js`, `web.js`, `pdf.js`, `sistema.js`, `tts.js`
 - `native/*.swift`: escuta, PDF e Calendário
 - `esfera.js`, `index.html` e `interface.js` na **raiz** são cópias ignoradas: edite as de `renderer/`
@@ -30,6 +31,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - **Conta é do código** (`calculo.js`, `gastos.js`), nunca do modelo. Dinheiro não perde dado nem muda data em silêncio.
 - **Memória não apaga:** gravar no cofre passa por `memoria.js`.
 - Ela nunca diz que fez o que não fez: ferramenta que falha devolve erro claro.
+- **Pensamento local só lê.** Intenção local que age no mundo (criar, mandar, apagar) é proibida: isso é dos agentes. `test/pensamento.test.js` tem a lista que nunca pode ser local.
 - Canal novo: `main.js`, `preload.js` e `renderer` juntos (`test/ponte.test.js` confere).
 - Permissão do macOS depende de `Info.plist` e assinatura: leia essa seção do README antes de mexer.
 - Corrigiu bug? Primeiro o teste que falha; comente a causa e a data do log.

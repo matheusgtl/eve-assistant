@@ -88,7 +88,9 @@ const MAPA = "MEMORIA.md"; // mapa gerado, para navegar no Obsidian
 // cada conversa salva entraria no índice que viaja em toda pergunta — e o
 // índice tem orçamento (TETO_INDICE). Uma semana de conversas salvas expulsaria
 // os fatos dela do próprio contexto.
-const FORA_DA_MEMORIA = new Set(["skills", "conversas", "gastos"]);
+// "rede": o diário da rede neural (cerebroRede.js) cresce todo dia e não pode
+// entrar no índice que viaja em toda pergunta.
+const FORA_DA_MEMORIA = new Set(["skills", "conversas", "gastos", "rede"]);
 
 /// Nome de arquivo seguro, sem acento e sem espaço, preservando a legibilidade.
 function apelido(texto) {

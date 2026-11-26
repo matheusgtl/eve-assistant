@@ -58,6 +58,8 @@ contextBridge.exposeInMainWorld("ev", {
 
   // --- a rede neural (rede.js) ---
   rede: () => ipcRenderer.invoke("ev:rede"),
+  // A animação da primeira abertura do dia: o main diz se mostra (uma vez por dia).
+  abertura: () => ipcRenderer.invoke("ev:abertura"),
 
   // --- eventos vindos do processo principal ---
   on: (evento, handler) => {

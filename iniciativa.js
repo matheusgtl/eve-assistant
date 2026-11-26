@@ -197,11 +197,15 @@ class Iniciativa {
   }
 }
 
+const ativos = (canais) =>
+  Object.fromEntries(Object.entries(canais || {}).filter(([, v]) => v > 0).map(([k, v]) => [k, Math.round(v * 100) / 100]));
+
 /// Junta rede, sentidos e iniciativa. Sem Electron: main.js passa as leituras.
 class Mente {
-  constructor(salvo = {}, { log = () => {} } = {}) {
+  constructor(salvo = {}, { log = () => {}, aoEvento = () => {} } = {}) {
     this.log = log;
-    this.rede = new Rede();
+    this.aoEvento = aoEvento;
+    this.rede = new Rede({ assembleias: salvo.rede?.assembleias });
     if (salvo.rede && !this.rede.carregar(salvo.rede)) log("rede: estado salvo inválido; começando do zero");
     this.sentidos = new Sentidos(salvo.sentidos || {});
     this.iniciativa = new Iniciativa(salvo.iniciativa || {});
@@ -232,8 +236,10 @@ class Mente {
     const ignorada = this.iniciativa.ignorada;
     if (ignorada) {
       this.iniciativa.ignorada = null;
-      this.aprender(ignorada);
+      this.evento({ tipo: "ignorada", motor: ignorada.motor, recompensa: ignorada.recompensa }, agora);
+      this.aprender(ignorada, agora);
     }
+    if (decisao) this.evento({ tipo: "iniciativa", motor: decisao.motor, texto: decisao.texto, canais: ativos(this.canais) }, agora);
     return decisao;
   }
 
@@ -242,7 +248,8 @@ class Mente {
     const r = this.iniciativa.resposta(texto, agora);
     this.sentidos.conversou(agora);
     if (r) {
-      this.aprender(r);
+      this.evento({ tipo: "resposta", motor: r.motor, recompensa: r.recompensa, texto: String(texto).slice(0, 160) }, agora);
+      this.aprender(r, agora);
       if (r.recompensa < 0) this.sentidos.pulsar("DISPENSA", agora, 10 * MIN);
       else if (r.recompensa >= 1) this.sentidos.pulsar("AGRADECE", agora, 2 * MIN);
     }
@@ -251,13 +258,42 @@ class Mente {
 
   abriuNotificacao(agora = Date.now()) {
     const r = this.iniciativa.abriu(agora);
-    if (r) this.aprender(r);
+    if (r) {
+      this.evento({ tipo: "notificacao", motor: r.motor, recompensa: r.recompensa }, agora);
+      this.aprender(r, agora);
+    }
     return r;
   }
 
-  aprender({ motor, recompensa, contexto }) {
+  aprender({ motor, recompensa, contexto }, agora = Date.now()) {
     this.rede.aprender(recompensa, motor, contexto);
     this.log(`rede aprendeu: ${motor} ${recompensa > 0 ? "+" : ""}${recompensa}`);
+    this.crescer(agora);
+  }
+
+  /// Associação forte vira neurônios novos: reconstrói a rede com as
+  /// assembleias a mais e devolve o que ela já sabia (aprendido e habituação).
+  crescer(agora = Date.now()) {
+    const novas = this.rede.paraCrescer().map((a) => ({ ...a, nasceuEm: agora }));
+    if (!novas.length) return [];
+    const estado = this.rede.salvar(agora);
+    const maior = new Rede({ assembleias: [...this.rede.assembleias, ...novas] });
+    maior.carregar(estado, agora);
+    const antes = this.rede.N;
+    this.rede = maior;
+    for (const a of novas) {
+      this.log(`rede cresceu: assembleia ${a.canal}>${a.motor} (${a.sinal > 0 ? "excitatória" : "inibitória"})`);
+      this.evento({ tipo: "cresceu", assembleia: a, neuronios: maior.N, antes }, agora);
+    }
+    return novas;
+  }
+
+  evento(e, agora = Date.now()) {
+    try {
+      this.aoEvento({ ...e, em: agora });
+    } catch (err) {
+      this.log("rede: evento não registrado:", err.message);
+    }
   }
 
   /// Para o painel e o menu do ícone.
@@ -274,8 +310,15 @@ class Mente {
       motores: grupo("motor"),
       ultimaDecisao: this.iniciativa.ultimaDecisao,
       aprendizados: this.rede.aprendizados(5),
+      assembleias: this.rede.assembleias,
+      neuronios: this.rede.N,
       hoje: this.iniciativa.hojeN,
     };
+  }
+
+  /// Para a esfera: a forma da rede e os disparos desde a última leitura.
+  paraEsfera() {
+    return { topologia: this.rede.topologia(), disparos: this.rede.lerDisparos() };
   }
 }
 

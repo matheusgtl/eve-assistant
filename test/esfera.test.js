@@ -256,6 +256,37 @@ assert.ok(sonoFalando > 20, `30 fps são ~33ms; pedir ${sonoFalando.toFixed(1)}m
 window.esfera.estado("idle");
 window.esfera.nivel(0);
 
+// --- a rede DE VERDADE (26/11/2026) ---------------------------------------
+// A esfera recebe a topologia e os disparos da rede.js real (pela Mente, como
+// o main.js manda) e desenha um ponto por neurônio. O que precisa valer: o
+// número de pontos é o número de neurônios, nada sai inválido (o ctx falso
+// confere), o custo continua sob controle, e a rede que cresce aparece.
+const { Mente } = require(path.join(__dirname, "..", "iniciativa.js"));
+const menteReal = new Mente();
+menteReal.rede.estimular({ TRABALHO: 1, ATIVIDADE: 1, CANSACO: 1 });
+menteReal.rede.passo(1000);
+const pacote = menteReal.paraEsfera();
+assert.ok(pacote.disparos.some((n) => n > 0), "a rede real não disparou");
+window.esfera.rede(pacote);
+assert.strictEqual(window.esfera.neuronios(), menteReal.rede.N, "um ponto por neurônio da rede");
+
+const arcosAntes = chamadas.arcos;
+for (const k of Object.keys(chamadas)) if (typeof chamadas[k] === "number") chamadas[k] = 0;
+laco(40000);
+laco(40100);
+assert.ok(chamadas.arcos > 60, `a rede real desenhou poucos neurônios: ${chamadas.arcos}`);
+assert.ok(chamadas.pinturas < 60, `pintura demais com a rede real: ${chamadas.pinturas} em dois quadros`);
+
+// a rede cresce: a esfera remonta e os neurônios novos aparecem
+for (let i = 0; i < 5; i++) menteReal.aprender({ motor: "PAUSA", recompensa: 1, contexto: { TRABALHO: 1 } });
+assert.ok(menteReal.rede.assembleias.length >= 1, "a rede deveria ter crescido");
+window.esfera.rede(menteReal.paraEsfera());
+assert.strictEqual(window.esfera.neuronios(), menteReal.rede.N, "a esfera acompanhou o crescimento");
+chamadas.cores.clear();
+laco(41000);
+assert.ok([...chamadas.cores].some((c) => c.includes("rgba(120,255,190")), "o neurônio que nasceu acende com o anel");
+void arcosAntes;
+
 
 console.log("✓ esfera holográfica: geometria, estados, tema e custo de desenho");
 console.log(
@@ -266,3 +297,4 @@ console.log("  segmentos por quadro:", segmentosQuadro);
 console.log("  operações de pintura por quadro:", pinturas);
 console.log("  paletas distintas:", Object.keys(paletas).join(", "));
 console.log("  esfera:", custo.arcos, "arcos ·", custo.trilhas, "trilhas ·", custo.poeira, "pontos de poeira");
+console.log("  rede real na esfera:", window.esfera.neuronios(), "neurônios");
