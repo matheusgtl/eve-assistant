@@ -70,8 +70,12 @@ function lerFrontmatter(texto) {
 function resumoDaLicao(conteudo, nome) {
   const { dados, corpo } = lerFrontmatter(conteudo);
   const titulo = (corpo.match(/^#\s+(.+)$/m)?.[1] || nome).trim();
+  // "Jeito certo:" manda. Antes um "o certo" solto também valia, e a lição
+  // que citava a frase errada dela ("Tudo certo. Removi…") virava o resumo
+  // dela mesma — o oposto da lição (25/11/2026).
   const certo =
-    corpo.match(/(?:jeito certo|o certo|fazer assim|regra)[^:\n]*:\s*(.+)/i)?.[1] ||
+    corpo.match(/jeito certo[^:\n]*:\s*(.+)/i)?.[1] ||
+    corpo.match(/(?:fazer assim|regra)[^:\n]*:\s*(.+)/i)?.[1] ||
     corpo
       .replace(/^#.*$/gm, "")
       .split(/\n\s*\n/)
@@ -79,7 +83,7 @@ function resumoDaLicao(conteudo, nome) {
       .find((p) => p && !/^(relacionado|ligações)/i.test(p)) ||
     "";
   const quando = dados.quando && !/^nunca/i.test(dados.quando) ? ` (quando: ${dados.quando})` : "";
-  return `- ${titulo}${quando}: ${certo.replace(/\s+/g, " ").slice(0, 220)}`.trim();
+  return `- ${titulo}${quando}: ${certo.replace(/\s+/g, " ").slice(0, 380)}`.trim();
 }
 
 class Aprendizados {
@@ -111,7 +115,14 @@ class Aprendizados {
       const estado = this.lerEstado();
       const chave = assinatura(ferramenta, erro);
       let item = estado.find((e) => e.chave === chave);
-      if (item) {
+      if (item?.resolvido) {
+        // Voltou a falhar depois de corrigido: a conta recomeça do zero.
+        delete item.resolvido;
+        delete item.nota;
+        item.vezes = 1;
+        item.ultima = agora.toISOString();
+        item.erro = String(erro).slice(0, 240);
+      } else if (item) {
         item.vezes++;
         item.ultima = agora.toISOString();
         item.erro = String(erro).slice(0, 240);
@@ -142,6 +153,27 @@ class Aprendizados {
     });
   }
 
+  /// A causa de uma falha foi corrigida no CÓDIGO (não foi erro dela): sai dos
+  /// alertas do prompt, para ela não evitar uma ferramenta que já funciona.
+  /// Fica no diário, marcada — é história, e história não se apaga.
+  async marcarResolvido(ferramenta, nota = "") {
+    if (!this.pasta) return 0;
+    const estado = this.lerEstado();
+    let n = 0;
+    for (const e of estado) {
+      if (e.ferramenta !== ferramenta || e.resolvido) continue;
+      e.resolvido = new Date().toISOString();
+      e.nota = nota;
+      n++;
+    }
+    if (n) {
+      await fsp.mkdir(this.pasta, { recursive: true });
+      await fsp.writeFile(path.join(this.pasta, ESTADO), JSON.stringify(estado, null, 1));
+      await fsp.writeFile(path.join(this.pasta, ARQUIVO_ERROS), this.markdownDosErros(estado));
+    }
+    return n;
+  }
+
   markdownDosErros(estado) {
     const linhas = [
       "---",
@@ -166,6 +198,7 @@ class Aprendizados {
         "",
         `- **Erro:** ${e.erro}`,
         ...(e.pedido ? [`- **Pedido:** ${e.pedido}`] : []),
+        ...(e.resolvido ? [`- **resolvido: ${e.nota || "corrigido no código"}** (${e.resolvido.slice(0, 10).split("-").reverse().join("/")})`] : []),
         ""
       );
     }
@@ -202,7 +235,7 @@ class Aprendizados {
     }
     const alertas = [];
     let restaErros = TETO_ERROS;
-    for (const e of this.lerEstado().filter((x) => x.vezes >= 2).slice(0, 6)) {
+    for (const e of this.lerEstado().filter((x) => x.vezes >= 2 && !x.resolvido).slice(0, 6)) {
       const linha = `- ${e.ferramenta} falhou ${e.vezes}×: ${e.erro.replace(/\s+/g, " ").slice(0, 110)}`;
       if (linha.length > restaErros) break;
       restaErros -= linha.length;

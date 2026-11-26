@@ -62,5 +62,42 @@ assert.ok(!chats.renomear(primeira, "   "));
 assert.strictEqual(tituloDe([{ quem: "voce", texto: "[nota.pdf] resume isso" }]), "Resume isso");
 assert.ok(tituloDe([{ quem: "voce", texto: "a ".repeat(60) }]).endsWith("…"));
 
+// 7. A lista é por ÚLTIMA ATIVIDADE, como no Claude (pedido dele em
+//    25/11/2026): abrir uma conversa antiga não a sobe para o topo — só
+//    escrever nela sobe. Antes a aberta ia sempre para cima, e a lista pulava
+//    a cada clique.
+{
+  const p2 = fs.mkdtempSync(path.join(os.tmpdir(), "chats-ordem-"));
+  let h = [];
+  let relogio = Date.parse("2026-11-25T10:00:00Z");
+  const c = new Chats({
+    arquivo: path.join(p2, "chats.json"),
+    historico: { ler: () => h, gravar: (i) => (h = i) },
+    agora: () => new Date(relogio),
+  });
+  const dizer = (texto) => {
+    relogio += 60_000;
+    h.push({ quem: "voce", texto, hora: new Date(relogio).toISOString() });
+  };
+  dizer("primeira");
+  const a = c.listar()[0].id;
+  c.nova(); dizer("segunda");
+  const b = c.listar()[0].id;
+  c.nova(); dizer("terceira");
+  const ordem = () => c.listar().map((x) => x.titulo);
+  assert.deepStrictEqual(ordem(), ["Terceira", "Segunda", "Primeira"]);
+
+  c.abrir(a); // só abrir: a ordem não muda
+  assert.deepStrictEqual(ordem(), ["Terceira", "Segunda", "Primeira"], "abrir não reordena");
+  assert.strictEqual(c.listar().find((x) => x.atual).titulo, "Primeira");
+
+  dizer("de volta na primeira"); // escrever sobe
+  assert.deepStrictEqual(ordem(), ["Primeira", "Terceira", "Segunda"]);
+
+  c.abrir(b);
+  assert.deepStrictEqual(ordem(), ["Primeira", "Terceira", "Segunda"], "abrir de novo não reordena");
+  fs.rmSync(p2, { recursive: true, force: true });
+}
+
 fs.rmSync(pasta, { recursive: true, force: true });
 console.log("✓ chats: nova, abrir, guardar e renomear sem perder nada");

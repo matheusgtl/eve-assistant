@@ -72,7 +72,10 @@ class Chats {
     };
   }
 
-  /// A lista para a barra lateral: a aberta primeiro, depois a mais recente.
+  /// A lista para a barra lateral, pela ÚLTIMA ATIVIDADE, como no Claude.
+  /// Até 25/11/2026 a aberta vinha sempre primeiro, e a lista pulava a cada
+  /// clique numa conversa antiga. Agora abrir não muda nada; o que sobe uma
+  /// conversa é escrever nela (a hora da última mensagem).
   listar() {
     const dados = this.carregar();
     const a = this.aberta(dados);
@@ -83,13 +86,9 @@ class Chats {
       mensagens: (c.itens || []).filter((i) => i.quem === "voce").length,
       atual,
     });
-    return [
-      resumo(a, true),
-      ...dados.guardadas
-        .slice()
-        .sort((x, y) => String(y.atualizada).localeCompare(String(x.atualizada)))
-        .map((c) => resumo(c, false)),
-    ];
+    return [resumo(a, true), ...dados.guardadas.map((c) => resumo(c, false))].sort(
+      (x, y) => String(y.atualizada).localeCompare(String(x.atualizada))
+    );
   }
 
   /// Guarda a aberta (se tiver algo dito) e devolve os dados sem ela.

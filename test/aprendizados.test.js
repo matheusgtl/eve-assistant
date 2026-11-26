@@ -64,6 +64,26 @@ const { Aprendizados, assinatura, pareceCorrecao, resumoDaLicao, gerarCerebro } 
   // 6. Lição sem "jeito certo" escrito usa o primeiro parágrafo.
   assert.match(resumoDaLicao("# Título\n\nSempre confirmar o valor.\n", "x.md"), /Título: Sempre confirmar o valor\./);
 
+  // 6b. 25/11/2026: a lição "nunca dizer que fiz" cita a frase dela ("Tudo
+  // certo. Removi…"), e o resumo pegava esse "certo" em vez do "Jeito certo".
+  const mentira = resumoDaLicao(
+    "# Não mentir\n\nEu respondi \"Tudo certo. Removi tudo\". Era mentira: três continuavam lá.\n\n## Jeito certo: conferir cada ferramenta antes de dizer feito.\n",
+    "x.md"
+  );
+  assert.match(mentira, /Não mentir: conferir cada ferramenta antes de dizer feito\./);
+
+  // 6c. Falha cuja causa foi corrigida no código sai dos alertas, mas fica no
+  // diário (marcada), porque é história e não se apaga.
+  await a.registrarFalha({ ferramenta: "trash_file", erro: "osascript Finder timeout" });
+  await a.registrarFalha({ ferramenta: "trash_file", erro: "osascript Finder timeout" });
+  assert.ok((await a.paraPrompt()).alertas.some((l) => /trash_file/.test(l)));
+  assert.strictEqual(await a.marcarResolvido("trash_file", "Lixo pela função do sistema"), 1);
+  assert.ok(!(await a.paraPrompt()).alertas.some((l) => /trash_file/.test(l)), "resolvida não alerta");
+  assert.match(fs.readFileSync(path.join(pasta, "aprendizados", "erros-de-ferramenta.md"), "utf8"), /resolvido: Lixo pela função do sistema/);
+  await a.registrarFalha({ ferramenta: "trash_file", erro: "osascript Finder timeout" });
+  assert.ok((await a.paraPrompt()).alertas.some((l) => /trash_file falhou 1× desde/.test(l)) === false, "uma falha nova sozinha ainda não é padrão");
+  assert.strictEqual(a.lerEstado().find((e) => e.ferramenta === "trash_file").resolvido, undefined, "falhar de novo reabre");
+
   // 7. Mapa e nota central ligam a rede no Obsidian.
   await a.gerarMapa();
   assert.match(fs.readFileSync(path.join(pasta, "aprendizados", "APRENDIZADOS.md"), "utf8"), /\[\[aprendizados\/evento-sem-hora\]\]/);
