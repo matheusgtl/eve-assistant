@@ -4,8 +4,13 @@
 // que a janela aparece: os neurônios da rede DELA surgem um a um, na ordem das
 // camadas (sentidos, interneurônios, motores, e por último os que nasceram do
 // que ela aprendeu), se ligam, os sinais correm e tudo se fecha na esfera — e
-// aí vem o bom dia. ~4,5 s; clique, tecla ou Esc pulam. Com "reduzir
-// movimento" ligado no macOS, só o texto aparece e some.
+// aí vem o bom dia. ~2,6 s (26/11: a primeira versão tinha 4,6 s e pedia para
+// ser mais curta); clique, tecla ou Esc pulam. Com "reduzir movimento" ligado
+// no macOS, só o texto aparece e some.
+//
+// Centralização: esfera + texto são UM bloco centrado na janela. Antes a
+// esfera ficava a 40% da altura e o texto empurrado para baixo por margem
+// fixa, e o conjunto parecia caído para um lado.
 //
 // Os números são os de verdade (neurônios, assembleias); o desenho é canvas
 // 2D, como a esfera, e o laço para sozinho quando termina.
@@ -39,13 +44,14 @@
     camada.setAttribute("aria-label", d.saudacao);
     camada.style.cssText =
       `position:fixed;inset:0;z-index:999;background:${fundo};display:flex;align-items:center;` +
-      "justify-content:center;flex-direction:column;cursor:pointer;transition:opacity .6s ease;opacity:1";
+      "justify-content:center;flex-direction:column;cursor:pointer;transition:opacity .4s ease;opacity:1";
     const canvas = document.createElement("canvas");
     canvas.style.cssText = "position:absolute;inset:0;width:100%;height:100%";
     const bloco = document.createElement("div");
     bloco.style.cssText =
-      `position:relative;text-align:center;color:${texto};opacity:0;transform:translateY(8px);` +
-      "transition:opacity .9s ease,transform .9s ease;pointer-events:none;margin-top:46vh";
+      // top padrão (sem animação, no "reduzir movimento"): o texto no meio da tela
+      `position:absolute;left:0;right:0;top:calc(50% - 46px);text-align:center;color:${texto};opacity:0;transform:translateY(6px);` +
+      "transition:opacity .45s ease,transform .45s ease;pointer-events:none";
     const t1 = document.createElement("div");
     t1.style.cssText = "font-size:30px;font-weight:600;letter-spacing:.2px";
     t1.textContent = d.saudacao;
@@ -64,7 +70,7 @@
       if (fim) return;
       fim = true;
       camada.style.opacity = "0";
-      setTimeout(() => camada.remove(), 650);
+      setTimeout(() => camada.remove(), 450);
       window.removeEventListener("keydown", fechar);
     };
     camada.addEventListener("click", fechar);
@@ -76,7 +82,7 @@
     };
     if (calmo) {
       setTimeout(mostrarTexto, 50);
-      setTimeout(fechar, 2200);
+      setTimeout(fechar, 1600);
       return;
     }
 
@@ -84,12 +90,21 @@
     const ctx = canvas.getContext("2d");
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     let L = 0, A = 0;
+    // O conjunto (esfera + vão + texto) é centrado na altura da janela.
+    const ALTURA_TEXTO = 92;
+    const VAO = 26;
+    let cx = 0, cy = 0, R = 0;
     const medir = () => {
       L = canvas.clientWidth;
       A = canvas.clientHeight;
       canvas.width = Math.round(L * dpr);
       canvas.height = Math.round(A * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      R = Math.min(L, A) * 0.17;
+      const conjunto = R * 2.12 + VAO + ALTURA_TEXTO;
+      cx = L / 2;
+      cy = (A - conjunto) / 2 + R * 1.06;
+      bloco.style.top = `${Math.round(cy + R * 1.06 + VAO)}px`;
     };
     medir();
 
@@ -112,12 +127,13 @@
         const ang = Math.random() * Math.PI * 2;
         const raio = 0.18 + Math.random() * 0.3;
         pontos.push({
-          x0: 0.5 + Math.cos(ang) * raio * 0.9 + (c - 1.5) * 0.02,
-          y0: 0.1 + (c / 3) * 0.6 + (Math.random() - 0.5) * 0.16,
+          // solto em volta do centro, camada por camada de cima para baixo
+          x0: 0.5 + Math.cos(ang) * raio * 0.75,
+          y0: 0.5 + ((c - 1.5) / 1.5) * 0.22 + (Math.random() - 0.5) * 0.12,
           // destino: a casca de uma esfera no centro (projeção de um ponto sorteado)
           lat: Math.asin(Math.random() * 2 - 1),
           lon: Math.random() * Math.PI * 2,
-          nasce: 0.05 + (k / total) * 1.25, // quando aparece (s)
+          nasce: 0.02 + (k / total) * 0.6, // quando aparece (s)
           novo: k >= total - novos,
         });
       }
@@ -126,11 +142,11 @@
     for (let i = 0; i < total * 1.4; i++) {
       const a = (Math.random() * total) | 0;
       const b = Math.min(total - 1, a + 1 + ((Math.random() * 40) | 0));
-      ligacoes.push([a, b, 0.9 + Math.random() * 1.6]);
+      ligacoes.push([a, b, 0.35 + Math.random() * 0.75]);
     }
 
     const t0 = performance.now();
-    const DURACAO = 4.6;
+    const DURACAO = 2.6;
     let textoMostrado = false;
     const suave = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
@@ -139,9 +155,10 @@
       const t = (agora - t0) / 1000;
       if (canvas.clientWidth !== L) medir();
       ctx.clearRect(0, 0, L, A);
-      const cx = L / 2, cy = A * 0.4, R = Math.min(L, A) * 0.2;
-      const fecha = suave((t - 2.2) / 1.1); // 0 = solto, 1 = na esfera
-      const giro = t * 0.6;
+      // os pontos soltos se medem pelo centro do conjunto, não da janela
+      const dy = cy - A / 2;
+      const fecha = suave((t - 0.95) / 0.65); // 0 = solto, 1 = na esfera
+      const giro = t * 0.9;
 
       const pos = pontos.map((p) => {
         const cl = Math.cos(p.lat);
@@ -150,9 +167,9 @@
         const ex = cx + x3 * R * f, ey = cy + y3 * R * f;
         return {
           x: p.x0 * L + (ex - p.x0 * L) * fecha,
-          y: p.y0 * A + (ey - p.y0 * A) * fecha,
+          y: p.y0 * A + dy + (ey - p.y0 * A - dy) * fecha,
           z: z3 * fecha,
-          vis: suave((t - p.nasce) / 0.25),
+          vis: suave((t - p.nasce) / 0.18),
           novo: p.novo,
         };
       });
@@ -162,7 +179,7 @@
       ctx.strokeStyle = cor(0.16 * (1 - fecha * 0.5));
       ctx.beginPath();
       for (const [a, b, quando] of ligacoes) {
-        const prog = suave((t - quando) / 0.5);
+        const prog = suave((t - quando) / 0.3);
         if (prog <= 0 || pos[a].vis < 1 || pos[b].vis < 1) continue;
         ctx.moveTo(pos[a].x, pos[a].y);
         ctx.lineTo(pos[a].x + (pos[b].x - pos[a].x) * prog, pos[a].y + (pos[b].y - pos[a].y) * prog);
@@ -174,8 +191,8 @@
       ctx.beginPath();
       for (let i = 0; i < ligacoes.length; i += 7) {
         const [a, b, quando] = ligacoes[i];
-        if (t < quando + 0.5) continue;
-        const u = ((t - quando) * 1.3 + i * 0.13) % 1;
+        if (t < quando + 0.3) continue;
+        const u = ((t - quando) * 2 + i * 0.13) % 1;
         const x = pos[a].x + (pos[b].x - pos[a].x) * u, y = pos[a].y + (pos[b].y - pos[a].y) * u;
         ctx.moveTo(x + 1.3, y);
         ctx.arc(x, y, 1.3, 0, Math.PI * 2);
@@ -203,7 +220,7 @@
         ctx.arc(cx, cy, R * 1.06, 0, Math.PI * 2);
         ctx.stroke();
         const brilho = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * 0.6);
-        const pico = Math.max(0, Math.sin(Math.min(1, (t - 2.6) / 1.2) * Math.PI)) * 0.9;
+        const pico = Math.max(0, Math.sin(Math.min(1, (t - 1.3) / 0.8) * Math.PI)) * 0.9;
         brilho.addColorStop(0, `rgba(255,255,255,${(0.2 + pico * 0.7).toFixed(3)})`);
         brilho.addColorStop(0.3, cor((0.25 * fecha).toFixed(3)));
         brilho.addColorStop(1, cor(0));
@@ -213,7 +230,7 @@
         ctx.fill();
       }
 
-      if (!textoMostrado && t > 2.9) {
+      if (!textoMostrado && t > 1.45) {
         textoMostrado = true;
         mostrarTexto();
       }

@@ -401,7 +401,7 @@ O painel da rede mostra quantas vezes ela pensou sozinha e quantas chamou os age
 
 ## A abertura do dia
 
-Na primeira vez que a janela aparece no dia (o dia vira às 5h), uma animação de ~4,5 s: os neurônios surgem camada por camada, se ligam, os sinais correm e tudo se fecha na esfera; aí vem o bom dia com a data e os números reais (neurônios, grupos que nasceram, respostas sem agente). Clique ou qualquer tecla pula. Com "reduzir movimento" ligado no macOS, só o texto. Aberta escondida pelo login, a animação espera a janela aparecer. Quem decide é o main (`ev:abertura`, grava `ultimaAbertura` no config); o desenho é `renderer/abertura.js`.
+Na primeira vez que a janela aparece no dia (o dia vira às 5h), uma animação de ~2,6 s (era 4,6 s: ficou longa demais), com esfera e texto centrados juntos na janela: os neurônios surgem camada por camada, se ligam, os sinais correm e tudo se fecha na esfera; aí vem o bom dia com a data e os números reais (neurônios, grupos que nasceram, respostas sem agente). Clique ou qualquer tecla pula. Com "reduzir movimento" ligado no macOS, só o texto. Aberta escondida pelo login, a animação espera a janela aparecer. Quem decide é o main (`ev:abertura`, grava `ultimaAbertura` no config); o desenho é `renderer/abertura.js`.
 
 ## Segundo plano e o olho na barra de menus
 
