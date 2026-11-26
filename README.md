@@ -521,7 +521,22 @@ Só quando tudo isso falha ela avisa — e a mensagem diz qual dos casos é.
 
 ## Diagnóstico
 
-Tudo fica em `~/Library/Logs/E.V.E/eve.log`: teclas, comandos da escuta, troca de modelo, erros da API, lembretes disparados.
+Tudo fica em `~/Library/Logs/E.V.E/eve.log`: teclas, comandos da escuta, troca de modelo, erros da API, lembretes disparados. Cada pergunta abre e fecha um bloco:
+
+```
+[2026-11-25 20:45:42] ── #3 falou: "Apaga o arquivo teste"
+[2026-11-25 20:45:43] ferramenta: trash_file · filepath="teste"
+[2026-11-25 20:45:43]   ↳ trash_file ✗ 38 ms · erro: Esse caminho não existe.
+[2026-11-25 20:45:44] ── #3 fim · 2,1 s · 1ª fala em 1,4 s · 1 ferramenta (1 falhou) · nvidia · resposta de 96 caracteres
+```
+
+- **Data em toda linha.** Antes, só a hora: um mês de log sem saber de que dia era cada linha.
+- **O que você escreve também entra** (`escreveu:`), não só o que fala.
+- **Cada ferramenta tem resultado e tempo** (`↳ ✓` ou `✗` com o erro). Antes, o log só dizia que ela tinha sido chamada.
+- **"1ª fala em"** é o tempo até a primeira palavra dela, que é o que se sente como demora.
+- Passou de 2 MB, o log vira `eve.log.1` e começa outro.
+
+O formato está em `registro.js`, conferido por `test/registro.test.js`.
 
 ```bash
 tail -f ~/Library/Logs/E.V.E/eve.log

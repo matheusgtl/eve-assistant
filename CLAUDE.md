@@ -7,7 +7,7 @@ O `README.md` explica o porquê de cada decisão: **leia a seção do assunto an
 Use o Node do nvm: `export PATH=~/.nvm/versions/node/v24.14.0/bin:$PATH`.
 - `npm test`: todos os testes, sem rede; `npm test memoria pdf`: só os que casam
 - `npm run verificar`: sintaxe, Swift e testes. Rode antes de dizer "pronto"
-- `npm run install-app`: troca o app instalado. Siga a skill `instalar`
+- `npm run install-app`: troca o app instalado. Siga a skill `instalar`: ao terminar uma mudança no app, instale sem perguntar
 
 Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 
@@ -15,6 +15,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - `main.js`: Electron, voz e canais; `preload.js`: ponte; `renderer/`: interface
 - `brains.js`: prompt, provedores e corrente de reserva; `agentes.js`: consumo
 - `tools.js`: ferramentas e travas; `escolhas.js`: botões de resposta e o sim que só ele dá; `memoria.js`, `conversas.js`, `skills.js`: cofre do Obsidian
+- `registro.js`: formato do `~/Library/Logs/E.V.E/eve.log` (leia para diagnosticar)
 - `gastos.js`, `calculo.js`, `calendario.js`, `lembretes.js`, `web.js`, `pdf.js`, `sistema.js`, `tts.js`
 - `native/*.swift`: escuta, PDF e Calendário
 - `esfera.js`, `index.html` e `interface.js` na **raiz** são cópias ignoradas: edite as de `renderer/`
@@ -33,4 +34,4 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - Repositório privado. Commits em português no formato `Área: o que mudou`, sem coautoria, com push.
 
 ## Pronto quando
-`npm run verificar` passa e o commit está no GitHub. Voz, microfone, permissões e provedores reais não são testados aqui: diga isso.
+`npm run verificar` passa, o commit está no GitHub e, se mudou o app, está instalado. Voz, microfone, permissões e provedores reais não são testados aqui: diga isso.

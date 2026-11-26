@@ -28,6 +28,9 @@ const {
 } = require("./tts.js");
 const ferramentas = require("./tools.js");
 const { ROTULOS_CONFIRMACAO, filtroDeOpcoes } = require("./escolhas.js");
+const registro = require("./registro.js");
+// A pergunta em andamento, para o log fechar o bloco com tempo e ferramentas.
+let turnoAtual = null;
 
 // Os botões que a resposta em andamento vai deixar no chat: o pedido de sim de
 // uma ferramenta, ou o `[opções: …]` que ela escreveu. Saem no FIM da resposta,
@@ -315,14 +318,23 @@ const send = (channel, payload) => {
 // Diagnóstico — ~/Library/Logs/E.V.E/eve.log
 // ---------------------------------------------------------------------------
 let logFile = null;
+let linhasDesdeRotacao = 0;
+let turnosNaSessao = 0;
 
 function log(...parts) {
-  const line = `[${new Date().toLocaleTimeString("pt-BR")}] ${parts.join(" ")}`;
+  // Data em toda linha (registro.js): só a hora tornava um mês de log ilegível.
+  const line = registro.linha(parts);
   console.log(line);
   try {
     if (!logFile) {
       logFile = path.join(app.getPath("logs"), "eve.log");
       fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      registro.rotacionar(logFile);
+    }
+    // Conferir o tamanho a cada linha seria um stat por linha; a cada 500 basta.
+    if (++linhasDesdeRotacao >= 500) {
+      linhasDesdeRotacao = 0;
+      registro.rotacionar(logFile);
     }
     fs.appendFileSync(logFile, line + "\n");
   } catch {}
@@ -1135,6 +1147,12 @@ async function ask(userText, canal = "texto") {
   // o que dispensa qualquer passo de sincronização (e reiniciar o app).
   await atualizarIndiceSkills();
 
+  // Abre o bloco desta pergunta no log — inclusive o que ele ESCREVEU, que antes
+  // não aparecia (só a fala, pela linha da escuta).
+  const turno = new registro.Turno(++turnosNaSessao, userText, canal);
+  turnoAtual = turno;
+  log(turno.abertura);
+
   // Respondeu a um pedido de sim? Quem decide é esta fala, não o modelo.
   const decisao = ferramentas.confirmacoes.aoFalarDele(userText);
   if (decisao) log("confirmação:", decisao, "←", JSON.stringify(userText.slice(0, 40)));
@@ -1189,6 +1207,7 @@ async function ask(userText, canal = "texto") {
         if (!escolhasDoTurno && PERGUNTA_CONTINUAR.test(String(texto).trim())) {
           escolhasDoTurno = { opcoes: ["Continua", "Pode parar"], tipo: "oferta" };
         }
+        turno.falou(texto);
         anotar("eve", texto);
         send("ev:message", { quem: "eve", texto });
         speak(texto);
@@ -1254,11 +1273,13 @@ async function ask(userText, canal = "texto") {
     // o que explicar nem o que dizer em voz alta.
     if (err?.cancelado) {
       log("pedido cancelado pelo usuário");
+      log(turno.fim("cancelado", brain?.provedorAtivo));
       send("ev:notice", { message: "cancelado." });
       setEstado("idle");
       return;
     }
     log("erro da API:", err.status || "", err.message || String(err));
+    log(turno.fim(`erro: ${err.status || ""} ${err.message || err}`, brain?.provedorAtivo));
     if (agentes && brain) {
       agentes.registrar({
         provedor: brain.provedorAtivo || brain.provider || loadConfig().provider,
@@ -1289,6 +1310,7 @@ async function ask(userText, canal = "texto") {
     log("botões:", escolhasDoTurno.opcoes.join(" | "));
     send("ev:escolhas", escolhasDoTurno);
   }
+  log(turno.fim("ok", brain?.provedorAtivo));
   // No mudo não existe fala, e quem devolve a esfera para "parada" é o fim da
   // fala — sem isto ela ficaria "pensando" para sempre, e no modo de microfone
   // aberto a escuta nunca reabriria.
@@ -1537,6 +1559,13 @@ app.whenReady().then(() => {
 
   ferramentas.configurar({
     onArquivo: anotarArquivo,
+    // Resultado e tempo de cada ferramenta: antes o log só dizia que ela foi
+    // CHAMADA, e não dava para saber se deu certo.
+    onResultado: ({ nome, ms, resultado }) => {
+      const r = registro.resultadoDeFerramenta(resultado);
+      turnoAtual?.ferramenta(r.ok);
+      log(`  ↳ ${nome} ${r.ok ? "✓" : "✗"} ${ms} ms · ${r.texto}`);
+    },
     // A ferramenta pediu o sim dele: os botões Sim/Não entram no fim desta resposta.
     onPedidoDeSim: ({ nome }) => {
       escolhasDoTurno = { opcoes: ROTULOS_CONFIRMACAO, tipo: "confirmacao" };

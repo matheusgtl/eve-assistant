@@ -1476,6 +1476,17 @@ function explicarErroDeAutomacao(err) {
 
 /// Executa uma ferramenta pelo nome. Devolve sempre string (o tool_result).
 async function runTool(name, input) {
+  const inicio = Date.now();
+  const resultado = await executar(name, input);
+  // O log mostra o resultado e o tempo de cada uma (registro.js). Falha no
+  // relato não pode derrubar a ferramenta que já rodou.
+  try {
+    ctx.onResultado?.({ nome: name, ms: Date.now() - inicio, resultado });
+  } catch {}
+  return resultado;
+}
+
+async function executar(name, input) {
   const fn = executors[name];
   if (!fn) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
   try {
