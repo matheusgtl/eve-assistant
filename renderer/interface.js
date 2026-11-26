@@ -173,6 +173,7 @@ function aplicarVisual(cfg) {
     LADOS_ESFERA[cfg.esferaTamanho || "media"] || LADOS_ESFERA.media
   );
   window.esfera?.desempenho(cfg.desempenho || "normal");
+  window.esfera?.modelo?.(cfg.esferaModelo || "holografica");
   requestAnimationFrame(() => window.esfera?.redimensionar());
 }
 
@@ -1141,7 +1142,11 @@ function salvarLocal(mudancas) {
   try {
     localStorage.setItem(
       "eve-visual",
-      JSON.stringify({ esferaTamanho: configAtual.esferaTamanho, desempenho: configAtual.desempenho })
+      JSON.stringify({
+        esferaTamanho: configAtual.esferaTamanho,
+        desempenho: configAtual.desempenho,
+        esferaModelo: configAtual.esferaModelo,
+      })
     );
   } catch {}
   aplicarVisual(configAtual);
@@ -1157,6 +1162,7 @@ grupo("cfgEstilo", "estilo");
 grupo("cfgModoMic", "modoMic");
 grupo("cfgTema", "tema");
 grupo("cfgEsfera", null, (v) => salvarLocal({ esferaTamanho: v }));
+grupo("cfgModeloEsfera", null, (v) => salvarLocal({ esferaModelo: v }));
 grupo("cfgDesempenho", null, (v) => {
   salvarLocal({ desempenho: v });
   mostrarCustoGrafico();
@@ -1230,6 +1236,7 @@ function preencherConfig() {
   marcar("cfgModoMic", c.modoMic || "toque");
   marcar("cfgTema", c.tema || "holografico");
   marcar("cfgEsfera", c.esferaTamanho || "media");
+  marcar("cfgModeloEsfera", c.esferaModelo || "holografica");
   marcar("cfgDesempenho", c.desempenho || "normal");
   mostrarCustoGrafico();
 

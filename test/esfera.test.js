@@ -7,6 +7,21 @@ const fs = require("node:fs");
 const path = require("node:path");
 const assert = require("node:assert");
 
+// Sorteio com semente: a esfera e a rede usam Math.random (geometria, ruído,
+// disparos). Com ele fixo o teste mede sempre o mesmo quadro, e um limite
+// como o de pinturas não passa num dia e falha no outro (26/11: falhou 1 em 3
+// rodadas, com 60 pinturas contra o teto de 60, só por sorteio).
+{
+  let a = 20261126;
+  Math.random = () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 const chamadas = { arcos: 0, segmentos: 0, gradientes: 0, pinturas: 0, cores: new Set() };
 
 const ctxFalso = {
@@ -276,6 +291,7 @@ laco(40000);
 laco(40100);
 assert.ok(chamadas.arcos > 60, `a rede real desenhou poucos neurônios: ${chamadas.arcos}`);
 assert.ok(chamadas.pinturas < 60, `pintura demais com a rede real: ${chamadas.pinturas} em dois quadros`);
+const pinturasComRede = chamadas.pinturas;
 
 // a rede cresce: a esfera remonta e os neurônios novos aparecem
 for (let i = 0; i < 5; i++) menteReal.aprender({ motor: "PAUSA", recompensa: 1, contexto: { TRABALHO: 1 } });
@@ -287,6 +303,22 @@ laco(41000);
 assert.ok([...chamadas.cores].some((c) => c.includes("rgba(120,255,190")), "o neurônio que nasceu acende com o anel");
 void arcosAntes;
 
+// --- modelos da esfera (Configurações › Aparência) -------------------------
+assert.deepStrictEqual(window.esfera.modelos(), ["holografica", "neural"]);
+const medirModelo = (m, t) => {
+  window.esfera.modelo(m);
+  for (const k of Object.keys(chamadas)) if (typeof chamadas[k] === "number") chamadas[k] = 0;
+  laco(t);
+  return { ...chamadas };
+};
+const holo = medirModelo("holografica", 50000);
+const neuralQ = medirModelo("neural", 50100);
+assert.ok(neuralQ.arcos > 60, `o modelo neural precisa desenhar os neurônios: ${neuralQ.arcos}`);
+assert.ok(neuralQ.pinturas < 40, `o modelo neural passou do teto de pintura: ${neuralQ.pinturas}`);
+assert.ok(neuralQ.segmentos < holo.segmentos, `o neural tira a casca decorativa: ${neuralQ.segmentos} vs ${holo.segmentos}`);
+assert.strictEqual(window.esfera.modelo("inexistente"), "holografica", "modelo desconhecido vira holográfica");
+assert.strictEqual(window.esfera.modelo(), "holografica");
+
 
 console.log("✓ esfera holográfica: geometria, estados, tema e custo de desenho");
 console.log(
@@ -297,4 +329,4 @@ console.log("  segmentos por quadro:", segmentosQuadro);
 console.log("  operações de pintura por quadro:", pinturas);
 console.log("  paletas distintas:", Object.keys(paletas).join(", "));
 console.log("  esfera:", custo.arcos, "arcos ·", custo.trilhas, "trilhas ·", custo.poeira, "pontos de poeira");
-console.log("  rede real na esfera:", window.esfera.neuronios(), "neurônios");
+console.log("  rede real na esfera:", window.esfera.neuronios(), "neurônios ·", pinturasComRede, "pinturas em dois quadros");

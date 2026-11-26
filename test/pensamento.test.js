@@ -10,7 +10,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { Pensamento, RedeDeLinguagem, RESPOSTAS, SEMENTES, LIMIAR_INICIO, OCULTOS_INICIO, OCULTOS_MAX } = require("../pensamento.js");
+const { Pensamento, RedeDeLinguagem, RESPOSTAS, SEMENTES, LIMIAR_INICIO, LIMIAR_AJUSTE, OCULTOS_INICIO, OCULTOS_MAX } = require("../pensamento.js");
 const { CerebroRede, linhaDoEvento } = require("../cerebroRede.js");
 const { Mente } = require("../iniciativa.js");
 
@@ -35,6 +35,9 @@ const hora = (h, m = 0) => new Date(2026, 10, 26, h, m).getTime();
     ["oi sexta", "saudacao"], ["bom dia!", "saudacao"], ["que horas são?", "hora"], ["que dia é hoje", "data"],
     ["como tá a bateria", "bateria"], ["tudo bem?", "como_esta"], ["quais meus lembretes", "lembretes"],
     ["valeu!", "agradecimento"], ["o que você aprendeu", "rede"], ["fica muda", "silenciar"],
+    ["abre junto com o mac", "login_ligar"], ["não abre mais com o mac", "login_desligar"],
+    // o pedido exato de 26/11, 00:29, que o agente tentou resolver com sudo launchctl
+    ["ligue a funçao nas configs para vc abrir assim que o mac é iniciado por favor", "login_ligar"],
   ];
   for (const [frase, intencao] of LOCAIS) {
     await teste(`"${frase}" ela responde sozinha (${intencao})`, () => {
@@ -52,6 +55,8 @@ const hora = (h, m = 0) => new Date(2026, 10, 26, h, m).getTime();
     "marca reunião amanhã às 10", "que horas são em tóquio", "bateria de carro boa",
     "quanto de bateria tem o iphone 15", "como está o mac do joão", "cancela o lembrete do pão",
     "desliga o computador", "escreve um email pro chefe dizendo que vou atrasar", "qual o horário do jogo do flamengo",
+    // ajuste dela só com TODAS as palavras conhecidas: na dúvida, agente
+    "abre o mac", "abre o finder junto com o mac", "fica muda e abre o spotify",
   ];
   for (const frase of DOS_AGENTES) {
     await teste(`"${frase}" vai para os agentes`, () => {
@@ -102,6 +107,26 @@ const hora = (h, m = 0) => new Date(2026, 10, 26, h, m).getTime();
   await teste("como ela está vem da rede pulsada", async () => {
     assert.match(await RESPOSTAS.como_esta({ ...ctx }), /concentrada.*346 neurônios.*2 que nasceram/);
     assert.match(await RESPOSTAS.rede({ ...ctx }), /trabalho me faz querer pausa/);
+  });
+  await teste("abrir junto com o Mac liga e desliga a opção do app", async () => {
+    const chamado = [];
+    const c2 = { ...ctx, abrirNoLogin: (v) => chamado.push(v) };
+    assert.match(await RESPOSTAS.login_ligar(c2), /liguei "Abrir junto com o Mac"/);
+    assert.match(await RESPOSTAS.login_desligar(c2), /Desliguei/);
+    assert.deepStrictEqual(chamado, [true, false]);
+    assert.strictEqual(await RESPOSTAS.login_ligar({ ...ctx }), null, "sem a função do app, não finge que ligou");
+  });
+  await teste("ajustes dela nunca ficam tão confiantes quanto ler a hora", async () => {
+    const pe = new Pensamento();
+    assert.strictEqual(pe.limiares.login_ligar, LIMIAR_AJUSTE);
+    for (let i = 0; i < 40; i++) {
+      const d = pe.avaliar("abre junto com o mac", {}, hora(10, i));
+      if (d.acao === "local") await pe.responder(d, "abre junto com o mac", { ...ctx, abrirNoLogin: () => {} }, hora(10, i));
+    }
+    pe.avaliar("ok", {}, hora(11));
+    assert.strictEqual(pe.limiares.login_ligar, LIMIAR_AJUSTE, "acertos não descem o limiar de um ajuste abaixo de 85%");
+    const salvo = new Pensamento({ ...pe.salvar(), limiares: { login_ligar: 0.6 } });
+    assert.strictEqual(salvo.limiares.login_ligar, LIMIAR_AJUSTE, "nem pelo arquivo");
   });
   await teste("silenciar e voz mexem no mudo de verdade", async () => {
     await RESPOSTAS.silenciar(ctx);

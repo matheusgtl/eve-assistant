@@ -31,7 +31,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - **Conta é do código** (`calculo.js`, `gastos.js`), nunca do modelo. Dinheiro não perde dado nem muda data em silêncio.
 - **Memória não apaga:** gravar no cofre passa por `memoria.js`.
 - Ela nunca diz que fez o que não fez: ferramenta que falha devolve erro claro.
-- **Pensamento local só lê.** Intenção local que age no mundo (criar, mandar, apagar) é proibida: isso é dos agentes. `test/pensamento.test.js` tem a lista que nunca pode ser local.
+- **Pensamento local só lê** (e mexe só nos ajustes dela: voz e abrir com o Mac, com limiar de 85%). Intenção local que age no mundo (criar, mandar, apagar) é proibida: isso é dos agentes. `test/pensamento.test.js` tem a lista que nunca pode ser local.
 - Canal novo: `main.js`, `preload.js` e `renderer` juntos (`test/ponte.test.js` confere).
 - Permissão do macOS depende de `Info.plist` e assinatura: leia essa seção do README antes de mexer.
 - Corrigiu bug? Primeiro o teste que falha; comente a causa e a data do log.

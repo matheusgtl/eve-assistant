@@ -4,13 +4,15 @@
 // neural pequena, dela, que roda aqui sem internet: texto → traços (palavras
 // e pares de palavras) → camada oculta → uma INTENÇÃO. Se a intenção é uma que
 // ela sabe resolver em código (hora, data, bateria, sistema, lembretes,
-// agenda, cumprimentos, como ela está, o que a rede sente, mudo) e a confiança
+// agenda, cumprimentos, como ela está, o que a rede sente, mudo, abrir junto
+// com o Mac) e a confiança
 // passa do limiar daquela intenção, ela responde sozinha. Senão, os agentes.
 //
 // O que impede isso de virar o erro medido em 02/11 (rotear antes e a
 // conversa "fazer" o que não fez): a resposta local NUNCA é texto inventado.
 // Cada intenção é uma função que lê o dado de verdade e o põe em frase. Não há
-// intenção local que aja no mundo além de ligar e desligar a voz — pedir,
+// intenção local que aja no mundo além dos AJUSTES DELA MESMA (voz e abrir
+// junto com o Mac, os dois desfeitos com um clique) — pedir,
 // criar, mandar, pesquisar, calcular: tudo isso é "outro" e vai para os agentes.
 //
 // Como ela se aperfeiçoa:
@@ -43,6 +45,14 @@ const JANELA_CORRECAO = 2 * 60_000;
 // e responder a hora daqui seria errado. A palavra que ela nunca viu ali
 // ("tóquio") é o sinal de que a pergunta é outra: vai para os agentes.
 const COBERTURA_MIN = 0.75;
+// As intenções que MUDAM um ajuste dela (voz, abrir com o Mac) são mais
+// exigentes: toda palavra que importa tem de ser conhecida, e a confiança de
+// partida é maior. "abre o Finder junto com o Mac" tem 3 de 4 palavras
+// conhecidas em login_ligar — o bastante para ler a hora, não para mexer em ajuste.
+const AJUSTES = new Set(["silenciar", "voz", "login_ligar", "login_desligar"]);
+const COBERTURA_AJUSTE = 1;
+const LIMIAR_AJUSTE = 0.85;
+const MAX_PALAVRAS = 10; // palavras com conteúdo (sem "a", "de", "por favor"...)
 const VAZIAS = new Set(
   "a o as os e de da do das dos em no na nos nas um uma uns umas que me te se pra pro para por favor voce vc ta esta estao eh e ai sexta feira oi ola ne ja agora so com sobre aqui la isso isto esse essa meu minha meus minhas".split(" ")
 );
@@ -106,6 +116,21 @@ const SEMENTES = {
   voz: [
     "volta a falar", "pode falar de novo", "liga a voz", "tira o mudo", "desativa o mudo", "fala comigo de novo",
     "quero ouvir sua voz", "pode falar em voz alta",
+  ],
+  // 26/11, 00:29: pedido para abrir junto com o Mac, e o agente foi direto ao
+  // terminal tentar `sudo launchctl load` num LaunchAgent inventado — a trava
+  // pediu o sim e nada foi criado. A opção existe no app; isto é dela.
+  login_ligar: [
+    "abre junto com o mac", "liga para abrir quando o mac iniciar", "abrir automaticamente quando ligar o computador",
+    "inicia junto com o mac", "abre sozinha quando eu ligar o mac", "ativa abrir junto com o mac",
+    "liga a funcao de abrir com o mac", "quero que voce abra quando o mac ligar",
+    "ligue a funcao nas configs para vc abrir assim que o mac e iniciado", "abre quando o computador iniciar",
+    "inicia com o sistema", "abrir no login",
+  ],
+  login_desligar: [
+    "nao abre mais com o mac", "desliga abrir junto com o mac", "para de abrir quando o mac ligar",
+    "desativa abrir com o mac", "nao quero que voce abra sozinha", "tira do inicio do mac", "nao inicia com o mac",
+    "desliga a funcao de abrir com o mac",
   ],
   outro: [
     "me lembra de comprar pao amanha", "me lembra de ligar pro joao as 15h", "cria um lembrete para segunda",
@@ -384,6 +409,16 @@ const RESPOSTAS = {
     c.mudo(false);
     return "Voltei a falar.";
   },
+  async login_ligar(c) {
+    if (!c.abrirNoLogin) return null;
+    c.abrirNoLogin(true);
+    return "Pronto: liguei \"Abrir junto com o Mac\". Quando o Mac ligar, eu começo só no olho da barra de menus. Dá para desligar no menu do olho ou nas Configurações.";
+  },
+  async login_desligar(c) {
+    if (!c.abrirNoLogin) return null;
+    c.abrirNoLogin(false);
+    return "Desliguei \"Abrir junto com o Mac\". Eu só abro quando você me abrir.";
+  },
 };
 
 // ------------------------------------------------------------------ o pensamento
@@ -398,7 +433,9 @@ class Pensamento {
     this.limiares = {};
     for (const k of Object.keys(RESPOSTAS)) {
       const v = Number(valido ? salvo.limiares?.[k] : NaN);
-      this.limiares[k] = Number.isFinite(v) ? Math.min(LIMIAR_MAX, Math.max(LIMIAR_MIN, v)) : LIMIAR_INICIO;
+      const inicio = AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_INICIO;
+      const minimo = AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_MIN;
+      this.limiares[k] = Number.isFinite(v) ? Math.min(LIMIAR_MAX, Math.max(minimo, v)) : inicio;
     }
     const st = (valido && salvo.estatisticas) || {};
     this.estatisticas = {
@@ -508,22 +545,25 @@ class Pensamento {
     // A resposta local anterior não foi corrigida: um acerto, o limiar desce.
     if (this.ultimaLocal) {
       const k = this.ultimaLocal.intencao;
-      this.limiares[k] = Math.max(LIMIAR_MIN, this.limiares[k] - 0.01);
+      this.limiares[k] = Math.max(AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_MIN, this.limiares[k] - 0.01);
       this.ultimaLocal = null;
     }
 
     const previsao = this.rede.prever(t);
     this.ultimaPrevisao = { texto: t, ...previsao };
     const { intencao, confianca, segunda } = previsao;
-    const palavras = normalizar(t).split(" ").filter(Boolean).length;
+    const todas = normalizar(t).split(" ").filter(Boolean);
+    const palavras = todas.filter((w) => !VAZIAS.has(w)).length || todas.length;
     let motivo = null;
     if (bloqueado) motivo = "esperando resposta a uma pergunta dela";
     else if (!palavras) motivo = "vazio";
-    else if (palavras > 14 || t.length > 100) motivo = "longo demais";
+    else if (palavras > MAX_PALAVRAS || t.length > 120) motivo = "longo demais";
     else if (intencao === "outro" || !RESPOSTAS[intencao]) motivo = "não é dela";
     else if (confianca < this.limiares[intencao]) motivo = "pouca confiança";
     else if (confianca - segunda < MARGEM) motivo = "dúvida entre duas";
-    else if (this.cobertura(t, intencao) < COBERTURA_MIN) motivo = "palavra que ela não conhece ali";
+    else if (this.cobertura(t, intencao) < (AJUSTES.has(intencao) ? COBERTURA_AJUSTE : COBERTURA_MIN)) {
+      motivo = "palavra que ela não conhece ali";
+    }
     if (motivo) {
       this.contar("agentes", agora);
       return { acao: "agente", motivo, intencao, confianca };
@@ -639,5 +679,5 @@ class Pensamento {
 
 module.exports = {
   Pensamento, RedeDeLinguagem, SEMENTES, RESPOSTAS, FERRAMENTA_INTENCAO, CORRECAO,
-  normalizar, tracos, LIMIAR_INICIO, LIMIAR_MIN, OCULTOS_INICIO, OCULTOS_MAX,
+  normalizar, tracos, LIMIAR_INICIO, LIMIAR_MIN, LIMIAR_AJUSTE, AJUSTES, OCULTOS_INICIO, OCULTOS_MAX,
 };

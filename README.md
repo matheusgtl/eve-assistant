@@ -373,6 +373,10 @@ Desligar: Configurações › Geral › "Mandar mensagens por conta própria", o
 
 Desde 26/11 a poeira e os sinais sorteados da esfera deram lugar à rede: **cada ponto aceso é um neurônio** (sentidos em cima, interneurônios no equador, motores embaixo) e pisca com a taxa de disparo medida no último segundo. Os sinais que correm são as **ligações reais**, saindo mais de quem está disparando, na proporção do peso: brancos excitam, quentes inibem. O main manda topologia e disparos a cada segundo (`ev:rede`), só com a janela visível. Arcos, trilhas e o núcleo continuam como casca. A camada nova cabe no mesmo orçamento de pintura (`test/esfera.test.js`: menos de 40 por quadro) porque usa poucas faixas de transparência e um fio só para as duas cores.
 
+**Dois modelos de esfera** (Configurações › Aparência › Modelo da esfera; fica no `localStorage`, como o tamanho): **Holográfica**, a casca de arcos e trilhas de circuito com o átomo no centro e a rede real por dentro (as ligações aparecem pelos sinais que correm nelas); e **Neural**, só a rede: casca mínima de três paralelos e três meridianos, neurônios maiores, as ligações ativas desenhadas como curvas sobre a superfície e um núcleo que brilha com a atividade total. A mesma rede e os mesmos disparos nos dois; muda a moldura. O teste da esfera usa sorteio com semente: o teto de pintura (40 por quadro) era medido em quadros sorteados e falhou 1 em 3 rodadas por acaso, em 26/11.
+
+No painel da direita, o cartão da rede vem logo abaixo do contexto da conversa, antes do monitor do sistema.
+
 ### A rede cresce com o que aprende
 
 Quando uma associação aprendida fica forte (metade do teto), nasce uma **assembleia**: 6 neurônios novos entre aquele sentido e aquela iniciativa — excitatória se você gostou, inibitória se dispensou. A `Mente` reconstrói a rede com eles e devolve o que ela já sabia (aprendido e habituação). Na esfera, neurônio novo nasce com um anel verde. Teto de 24 assembleias. Ficam salvas em `rede.json`; assembleia inválida no arquivo é descartada.
@@ -385,11 +389,11 @@ A rede escreve no cofre, em `<memória>/rede/`, ligada pela nota `CEREBRO.md` (`
 
 Desde 26/11 toda fala passa primeiro pela **rede de linguagem dela** (`pensamento.js`): palavras e pares de palavras → uma camada oculta → uma **intenção**. Se é uma intenção que ela resolve em código e a confiança passa do limiar, ela responde sozinha, sem internet nem token. Senão, os agentes de sempre. Na conversa aparece `⚙ rede neural · pensou sozinha (hora)` abaixo da resposta.
 
-**O que ela resolve sozinha:** cumprimentar, agradecer, despedir, como ela está (pela rede pulsada), o que a rede sente e aprendeu, hora, data, bateria, CPU/memória/disco, lembretes pendentes, agenda (se o Calendário tiver permissão) e ligar/desligar a voz. **Tudo que age no mundo é dos agentes**: criar lembrete, mandar mensagem, abrir, apagar, pesquisar, calcular, gastos.
+**O que ela resolve sozinha:** cumprimentar, agradecer, despedir, como ela está (pela rede pulsada), o que a rede sente e aprendeu, hora, data, bateria, CPU/memória/disco, lembretes pendentes, agenda (se o Calendário tiver permissão) e os **ajustes dela**: ligar/desligar a voz e "Abrir junto com o Mac". Esse último existe porque em 26/11, 00:29, o pedido "ligue a função para você abrir assim que o Mac é iniciado" foi para o agente, que tentou `sudo launchctl load` num LaunchAgent inventado (a trava pediu o sim; nada foi criado). Ajuste é mais exigente que leitura: confiança mínima de 85% que nunca desce, e **todas** as palavras que importam precisam ser conhecidas — "abre o Finder junto com o Mac" vai para os agentes. **Tudo que age no mundo é dos agentes**: criar lembrete, mandar mensagem, abrir, apagar, pesquisar, calcular, gastos.
 
 **Por que isso não é o roteamento reprovado em 02/11.** Lá, a voz de conversa decidia se havia ação e às vezes dizia que tinha feito o que não fez. Aqui a resposta local **não é texto de modelo**: cada intenção é uma função que lê o dado de verdade (relógio, `pmset`, `lembretes.listar()`, o helper do Calendário) e o põe em frase. Sem dado (sem permissão, erro), a função devolve `null` e a pergunta vai para os agentes. Não existe intenção local que crie, mande ou apague. `test/pensamento.test.js` tem uma lista de pedidos de ação ("me lembra de…", "manda oi pro…", "abre o…", "apaga…") que **nunca** podem ser respondidos localmente.
 
-**Travas antes de responder sozinha:** confiança acima do limiar daquela intenção (começa em 75%); folga de 30 pontos sobre a segunda intenção; frase de até 14 palavras; **cobertura** — das palavras que importam, 75% ela já viu naquela intenção ("que horas são em Tóquio" acerta "hora" com 93%, mas "tóquio" nunca apareceu ali, então vai para os agentes); e nada local enquanto ela espera um sim/não ou há arquivo anexado.
+**Travas antes de responder sozinha:** confiança acima do limiar daquela intenção (começa em 75%); folga de 30 pontos sobre a segunda intenção; até 10 palavras com conteúdo ("a", "de", "por favor" não contam); **cobertura** — das palavras que importam, 75% ela já viu naquela intenção ("que horas são em Tóquio" acerta "hora" com 93%, mas "tóquio" nunca apareceu ali, então vai para os agentes); e nada local enquanto ela espera um sim/não ou há arquivo anexado.
 
 **Como ela se aperfeiçoa:**
 - **Observando os agentes.** Quando um agente resolve a pergunta com uma ferramenta só de leitura que ela também tem (`system_status`, `list_reminders`, `listar_eventos`), a frase vira exemplo daquela intenção; o vocabulário cresce, e a próxima parecida ela responde sozinha.
@@ -398,6 +402,10 @@ Desde 26/11 toda fala passa primeiro pela **rede de linguagem dela** (`pensament
 - **Crescendo.** Na partida ela treina com as frases de partida mais tudo que aprendeu (`linguagem.json`, até 1.500); se não consegue separar os exemplos (acerto abaixo de 97%), ganha 8 neurônios ocultos, até 96. Intenção nova é um neurônio de saída novo.
 
 O painel da rede mostra quantas vezes ela pensou sozinha e quantas chamou os agentes no dia. A regra das duas vozes continua valendo para tudo que chega aos agentes.
+
+## Aviso de demora
+
+Se o provedor passa 10 s sem mandar uma palavra nem pedir ferramenta, a tela avisa: "nvidia está demorando para responder. Continuo esperando; se não vier, a reserva assume." O prazo da nvidia é 45 s (partida a frio do plano grátis, ver Provedores), e antes disso a tela só dizia "pensando". Em 26/11, 17:03, foram 14,8 s assim: parecia que ela tinha ignorado a pergunta, e trocar de conversa cancelou o pedido.
 
 ## A abertura do dia
 

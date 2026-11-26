@@ -653,6 +653,14 @@
       <div class="det" id="contextoDet">Se o agente trocar ou você voltar a esta conversa, o que foi dito aqui vai junto para ele não se perder.</div>
     </div>
 
+    <div class="bloco rede">
+      <h3>Rede neural <small id="redeHumor">—</small></h3>
+      <div class="redeLista" id="redeInter"></div>
+      <div class="redeRotulo">Vontade de falar</div>
+      <div class="redeLista" id="redeDecisoes"></div>
+      <div class="det" id="redeDet">Neurônios pulsados que sentem o seu ritmo no Mac e decidem quando ela fala por conta própria.</div>
+    </div>
+
     <div class="bloco">
       <h3>Sistema <small>passe o mouse para detalhes</small></h3>
       <div class="medidas" id="medidas"></div>
@@ -661,14 +669,6 @@
         <span title="processos">⚙ <span id="infoProc">—</span></span>
         <span title="sistema"><span id="infoSo">—</span></span>
       </div>
-    </div>
-
-    <div class="bloco rede">
-      <h3>Rede neural <small id="redeHumor">—</small></h3>
-      <div class="redeLista" id="redeInter"></div>
-      <div class="redeRotulo">Vontade de falar</div>
-      <div class="redeLista" id="redeDecisoes"></div>
-      <div class="det" id="redeDet">Neurônios pulsados que sentem o seu ritmo no Mac e decidem quando ela fala por conta própria.</div>
     </div>
 
     <div class="bloco">
@@ -814,6 +814,13 @@
           <button class="opcao" data-v="pequena"><b>Pequena</b>180 px</button>
           <button class="opcao" data-v="media"><b>Média</b>230 px</button>
           <button class="opcao" data-v="grande"><b>Grande</b>290 px</button>
+        </div>
+      </div>
+      <div class="campo">
+        <label>Modelo da esfera</label>
+        <div class="opcoes" id="cfgModeloEsfera">
+          <button class="opcao" data-v="holografica"><b>Holográfica</b>circuito + rede</button>
+          <button class="opcao" data-v="neural"><b>Neural</b>só a rede, com as ligações</button>
         </div>
       </div>
       <div class="campo">

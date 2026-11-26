@@ -1302,7 +1302,23 @@ async function ask(userText, canal = "texto") {
     }
   );
 
+  // AVISO DE DEMORA (26/11/2026). Às 17:03 a nvidia ficou 14,8 s sem mandar
+  // uma palavra (partida a frio do plano grátis; o prazo dela é 45 s antes da
+  // reserva) e a tela só dizia "pensando": parecia que ela tinha ignorado a
+  // pergunta, e ele trocou de conversa, o que cancelou o pedido. Agora, 10 s
+  // sem nenhuma reação, a tela diz o que está acontecendo.
+  let reagiu = false;
+  const avisoDeDemora = setTimeout(() => {
+    if (reagiu) return;
+    const quem = brain?.provedorAtivo || loadConfig().provider || "o provedor";
+    log(`aviso de demora: ${quem} sem resposta em 10 s`);
+    send("ev:notice", {
+      message: `${quem} está demorando para responder. Continuo esperando; se não vier, a reserva assume.`,
+    });
+  }, 10_000);
+
   const falar = (texto) => {
+        reagiu = true;
         // Texto sem uma letra nem um número não é resposta: é enchimento.
         // O gpt-oss-120b devolveu "..." várias vezes seguidas numa conversa,
         // e ela leu cada um em voz alta, o que soa como gaguejo e polui o
@@ -1349,6 +1365,7 @@ async function ask(userText, canal = "texto") {
       // saber, lendo depois, se ela tinha AGIDO ou só conversado. Era o buraco
       // de diagnóstico mais caro que este app tinha.
       onTool: (nome, args) => {
+        reagiu = true;
         ferramentasDoTurno.push(nome);
         honestidade.chamou(nome, args);
         log("ferramenta:", nome, resumirArgs(args));
@@ -1401,6 +1418,7 @@ async function ask(userText, canal = "texto") {
       },
     });
   } catch (err) {
+    clearTimeout(avisoDeDemora);
     // Cancelado pelo usuário (Esc, ou ele voltou a falar): não é erro, não tem
     // o que explicar nem o que dizer em voz alta.
     if (err?.cancelado) {
@@ -1425,6 +1443,7 @@ async function ask(userText, canal = "texto") {
     setEstado("idle");
     return;
   }
+  clearTimeout(avisoDeDemora);
   // Solta o que o filtro ainda segurava (uma marca que nunca fechou vira texto).
   opcoesDaFala.fim();
 
@@ -1863,6 +1882,14 @@ function contextoDoPensamento() {
     agenda: async () => {
       if (!calendario) return null;
       return calendario.listar({});
+    },
+    // A mesma opção do menu do olho e das Configurações (definirAbrirNoLogin).
+    abrirNoLogin: (ligado) => {
+      const c = loadConfig();
+      c.abrirNoLogin = !!ligado;
+      saveConfig(c);
+      definirAbrirNoLogin(!!ligado);
+      send("ev:config", configPublica());
     },
     mudo: (ligado) => {
       const c = loadConfig();

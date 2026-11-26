@@ -34,6 +34,14 @@
 // LIGAÇÕES reais: saem mais de quem está disparando, na proporção do peso;
 // excitatórios em branco, inibitórios na cor quente. Neurônio novo nasce com
 // um anel. Sem dados da rede (antes do primeiro tique), volta a decoração.
+//
+// MODELOS (26/11/2026), escolhidos em Configurações › Aparência:
+//   • "holografica" — a casca de arcos e trilhas de circuito, o átomo no
+//     centro, e a rede real por dentro (o modelo de sempre);
+//   • "neural" — só a rede: casca mínima de meridianos, neurônios maiores,
+//     ligações curvas sobre a superfície e um núcleo que brilha com a
+//     atividade TOTAL da rede. A mesma rede, os mesmos disparos; muda só a
+//     moldura. Sem dados da rede, o "neural" mostra a holográfica.
 
 (function () {
   const canvas = document.getElementById("esfera");
@@ -77,6 +85,8 @@
   const FRACAO_ACENTO = 0.1;
 
   let estado = "idle";
+  const MODELOS = ["holografica", "neural"];
+  let modelo = "holografica";
   // Fundo claro muda três decisões, e nenhuma delas se resolve invertendo cor:
   //   • o realce era branco. Branco sobre branco não existe — vira tinta escura;
   //   • o halo somava luz. Sobre branco, somar luz não aparece: vira sombra;
@@ -169,7 +179,7 @@
   const COR_NASCIMENTO = [120, 255, 190];
   // Poucas faixas de transparência na camada da rede: cada faixa × cor é uma
   // pintura, e a esfera inteira tem teto de pinturas por quadro (esfera.test).
-  const FAIXAS_NEURONIO = 3;
+  const FAIXAS_NEURONIO = 2; // o brilho do disparo aparece no TAMANHO do ponto
   const FAIXAS_FIO = 2;
   let rede = null; // { versao, neuronios: [], pools: [], ligacoes: [] }
   const sinais = []; // pulsos entre neurônios de verdade
@@ -251,7 +261,35 @@
   }
 
   /// Desenha a rede real: ligações ativas, neurônios e sinais.
+  /// Casca do modelo neural: três paralelos e três meridianos, bem fracos.
+  /// É só para a esfera ter forma; quem ocupa a figura é a rede.
+  function desenharCasca(cor, sopro) {
+    const casca = novoAgrupador(2);
+    const passos = 28;
+    const linha = (ponto) => {
+      let anterior = null;
+      for (let i = 0; i <= passos; i++) {
+        const atual = ponto(i / passos);
+        pontosDesenhados++;
+        if (anterior) casca.add(anterior, atual, Math.max(0, ((anterior.f + atual.f) / 2 - 0.78) * 0.9) * reforco());
+        anterior = atual;
+      }
+    };
+    for (const lat of [-0.7, 0, 0.7]) linha((u) => projetar(lat, u * Math.PI * 2, sopro));
+    for (const lon of [0, Math.PI / 3, (2 * Math.PI) / 3]) linha((u) => projetar(-Math.PI / 2 + u * Math.PI, lon, sopro));
+    casca.pintar(cor, 0.7);
+  }
+
+  /// Atividade média da rede (0..1): o núcleo do modelo neural brilha com ela.
+  function atividadeDaRede() {
+    if (!rede) return 0;
+    let soma = 0;
+    for (const p of rede.pools) soma += p.taxa;
+    return Math.min(1, soma / rede.pools.length / 12);
+  }
+
   function desenharRede(tempo, cor, sopro) {
+    const neural = modelo === "neural";
     const dt = ultimoTempoRede === null ? 33 : Math.min(200, Math.max(0, tempo - ultimoTempoRede));
     ultimoTempoRede = tempo;
     const quente = ACENTO;
@@ -260,14 +298,26 @@
     // Um fio só para as duas: quem diz se a ligação excita ou inibe é a cor
     // do sinal que corre por ela (branco ou quente), não o fio parado.
     const fios = novoAgrupador(FAIXAS_FIO);
-    for (const l of rede.ligacoes) {
+    // Os fios parados só no modelo neural: na holográfica as ligações reais
+    // aparecem pelos sinais que correm nelas, e as trilhas de circuito já
+    // fazem o papel de fio — desenhar os dois estourava o teto de pintura.
+    for (const l of neural ? rede.ligacoes : []) {
       const atividade = Math.min(1, l.de.taxa / 25) * Math.min(1, Math.abs(l.peso) * 4);
       if (atividade < 0.05) continue;
-      const a = projetar(l.de.lat, l.de.lon, l.de.raio * sopro);
-      const b = projetar(l.para.lat, l.para.lon, l.para.raio * sopro);
-      pontosDesenhados += 2;
-      const alpha = Math.min(1, Math.max(0, ((a.f + b.f) / 2 - 0.74) * 1.2) * atividade * 0.7 * reforco());
-      fios.add(a, b, alpha);
+      // No neural a ligação é curva, por cima da casca (o mesmo caminho dos
+      // sinais); na holográfica, reta — a casca de arcos já dá a curvatura.
+      const centro = { lat: l.de.lat, lon: l.de.lon, raio: l.de.raio };
+      const alvo = { lat: l.para.lat, lon: l.para.lon, raio: l.para.raio };
+      const segmentos = neural ? 4 : 1;
+      let anterior = projetar(centro.lat, centro.lon, centro.raio * sopro);
+      for (let k = 1; k <= segmentos; k++) {
+        const p = k === segmentos ? alvo : entre(centro, alvo, k / segmentos);
+        const atual = projetar(p.lat, p.lon, p.raio * sopro);
+        pontosDesenhados++;
+        const alpha = Math.min(1, Math.max(0, ((anterior.f + atual.f) / 2 - 0.74) * 1.2) * atividade * (neural ? 0.95 : 0.7) * reforco());
+        fios.add(anterior, atual, alpha);
+        anterior = atual;
+      }
     }
     fios.pintar(cor, 0.8);
 
@@ -297,9 +347,9 @@
       const q = projetar(n.lat, n.lon, n.raio * sopro);
       pontosDesenhados++;
       if (q.f < 0.74) continue;
-      const base = 0.12 + Math.min(0.35, n.taxa / 60);
+      const base = (neural ? 0.22 : 0.12) + Math.min(0.35, n.taxa / 60);
       const alpha = Math.min(1, (base + n.brilho * 0.75) * Math.min(1, (q.f - 0.72) * 1.6) * reforco());
-      const r = Math.max(0.6, (1 + n.brilho * 1.4) * q.f);
+      const r = Math.max(0.6, (1 + n.brilho * 1.4) * q.f * (neural ? 1.55 : 1));
       const k = corDe(n);
       const faixa = Math.min(FAIXAS_NEURONIO - 1, (alpha * FAIXAS_NEURONIO) | 0);
       let lista = baldes[k].get(faixa);
@@ -469,6 +519,11 @@
 
     ctx.clearRect(0, 0, lado, lado);
 
+    // O modelo neural troca a casca decorativa (arcos, trilhas, poeira) por
+    // uma casca mínima: a figura passa a ser só a rede.
+    const neural = modelo === "neural" && !!rede;
+    if (neural) desenharCasca(cor, sopro);
+    else {
     // --- 1. arcos de círculo máximo ---------------------------------------
     const teia = novoAgrupador();
     const teiaQuente = novoAgrupador();
@@ -552,6 +607,8 @@
       ctx.fill();
     }
 
+    }
+
     // --- 3. a rede de verdade, ou os sinais decorativos sem ela ------------
     if (rede) desenharRede(tempo, cor, sopro);
     else if (perfil.particulas) {
@@ -614,6 +671,7 @@
     ctx.arc(cx, cy, rBorda * 1.12, 0, Math.PI * 2);
     ctx.fill();
 
+    if (!neural) {
     // --- 4. o núcleo em átomo ----------------------------------------------
     // Três elipses cruzadas, giradas em ritmos diferentes: é a figura clássica
     // de átomo, que é o que está no centro da referência.
@@ -656,8 +714,13 @@
     }
     espiculas.pintar(claro ? cor : [215, 238, 255], 1);
 
+    }
+
     const pulsar = 0.5 + 0.5 * Math.sin(tempo / 900);
-    const rNucleo = raioTela * (0.2 + nivel * 0.12 + pulsar * 0.025);
+    // No neural o núcleo é menor e acende com a atividade total da rede.
+    const rNucleo = neural
+      ? raioTela * (0.1 + atividadeDaRede() * 0.12 + nivel * 0.08 + pulsar * 0.015)
+      : raioTela * (0.2 + nivel * 0.12 + pulsar * 0.025);
     const nucleo = ctx.createRadialGradient(cx, cy, 0, cx, cy, rNucleo);
     // O núcleo é o ponto mais INTENSO da figura, não o mais claro: no escuro
     // isso é branco, no claro é a tinta escura. Deixar branco aqui apagaria
@@ -719,6 +782,12 @@
     },
     // { topologia, disparos } de rede.js, a cada segundo (main.js → ev:rede).
     rede: receberRede,
+    // Sem argumento, só diz qual está em uso.
+    modelo: (m) => {
+      if (m !== undefined) modelo = MODELOS.includes(m) ? m : "holografica";
+      return modelo;
+    },
+    modelos: () => [...MODELOS],
     neuronios: () => (rede ? rede.neuronios.length : 0),
     custo: () => ({
       fps: perfil.fps,
