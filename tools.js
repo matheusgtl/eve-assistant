@@ -57,6 +57,9 @@ let ctx = {
   web: require("./web.js"),
   pdf: require("./pdf.js"),
   sistema: require("./sistema.js"),
+  // Mandar para o Lixo pela função do sistema (shell.trashItem do Electron),
+  // injetada pelo main.js. Sem ela (testes, linha de comando) cai no Finder.
+  lixo: null,
 };
 
 /// O livro de gastos mora no cofre, ao lado da memória: `Gastos/AAAA-MM.md`.
@@ -239,6 +242,14 @@ function cortarTextoLongo(texto, teto = TETO_TEXTO_FERRAMENTA) {
   const pedaco = t.slice(0, teto);
   const quebra = pedaco.lastIndexOf("\n");
   return { texto: quebra > teto * 0.8 ? pedaco.slice(0, quebra) : pedaco, cortado: true };
+}
+
+/// O que o `open` recebe. Caminho com "~" é expandido (25/11/2026: o open não
+/// entende o til e procurou "/~/Downloads/Logic Pro X.app"); URL e nome de
+/// aplicativo passam como estão.
+function alvoDeAbrir(target) {
+  const t = String(target || "").trim();
+  return t === "~" || t.startsWith("~/") ? resolvePath(t) : t;
 }
 
 function resolvePath(p) {
@@ -764,6 +775,7 @@ const executors = {
   },
 
   async open_target({ target }) {
+    target = alvoDeAbrir(target);
     try {
       await execFileAsync("/usr/bin/open", [target], { timeout: 20_000 });
       return { ok: true, aberto: target };
@@ -898,10 +910,12 @@ const executors = {
       return { error: "Esse caminho não existe." };
     }
     try {
-      // O Finder faz o movimento certo (mantém "Colocar de volta" no Lixo).
-      await osascript(
-        `tell application "Finder" to delete POSIX file ${JSON.stringify(full)}`
-      );
+      // 25/11/2026: pelo Finder (osascript) três arquivos esperaram 30 s cada
+      // e falharam — o app tinha mudado de nome e o macOS pediu de novo a
+      // permissão de Automação, que ficou parada. A função do sistema move
+      // para o mesmo Lixo, mantém "Colocar de volta" e não depende do Finder.
+      if (ctx.lixo) await ctx.lixo(full);
+      else await osascript(`tell application "Finder" to delete POSIX file ${JSON.stringify(full)}`);
       return { ok: true, nolixo: full, nota: "Está no Lixo; dá para recuperar." };
     } catch (err) {
       return { error: (err.stderr || err.message || "").trim() };
@@ -1518,5 +1532,5 @@ async function executar(name, input) {
 }
 
 module.exports = {
-  toolDefinitions, runTool, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim, confirmacoes,
+  toolDefinitions, runTool, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim, confirmacoes, alvoDeAbrir,
 };

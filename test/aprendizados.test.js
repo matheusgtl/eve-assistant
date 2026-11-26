@@ -18,7 +18,16 @@ const { Aprendizados, assinatura, pareceCorrecao, resumoDaLicao, gerarCerebro } 
   for (const t of ["não é isso, era amanhã", "tá errado", "eu te disse que era 10h", "de novo não!", "o certo é 15/11"]) {
     assert.ok(pareceCorrecao(t), `deveria parecer correção: ${t}`);
   }
-  for (const t of ["que horas são?", "me lembra de ligar pro dentista", "não esquece do remédio"]) {
+  // 25/11/2026, 23:32 no log: "tente mover ele para dentro de arquivos" foi
+  // tomado como correção — o "para de" casava dentro de "para dentro".
+  assert.ok(pareceCorrecao("para de inventar hora"), "para de + verbo é correção");
+  for (const t of [
+    "que horas são?",
+    "me lembra de ligar pro dentista",
+    "não esquece do remédio",
+    "pode remover o nox, sobre o logic pro x tente mover ele para dentro de arquivos por favor",
+    "manda para depois",
+  ]) {
     assert.ok(!pareceCorrecao(t), `não é correção: ${t}`);
   }
 

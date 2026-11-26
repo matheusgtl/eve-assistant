@@ -201,6 +201,40 @@ const chamar = async (nome, args) => JSON.parse(await runTool(nome, args));
   const naoExiste = await chamar("trash_file", { filepath: path.join(os.homedir(), "nao-existe-xyz-123") });
   assert.match(naoExiste.error, /não existe/);
 
+  // 25/11/2026, 23:32–23:33 no log: três trash_file seguidos esperaram 30 s
+  // cada e falharam ("osascript … tell application Finder to delete"). O app
+  // tinha acabado de mudar de nome, e o macOS pediu de novo a permissão de
+  // controlar o Finder — o pedido ficou parado até o osascript desistir.
+  // O Lixo agora vai pela função do sistema (shell.trashItem, injetada pelo
+  // main.js como `ctx.lixo`), que não depende do Finder nem de Automação.
+  {
+    const arquivoLixo = path.join(os.homedir(), `.eve-teste-lixo-${process.pid}.txt`);
+    fs.writeFileSync(arquivoLixo, "x");
+    const mandados = [];
+    configurar({ lixo: async (p) => { mandados.push(p); fs.rmSync(p, { force: true }); } });
+    const r = await chamar("trash_file", { filepath: "~/" + path.basename(arquivoLixo) });
+    assert.strictEqual(r.ok, true, JSON.stringify(r));
+    assert.deepStrictEqual(mandados, [arquivoLixo], "o Lixo vai pela função do sistema, com o caminho expandido");
+
+    // Se a função do sistema falhar, o erro volta claro (ela nunca diz que fez).
+    fs.writeFileSync(arquivoLixo, "x");
+    configurar({ lixo: async () => { throw new Error("sem permissão"); } });
+    const falhou = await chamar("trash_file", { filepath: arquivoLixo });
+    assert.match(falhou.error, /sem permissão/);
+    fs.rmSync(arquivoLixo, { force: true });
+    configurar({ lixo: null });
+  }
+
+  // 25/11/2026, 23:34: open_target com "~/Downloads/Logic Pro X.app" falhou —
+  // o `open` não expande o til ("/~/Downloads/Logic Pro X.app").
+  {
+    const { alvoDeAbrir } = ferramentas;
+    assert.strictEqual(alvoDeAbrir("~/Downloads/Logic Pro X.app"), path.join(os.homedir(), "Downloads/Logic Pro X.app"));
+    assert.strictEqual(alvoDeAbrir("~"), os.homedir());
+    assert.strictEqual(alvoDeAbrir("https://exemplo.com/~x"), "https://exemplo.com/~x", "URL fica como está");
+    assert.strictEqual(alvoDeAbrir("Spotify"), "Spotify", "nome de app fica como está");
+  }
+
   fs.rmSync(arq, { force: true });
   fs.rmSync(arq + ".bak", { force: true });
   fs.rmSync(alvoFalso, { force: true });

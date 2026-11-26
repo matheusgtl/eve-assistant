@@ -45,8 +45,10 @@ function assinatura(ferramenta, erro) {
 
 /// A fala dele parece uma correção? Não precisa acertar sempre: o custo de um
 /// falso positivo é uma linha a mais no prompt daquele turno.
+/// "para de" só conta seguido de verbo ("para de inventar"): em 25/11/2026
+/// "mover ele para dentro de arquivos" casava pelo "para de" de "para dentro".
 const CORRECAO =
-  /(?:^|[\s,.!])(?:n[ãa]o\s+(?:[ée]\s+(?:isso|assim)|era\s+(?:isso|assim|pra)|foi\s+isso|t[áa]\s+certo)|errad[oa]|errou|de novo n[ãa]o|outra vez n[ãa]o|eu (?:te )?(?:disse|falei|pedi) (?:que|pra|para)|j[áa] (?:te )?(?:disse|falei|expliquei)|t[áa] errado|n[ãa]o fa[çc]a mais|nunca mais (?:fa[çc]a|fale)|para de|pare de|o certo [ée]|na verdade [ée])/i;
+  /(?:^|[\s,.!])(?:n[ãa]o\s+(?:[ée]\s+(?:isso|assim)|era\s+(?:isso|assim|pra)|foi\s+isso|t[áa]\s+certo)|errad[oa]|errou|de novo n[ãa]o|outra vez n[ãa]o|eu (?:te )?(?:disse|falei|pedi) (?:que|pra|para)|j[áa] (?:te )?(?:disse|falei|expliquei)|t[áa] errado|n[ãa]o fa[çc]a mais|nunca mais (?:fa[çc]a|fale)|pa(?:ra|re) de\s+\p{L}+(?:ar|er|ir|ndo)\b|o certo [ée]|na verdade [ée])/iu;
 
 function pareceCorrecao(texto) {
   return CORRECAO.test(String(texto || ""));

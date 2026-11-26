@@ -1758,6 +1758,8 @@ app.whenReady().then(() => {
 
   ferramentas.configurar({
     onArquivo: anotarArquivo,
+    // Lixo pela função do sistema, não pelo Finder: ver trash_file (25/11/2026).
+    lixo: (caminho) => shell.trashItem(caminho),
     // Resultado e tempo de cada ferramenta: antes o log só dizia que ela foi
     // CHAMADA, e não dava para saber se deu certo.
     onResultado: ({ nome, ms, resultado }) => {
