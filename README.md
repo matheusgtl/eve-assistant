@@ -387,7 +387,7 @@ Desligar: Configurações › Geral › "Mandar mensagens por conta própria", o
 
 Desde 26/11 a poeira e os sinais sorteados da esfera deram lugar à rede: **cada ponto aceso é um neurônio** (sentidos em cima, interneurônios no equador, motores embaixo) e pisca com a taxa de disparo medida no último segundo. Os sinais que correm são as **ligações reais**, saindo mais de quem está disparando, na proporção do peso: brancos excitam, quentes inibem. O main manda topologia e disparos a cada segundo (`ev:rede`), só com a janela visível. Arcos, trilhas e o núcleo continuam como casca. A camada nova cabe no mesmo orçamento de pintura (`test/esfera.test.js`: menos de 40 por quadro) porque usa poucas faixas de transparência e um fio só para as duas cores.
 
-**Dois modelos de esfera** (Configurações › Aparência › Modelo da esfera; fica no `localStorage`, como o tamanho): **Holográfica**, a casca de arcos e trilhas de circuito com o átomo no centro e a rede real por dentro (as ligações aparecem pelos sinais que correm nelas); e **Neural**, só a rede: casca mínima de três paralelos e três meridianos, neurônios maiores, as ligações ativas desenhadas como curvas sobre a superfície e um núcleo que brilha com a atividade total. A mesma rede e os mesmos disparos nos dois; muda a moldura. O teste da esfera usa sorteio com semente: o teto de pintura (40 por quadro) era medido em quadros sorteados e falhou 1 em 3 rodadas por acaso, em 26/11.
+**Dois modelos de esfera** (Configurações › Aparência › Modelo da esfera; fica no `localStorage`, como o tamanho): **Holográfica**, a casca de arcos e trilhas de circuito com o átomo no centro e a rede real por dentro (as ligações aparecem pelos sinais que correm nelas); e **Neural**, só a rede: casca mínima de três paralelos e três meridianos, neurônios maiores, as ligações ativas desenhadas como curvas sobre a superfície e um núcleo que brilha com a atividade total. A mesma rede e os mesmos disparos nos dois; muda a moldura. **Nada de linha reta entre pontos** (26/11/2026): cada trecho das trilhas era uma corda única entre dois cantos, que cortava a esfera e parecia ligar dois neurônios em linha reta; agora é desenhado em passos de ~0,1 rad sobre a casca (paralelo ou meridiano). As ligações do modelo Neural, que eram 4 retas emendadas, têm de 6 a 16 trechos conforme o tamanho do arco. O orçamento de segmentos (menos de 1.400 por quadro) continua valendo. O teste da esfera usa sorteio com semente: o teto de pintura (40 por quadro) era medido em quadros sorteados e falhou 1 em 3 rodadas por acaso, em 26/11.
 
 No painel da direita, o cartão da rede vem logo abaixo do contexto da conversa, antes do monitor do sistema.
 
@@ -415,7 +415,17 @@ Desde 26/11 toda fala passa primeiro pela **rede de linguagem dela** (`pensament
 - **Com você.** "Não era isso" até 2 min depois de uma resposta local manda a pergunta original para os agentes, sobe o limiar daquela intenção em 8 pontos e guarda a frase como "outro". Cada resposta local que você não corrige desce o limiar 1 ponto (mínimo 55%, era 60%).
 - **Crescendo.** Na partida ela treina com as frases de partida mais tudo que aprendeu (`linguagem.json`, até 1.500); se não consegue separar os exemplos (acerto abaixo de 97%), ganha 8 neurônios ocultos, até 96. Intenção nova é um neurônio de saída novo.
 
-O painel da rede mostra quantas vezes ela pensou sozinha e quantas chamou os agentes no dia. A regra das duas vozes continua valendo para tudo que chega aos agentes.
+### Aprendendo com os agentes: lembranças
+
+Desde 26/11/2026 ("quero que ela pense mais com a rede neural e aprenda com os outros modelos"), quando um agente responde uma pergunta de **conhecimento sem usar ferramenta** ("me explique redes neurais", "o que é fotossíntese"), a resposta fica guardada (`lembrancas.js`, dentro do `linguagem.json`). Da próxima vez que ele perguntar a mesma coisa (mesmo tipo de pergunta, "o que é", "por que", "como"..., e quase as mesmas palavras que importam, Jaccard ≥ 0,8), ela responde de memória, sem chamar ninguém, e a tela mostra `⚙ rede neural · lembrou do que aprendeu com o agente`. "Não era isso" (ou "pensa de novo") esquece a lembrança e manda a pergunta para o agente, que responde de novo — e a resposta nova é a que fica.
+
+**O que nunca vira lembrança**, e por quê: turno com ferramenta (o dado era da hora, ou ela agiu); pergunta que envelhece (hoje, notícias, preço, previsão, jogo); que depende da conversa ("e isso?", "continua"); sobre ele e os dados dele (meu, saldo, agenda, bateria, arquivos, notas); pedido (abre, cria, escreve, faz…); resposta que conta uma ação ("anotei", "criei"), admite não saber, pergunta de volta ou fala de "hoje"; turno com botões esperando, com anexo, corrigido pela trava da honestidade, ou em que ele estava corrigindo. As lembranças vencem em 60 dias e cabem 300.
+
+Isto não reabre o roteamento reprovado em 02/11: a resposta local é, palavra por palavra, a que o agente já deu para a mesma pergunta, e só entra conhecimento, nunca ação. `test/lembrancas.test.js` cobre os filtros e a volta pela correção.
+
+A rede de linguagem também pode crescer mais: até 160 neurônios ocultos (eram 96).
+
+O painel da rede mostra quantas vezes ela pensou sozinha e quantas chamou os agentes no dia, e quantas respostas ela já aprendeu com eles. A regra das duas vozes continua valendo para tudo que chega aos agentes.
 
 ## Aviso de demora
 
@@ -423,7 +433,7 @@ Se o provedor passa 10 s sem mandar uma palavra nem pedir ferramenta, a tela avi
 
 ## A abertura do dia
 
-Na primeira vez que a janela aparece no dia (o dia vira às 5h), uma animação de ~2,6 s (era 4,6 s: ficou longa demais), com esfera e texto centrados juntos na janela: os neurônios surgem camada por camada, se ligam por curvas suaves (Bézier, que acompanham a casca quando a esfera fecha), os sinais correm por elas e tudo se fecha na esfera; aí vem o bom dia com a data e os números reais (neurônios, grupos que nasceram, respostas sem agente). Clique ou qualquer tecla pula. Com "reduzir movimento" ligado no macOS, só o texto. Aberta escondida pelo login, a animação espera a janela aparecer. Quem decide é o main (`ev:abertura`, grava `ultimaAbertura` no config); o desenho é `renderer/abertura.js`.
+Na primeira vez que a janela aparece no dia (o dia vira às 5h), uma animação de ~2,6 s (era 4,6 s: ficou longa demais), com esfera e texto centrados juntos na janela: os neurônios surgem camada por camada, se ligam por curvas suaves (soltas, uma Bézier; conforme a esfera fecha, cada ligação vira o arco da esfera entre os dois neurônios), os sinais correm por elas e tudo se fecha na esfera; aí vem o bom dia com a data e os números reais (neurônios, grupos que nasceram, respostas sem agente). Clique ou qualquer tecla pula. Com "reduzir movimento" ligado no macOS, só o texto. Aberta escondida pelo login, a animação espera a janela aparecer. Quem decide é o main (`ev:abertura`, grava `ultimaAbertura` no config); o desenho é `renderer/abertura.js`.
 
 ## Segundo plano e o olho na barra de menus
 

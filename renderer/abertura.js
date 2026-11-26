@@ -167,6 +167,44 @@
       const v = 1 - u;
       return { x: v * v * p.x + 2 * v * u * c.x + u * u * q.x, y: v * v * p.y + 2 * v * u * c.y + u * u * q.y };
     };
+    // ponto do arco da esfera (círculo máximo) entre dois neurônios, em u,
+    // já projetado como a esfera é projetada
+    const naEsfera = (a, b, u) => {
+      let x = a[0] + (b[0] - a[0]) * u, y = a[1] + (b[1] - a[1]) * u, z = a[2] + (b[2] - a[2]) * u;
+      const m = Math.hypot(x, y, z);
+      if (m < 1e-3) return null; // opostos: sem arco único
+      x /= m; y /= m; z /= m;
+      const f = 3 / (3 + z);
+      return { x: cx + x * R * f, y: cy + y * R * f };
+    };
+    // A ligação em u: a Bézier solta virando o arco da esfera, pela fase `fecha`.
+    const caminhoDaLigacao = (p, q, c, u, fecha) => {
+      const solta = naCurva(p, c, q, u);
+      if (fecha <= 0) return solta;
+      // As pontas (p, q) já estão na posição misturada; o arco é mistura do meio.
+      const arco = naEsfera(p.u, q.u, u);
+      if (!arco) return solta;
+      // a reta entre as pontas reais, para corrigir o arco às pontas de agora
+      const ex = { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u };
+      const a0 = naEsfera(p.u, q.u, 0), a1 = naEsfera(p.u, q.u, 1);
+      const base = { x: a0.x + (a1.x - a0.x) * u, y: a0.y + (a1.y - a0.y) * u };
+      const naCasca = { x: ex.x + (arco.x - base.x), y: ex.y + (arco.y - base.y) };
+      return { x: solta.x + (naCasca.x - solta.x) * fecha, y: solta.y + (naCasca.y - solta.y) * fecha };
+    };
+    // Traça a curva de 0 até `ate` com quadráticas pelos pontos médios das
+    // amostras: liso, sem quina, e com poucas chamadas.
+    const AMOSTRAS = 8;
+    const tracarSuave = (ponto, ate) => {
+      const pts = [];
+      for (let i = 0; i <= AMOSTRAS; i++) pts.push(ponto((i / AMOSTRAS) * ate));
+      ctx.moveTo(pts[0].x, pts[0].y);
+      for (let i = 1; i < pts.length - 1; i++) {
+        const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
+        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+      }
+      const fim = pts[pts.length - 1];
+      ctx.quadraticCurveTo(fim.x, fim.y, fim.x, fim.y);
+    };
 
     const t0 = performance.now();
     const DURACAO = 2.6;
@@ -192,14 +230,18 @@
           x: p.x0 * L + (ex - p.x0 * L) * fecha,
           y: p.y0 * A + dy + (ey - p.y0 * A - dy) * fecha,
           z: z3 * fecha,
+          u: [x3, y3, z3], // o ponto na esfera (raio 1), para as ligações seguirem a casca
           vis: suave((t - p.nasce) / 0.18),
           novo: p.novo,
         };
       });
 
-      // ligações se desenhando, como curvas (de Casteljau: o pedaço de 0 a
-      // prog de uma Bézier quadrática é outra quadrática, com controle no meio
-      // do caminho até o controle original)
+      // ligações se desenhando, como curvas. Soltas, cada uma é uma Bézier de
+      // lado; conforme a esfera fecha, ela vira o ARCO DA ESFERA entre os dois
+      // neurônios (círculo máximo, projetado). 26/11/2026: a Bézier sozinha
+      // ainda cortava a esfera por dentro — "as ligações devem seguir o formato
+      // da esfera". A curva é amostrada e desenhada com quadráticas pelos
+      // pontos médios, então não há quina em lugar nenhum.
       ctx.lineWidth = 0.8;
       ctx.lineCap = "round";
       ctx.lineJoin = "round";
@@ -208,14 +250,13 @@
       const curvas = [];
       for (const [a, b, quando, curva] of ligacoes) {
         const prog = suave((t - quando) / 0.3);
-        if (prog <= 0 || pos[a].vis < 1 || pos[b].vis < 1) { curvas.push(null); continue; }
         const p = pos[a], q = pos[b];
-        const c = controle(p, q, curva, fecha);
-        curvas.push({ p, c, q });
-        const c1 = { x: p.x + (c.x - p.x) * prog, y: p.y + (c.y - p.y) * prog };
-        const fim = naCurva(p, c, q, prog);
-        ctx.moveTo(p.x, p.y);
-        ctx.quadraticCurveTo(c1.x, c1.y, fim.x, fim.y);
+        // a ponta escondida atrás da esfera não tem neurônio desenhado
+        if (prog <= 0 || p.vis < 1 || q.vis < 1 || p.z > 0.6 || q.z > 0.6) { curvas.push(null); continue; }
+        const c = controle(p, q, curva, 0);
+        const ponto = (u) => caminhoDaLigacao(p, q, c, u, fecha);
+        curvas.push(ponto);
+        tracarSuave(ponto, prog);
       }
       ctx.stroke();
 
@@ -224,10 +265,10 @@
       ctx.beginPath();
       for (let i = 0; i < ligacoes.length; i += 7) {
         const quando = ligacoes[i][2];
-        const k2 = curvas[i];
-        if (!k2 || t < quando + 0.3) continue;
+        const ponto = curvas[i];
+        if (!ponto || t < quando + 0.3) continue;
         const u = ((t - quando) * 2 + i * 0.13) % 1;
-        const { x, y } = naCurva(k2.p, k2.c, k2.q, u);
+        const { x, y } = ponto(u);
         ctx.moveTo(x + 1.3, y);
         ctx.arc(x, y, 1.3, 0, Math.PI * 2);
       }

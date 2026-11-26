@@ -155,8 +155,24 @@
       emLongitude = !emLongitude;
       pontos.push({ lat, lon });
     }
+    // CURVAS NA CASCA (26/11/2026, "ainda existem linhas retas entre os
+    // neurônios"). Cada trecho ia de um canto ao outro numa reta só — uma
+    // corda que cortava a esfera, com um ponto em cada ponta que parece
+    // neurônio. Agora o trecho é desenhado em passos curtos SOBRE a casca
+    // (um paralelo ou um meridiano), e a linha acompanha a curvatura. Os
+    // pontos continuam só nos cantos.
+    const caminho = [];
+    for (let k = 0; k < pontos.length - 1; k++) {
+      const a = pontos[k], b = pontos[k + 1];
+      const passos = Math.max(2, Math.ceil(Math.max(Math.abs(b.lat - a.lat), Math.abs(b.lon - a.lon)) / 0.1));
+      for (let i = k === 0 ? 0 : 1; i <= passos; i++) {
+        const u = i / passos;
+        caminho.push({ lat: a.lat + (b.lat - a.lat) * u, lon: a.lon + (b.lon - a.lon) * u, canto: i === 0 || i === passos });
+      }
+    }
     trilhas.push({
       pontos,
+      caminho,
       raio: sorteio(0.97, 1.03),
       acento: Math.random() < FRACAO_ACENTO,
       fase: sorteio(0, Math.PI * 2),
@@ -260,6 +276,15 @@
     return { lat: Math.asin(Math.max(-1, Math.min(1, y / m))), lon: Math.atan2(z, x), raio: r };
   }
 
+  /// Quantos trechos uma curva entre dois neurônios precisa para não mostrar
+  /// quina: um a cada ~0,12 rad do ângulo entre eles, de 6 a 16.
+  function trechosDoArco(a, b) {
+    const ax = Math.cos(a.lat) * Math.cos(a.lon), ay = Math.sin(a.lat), az = Math.cos(a.lat) * Math.sin(a.lon);
+    const bx = Math.cos(b.lat) * Math.cos(b.lon), by = Math.sin(b.lat), bz = Math.cos(b.lat) * Math.sin(b.lon);
+    const ang = Math.acos(Math.max(-1, Math.min(1, ax * bx + ay * by + az * bz)));
+    return Math.max(6, Math.min(16, Math.ceil(ang / 0.12)));
+  }
+
   /// Desenha a rede real: ligações ativas, neurônios e sinais.
   /// Casca do modelo neural: três paralelos e três meridianos, bem fracos.
   /// É só para a esfera ter forma; quem ocupa a figura é a rede.
@@ -304,11 +329,12 @@
     for (const l of neural ? rede.ligacoes : []) {
       const atividade = Math.min(1, l.de.taxa / 25) * Math.min(1, Math.abs(l.peso) * 4);
       if (atividade < 0.05) continue;
-      // No neural a ligação é curva, por cima da casca (o mesmo caminho dos
-      // sinais); na holográfica, reta — a casca de arcos já dá a curvatura.
+      // A ligação é curva, por cima da casca (o mesmo caminho dos sinais).
+      // Eram 4 trechos, e os 4 apareciam como retas emendadas (26/11/2026):
+      // agora o número de trechos acompanha o tamanho do arco.
       const centro = { lat: l.de.lat, lon: l.de.lon, raio: l.de.raio };
       const alvo = { lat: l.para.lat, lon: l.para.lon, raio: l.para.raio };
-      const segmentos = neural ? 4 : 1;
+      const segmentos = trechosDoArco(centro, alvo);
       let anterior = projetar(centro.lat, centro.lon, centro.raio * sopro);
       for (let k = 1; k <= segmentos; k++) {
         const p = k === segmentos ? alvo : entre(centro, alvo, k / segmentos);
@@ -560,7 +586,7 @@
       const trilha = trilhas[t];
       const r = trilha.raio * sopro + Math.sin(tempo / 1400 + trilha.fase) * 0.012;
       let anterior = null;
-      for (const ponto of trilha.pontos) {
+      for (const ponto of trilha.caminho) {
         const atual = projetar(ponto.lat, ponto.lon, r);
         pontosDesenhados++;
         if (anterior) {
@@ -570,7 +596,7 @@
         }
         // O ponto em cada curva de 90° é o que faz parecer circuito, e não
         // uma linha quebrada qualquer.
-        if (atual.f > 0.74) cantos.push(atual); // corte só de segurança: quem apaga o fundo é a transparência
+        if (ponto.canto && atual.f > 0.74) cantos.push(atual); // corte só de segurança: quem apaga o fundo é a transparência
         anterior = atual;
       }
     }

@@ -1569,8 +1569,17 @@ async function turnoDoAgente(s, { userText, textoParaAgente, canal, ferramentasD
   log(turno.fim("ok", brain?.provedorAtivo));
   // O que o agente fez ensina a rede de linguagem (ver aposAgente).
   try {
-    const aprendeu = pensamento?.aposAgente(userText, ferramentasDoTurno);
-    if (aprendeu) log(`pensamento: aprendeu com o agente que isto é "${aprendeu}"`);
+    // A resposta inteira vai junto: conhecimento sem ferramenta vira lembrança
+    // (lembrancas.js). Não vira se ela pediu sim/escolha, se a trava da
+    // honestidade corrigiu, se havia anexo, se ele estava corrigindo, ou se a
+    // pergunta que chegou ao agente não era a que ele digitou.
+    const aprendeu = pensamento?.aposAgente(userText, ferramentasDoTurno, Date.now(), {
+      resposta: respostaDoTurno.trim(),
+      escolhas: !!s.escolhas,
+      corrigida: !!correcao || !!anexo || s.correcao || vazias > 0 || textoParaAgente !== userText,
+    });
+    if (aprendeu === "lembranca") log("pensamento: guardou a resposta do agente; da próxima vez responde sozinha");
+    else if (aprendeu) log(`pensamento: aprendeu com o agente que isto é "${aprendeu}"`);
   } catch (err) {
     log("pensamento: não consegui aprender com o agente:", err.message);
   }

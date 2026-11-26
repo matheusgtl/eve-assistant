@@ -29,10 +29,16 @@
 
 "use strict";
 
+const { Lembrancas } = require("./lembrancas.js");
+
 const VERSAO = 1;
+// A "intenção" de uma resposta de memória (aprendida com um agente).
+const LEMBRANCA = "lembranca";
 const DIM = 2048; // traços por hash
 const OCULTOS_INICIO = 24;
-const OCULTOS_MAX = 96;
+// 26/11/2026: o teto subiu de 96 para 160 ("usar mais da capacidade dela").
+// Ela só cresce quando não consegue separar o que aprendeu (acerto < 97%).
+const OCULTOS_MAX = 160;
 const OCULTOS_PASSO = 8;
 // 26/11/2026, "quero que ela pense mais e com menos travas": partida de 0,75
 // para 0,70 e piso de 0,60 para 0,55. A cobertura e a margem NÃO mudaram: são
@@ -179,7 +185,7 @@ const FERRAMENTA_INTENCAO = {
   listar_eventos: "agenda",
 };
 
-const CORRECAO = /\b(n[aã]o (foi|era|e|é) isso|n[aã]o perguntei|n[aã]o foi o que (eu )?(pedi|perguntei)|voc[eê] errou|errou|n[aã]o entendeu|entendeu errado|n[aã]o era essa|resposta errada)\b/i;
+const CORRECAO = /\b(pensa de novo|pergunta (pro|para o) agente|n[aã]o (foi|era|e|é) isso|n[aã]o perguntei|n[aã]o foi o que (eu )?(pedi|perguntei)|voc[eê] errou|errou|n[aã]o entendeu|entendeu errado|n[aã]o era essa|resposta errada)\b/i;
 
 function normalizar(texto) {
   return String(texto || "")
@@ -503,6 +509,10 @@ class Pensamento {
     this.vocabulario = {};
     this.ultimaLocal = null; // {texto, intencao, em}
     this.ultimaPrevisao = null;
+    // O que ela aprendeu com os agentes e responde de memória (lembrancas.js).
+    this.lembrancas = new Lembrancas(valido ? salvo.lembrancas : null);
+    this.estatisticas.lembradas = Number(st.lembradas) || 0;
+    this.estatisticas.guardadas = Number(st.guardadas) || 0;
     this.treinarTudo();
   }
 
@@ -584,6 +594,14 @@ class Pensamento {
     if (this.ultimaLocal && agora - this.ultimaLocal.em < JANELA_CORRECAO && CORRECAO.test(t)) {
       const anterior = this.ultimaLocal;
       this.ultimaLocal = null;
+      if (anterior.intencao === LEMBRANCA) {
+        // A lembrança errou: sai, e a pergunta vai para o agente responder de novo.
+        this.lembrancas.esquecer(anterior.texto);
+        this.estatisticas.corrigidas++;
+        this.aoEvento({ tipo: "corrigida", intencao: LEMBRANCA, pergunta: anterior.texto, em: agora });
+        this.contar("agentes", agora);
+        return { acao: "agente", motivo: "correção", pergunta: anterior.texto };
+      }
       this.limiares[anterior.intencao] = Math.min(LIMIAR_MAX, this.limiares[anterior.intencao] + 0.08);
       this.estatisticas.corrigidas++;
       const p = (this.estatisticas.porIntencao[anterior.intencao] ||= { locais: 0, corrigidas: 0 });
@@ -596,7 +614,7 @@ class Pensamento {
     // A resposta local anterior não foi corrigida: um acerto, o limiar desce.
     if (this.ultimaLocal) {
       const k = this.ultimaLocal.intencao;
-      this.limiares[k] = Math.max(AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_MIN, this.limiares[k] - 0.01);
+      if (k !== LEMBRANCA) this.limiares[k] = Math.max(AJUSTES.has(k) ? LIMIAR_AJUSTE : LIMIAR_MIN, this.limiares[k] - 0.01);
       this.ultimaLocal = null;
     }
 
@@ -615,6 +633,14 @@ class Pensamento {
     else if (this.cobertura(t, intencao) < (AJUSTES.has(intencao) ? COBERTURA_AJUSTE : COBERTURA_MIN)) {
       motivo = "palavra que ela não conhece ali";
     }
+    // Não era uma intenção dela — mas talvez ela já saiba a resposta, porque
+    // um agente respondeu essa mesma pergunta antes (lembrancas.js). Só para
+    // o que não é dela: uma intenção de dado (hora, bateria) com pouca
+    // confiança continua com os agentes, nunca com resposta velha.
+    if (motivo && !bloqueado && (motivo === "não é dela" || motivo === "longo demais")) {
+      const l = this.lembrancas.lembrar(t);
+      if (l) return { acao: "local", intencao: LEMBRANCA, confianca: l.similaridade, lembranca: l };
+    }
     if (motivo) {
       this.contar("agentes", agora);
       return { acao: "agente", motivo, intencao, confianca };
@@ -624,6 +650,14 @@ class Pensamento {
 
   /// Executa a intenção. null = não deu (sem dado, sem permissão): vai para os agentes.
   async responder(decisao, texto, contexto, agora = Date.now()) {
+    if (decisao.intencao === LEMBRANCA && decisao.lembranca) {
+      this.lembrancas.usou(decisao.lembranca);
+      this.estatisticas.lembradas++;
+      this.contar("locais", agora);
+      this.ultimaLocal = { texto: String(texto).trim(), intencao: LEMBRANCA, em: agora };
+      this.aoEvento({ tipo: "lembrou", pergunta: String(texto).slice(0, 120), de: decisao.lembranca.pergunta.slice(0, 120), em: agora });
+      return decisao.lembranca.resposta;
+    }
     let resposta = null;
     try {
       resposta = await RESPOSTAS[decisao.intencao]({ ...contexto, agora, linguagem: this.estado() });
@@ -644,9 +678,22 @@ class Pensamento {
   }
 
   /// Depois que um agente respondeu: o que dá para aprender com o que ele fez.
-  aposAgente(texto, ferramentas = [], agora = Date.now()) {
+  /// Duas coisas: a INTENÇÃO (se ele usou uma ferramenta de leitura que ela
+  /// também tem) e a RESPOSTA (se foi conhecimento sem ferramenta: vira
+  /// lembrança, e da próxima vez ela responde sozinha).
+  aposAgente(texto, ferramentas = [], agora = Date.now(), { resposta = "", escolhas = false, corrigida = false } = {}) {
     const t = String(texto || "").trim();
     const usadas = [...new Set(ferramentas)];
+    if (t && resposta && !usadas.length) {
+      // Pergunta que ela achava que era de uma intenção de DADO (hora,
+      // bateria...) não vira lembrança: a resposta seria velha amanhã.
+      const dela = this.ultimaPrevisao?.texto === t && this.ultimaPrevisao.intencao !== "outro" && this.ultimaPrevisao.confianca >= 0.4;
+      if (!dela && this.lembrancas.aprender(t, resposta, { ferramentas: usadas, escolhas, corrigida })) {
+        this.estatisticas.guardadas++;
+        this.aoEvento({ tipo: "guardou-resposta", pergunta: t.slice(0, 120), em: agora });
+        return LEMBRANCA;
+      }
+    }
     if (!t || !usadas.length) return null;
     const intencoes = new Set(usadas.map((f) => FERRAMENTA_INTENCAO[f]));
     let rotulo = null;
@@ -677,6 +724,8 @@ class Pensamento {
       agentes: this.estatisticas.agentes,
       corrigidas: this.estatisticas.corrigidas,
       aprendidasComAgente: this.estatisticas.aprendidasComAgente,
+      lembrancas: this.lembrancas.tamanho,
+      lembradas: this.estatisticas.lembradas,
       hoje: { ...this.hoje },
       limiares: { ...this.limiares },
     };
@@ -691,6 +740,7 @@ class Pensamento {
       estatisticas: this.estatisticas,
       dia: this.dia,
       hoje: this.hoje,
+      lembrancas: this.lembrancas.salvar(),
     };
   }
 
@@ -717,6 +767,15 @@ class Pensamento {
       linhas.push(`| ${k} | ${Math.round(this.limiares[k] * 100)}% | ${p.locais} | ${p.corrigidas} |`);
     }
     linhas.push("", "Limiar menor = ela confia mais em si. Cada acerto desce 1 ponto; cada correção sobe 8.", "");
+    linhas.push(
+      "## Aprendido com os agentes",
+      "",
+      `${e.lembrancas} respostas guardadas; respondeu de memória ${e.lembradas} vezes sem chamar ninguém.`,
+      ""
+    );
+    const ultimas = this.lembrancas.itens.slice(-10).reverse();
+    for (const i of ultimas) linhas.push(`- “${i.pergunta}”${i.usos ? ` (lembrou ${i.usos}×)` : ""}`);
+    if (ultimas.length) linhas.push("");
     const recentes = this.aprendidos.slice(-15).reverse();
     if (recentes.length) {
       linhas.push("## Frases aprendidas por último", "");
@@ -729,6 +788,7 @@ class Pensamento {
 }
 
 module.exports = {
+  LEMBRANCA,
   Pensamento, RedeDeLinguagem, SEMENTES, RESPOSTAS, FERRAMENTA_INTENCAO, CORRECAO,
   normalizar, tracos, LIMIAR_INICIO, LIMIAR_MIN, LIMIAR_AJUSTE, AJUSTES, OCULTOS_INICIO, OCULTOS_MAX,
 };

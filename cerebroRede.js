@@ -58,6 +58,10 @@ function linhaDoEvento(e) {
       return `- ${h} — aprendeu com o agente: “${e.pergunta}” é ${e.intencao}`;
     case "linguagem-cresceu":
       return `- ${h} — **a rede de linguagem cresceu**: ${e.antes} → ${e.ocultos} neurônios ocultos`;
+    case "guardou-resposta":
+      return `- ${h} — **aprendeu com o agente** a responder sozinha: “${e.pergunta}”`;
+    case "lembrou":
+      return `- ${h} — respondeu de memória, sem agente: “${e.pergunta}” (aprendido em “${e.de}”)`;
     case "despertar":
       return `- ${h} — acordou: ${e.descricao}`;
     default:

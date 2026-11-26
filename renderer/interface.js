@@ -819,7 +819,8 @@ window.ev.on("message", ({ quem, texto, lembrete, anexo, local, iniciativa }) =>
   registrar({ quem, texto: anexo ? `[${anexo}] ${texto}` : texto, classe: lembrete ? "lembrete" : "" });
   // De onde veio: a rede de linguagem dela (sem agente) ou uma iniciativa da
   // rede pulsada. Aparece como as ferramentas, logo abaixo da fala.
-  if (local) mostrarFerramenta(`rede neural · pensou sozinha (${local})`);
+  if (local === "lembranca") mostrarFerramenta("rede neural · lembrou do que aprendeu com o agente");
+  else if (local) mostrarFerramenta(`rede neural · pensou sozinha (${local})`);
   else if (iniciativa) mostrarFerramenta(`rede neural · por conta própria (${String(iniciativa).toLowerCase()})`);
   atualizarLembretes();
 });
@@ -1742,7 +1743,7 @@ function mostrarRede(e) {
   if (e.assembleias?.length) partes.push(`${e.assembleias.length} grupo(s) de neurônios nasceram do que ela aprendeu.`);
   if (e.linguagem) {
     const l = e.linguagem;
-    partes.push(`Pensou sozinha ${l.hoje.locais}× hoje; ${l.hoje.agentes}× chamou os agentes. Rede de linguagem: ${l.ocultos} neurônios, ${l.exemplos} exemplos.`);
+    partes.push(`Pensou sozinha ${l.hoje.locais}× hoje; ${l.hoje.agentes}× chamou os agentes. Rede de linguagem: ${l.ocultos} neurônios, ${l.exemplos} exemplos, ${l.lembrancas || 0} respostas aprendidas com os agentes.`);
   }
   document.getElementById("redeDet").textContent = partes.join(" ");
 }
