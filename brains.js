@@ -1,4 +1,4 @@
-// brains.js — os "cérebros" possíveis da E.V.E.
+// brains.js — os "cérebros" possíveis da Sexta-Feira (ex-E.V.E).
 //
 // Cada cérebro guarda o histórico da conversa e roda o laço de ferramentas:
 // pensa → pede ferramentas → recebe resultados → pensa de novo, até responder.
@@ -25,8 +25,8 @@ const ESTILOS = {
 
 /// Monta o prompt do sistema com tudo que muda de um pedido para o outro.
 function montarSystemPrompt({
-  nome = "E.V.E",
-  pronuncia = "Ivi",
+  nome = "Sexta-Feira",
+  pronuncia = "Sexta-Feira",
   dono = "",
   estilo = "doce",
   proativa = true,
@@ -36,7 +36,10 @@ function montarSystemPrompt({
   memoria = null, // { linhas, total, cortados } — o índice do cofre de .md
   skills = null,  // { linhas, total, cortados } — os comandos que ele criou
   notasAbertas = [], // [{ nome, conteudo }] — notas do assunto, já lidas pelo código
-  conversaAnterior = [], // [{ quem, texto, hora }] — o fim da sessão anterior
+  conversaAnterior = [], // [{ quem, texto, hora }] — o que o cérebro atual não viu
+  tituloConversa = "", // o nome da conversa aberta na barra lateral
+  aprendizados = null, // { linhas, alertas } — aprendizados.js
+  correcao = false, // a fala dele parece corrigir algo que ela fez
   agora = new Date(),
 } = {}) {
   const dataHora = agora.toLocaleString("pt-BR", {
@@ -49,7 +52,7 @@ function montarSystemPrompt({
   partes.push(
     `Você é ${nome} — pronuncia-se "${pronuncia}" — assistente pessoal${
       dono ? ` do ${dono}` : ""
-    } no espírito do JARVIS do Homem de Ferro, com personalidade feminina.`,
+    } no espírito da Sexta-Feira (FRIDAY) do Homem de Ferro: feminina, rápida e leal.`,
     "",
     "COMO VOCÊ FALA",
     "- Sempre em português do Brasil, na primeira pessoa.",
@@ -287,11 +290,34 @@ function montarSystemPrompt({
         ? ""
         : d.toLocaleString("pt-BR", { weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
     };
+    // 25/11/2026: o mesmo bloco passou a servir para os TRÊS momentos em que
+    // o cérebro começa sem a conversa — o app abriu, ele trocou de conversa
+    // na barra lateral, ou o provedor secou e outro assumiu no meio de uma
+    // tarefa. Antes só o primeiro existia, e os outros dois deixavam o agente
+    // novo perdido no meio do que estava fazendo.
     partes.push(
       "",
-      "A ÚLTIMA CONVERSA DE VOCÊS (antes de ele fechar o app)",
-      "Serve para continuar o assunto se ele voltar nele. Não resuma isto sem ele pedir.",
+      `O FIO DESTA CONVERSA${tituloConversa ? ` ("${tituloConversa}")` : ""} — o que foi dito antes de você assumir`,
+      "Continue a tarefa de onde parou, sem perguntar de novo o que já está aqui. Não resuma isto sem ele pedir.",
       ...conversaAnterior.map((t) => `- ${quando(t.hora)} ${t.quem === "voce" ? "ele" : "você"}: ${t.texto}`)
+    );
+  }
+
+  // 25/11/2026, pedido dele: aprender com os erros e não repetir. As lições
+  // são dela (anotar_memoria, pasta aprendizados); os alertas são do código
+  // (ferramenta que já falhou mais de uma vez do mesmo jeito).
+  if (aprendizados?.linhas?.length || aprendizados?.alertas?.length) {
+    partes.push("", "O QUE VOCÊ JÁ APRENDEU — não repita estes erros");
+    if (aprendizados.linhas?.length) partes.push(...aprendizados.linhas);
+    if (aprendizados.alertas?.length) {
+      partes.push("Ferramentas que já falharam assim (mude a abordagem antes de tentar igual):", ...aprendizados.alertas);
+    }
+  }
+  if (correcao) {
+    partes.push(
+      "",
+      "ELE PARECE ESTAR TE CORRIGINDO. Faça do jeito certo e, se o erro foi seu, grave com " +
+        "anotar_memoria (pasta aprendizados): o que errou e o jeito certo, com o quando da situação."
     );
   }
 

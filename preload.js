@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld("ev", {
   type: (texto) => ipcRenderer.invoke("ev:type", texto),
   interrupt: () => ipcRenderer.invoke("ev:interrupt"),
   reset: () => ipcRenderer.invoke("ev:reset"),
+  // --- conversas da barra lateral ---
+  chats: () => ipcRenderer.invoke("ev:chats"),
+  newChat: () => ipcRenderer.invoke("ev:chat-new"),
+  openChat: (id) => ipcRenderer.invoke("ev:chat-open", id),
+  renameChat: (id, titulo) => ipcRenderer.invoke("ev:chat-rename", { id, titulo }),
   saveKey: (chave) => ipcRenderer.invoke("ev:save-key", chave),
   saveReserves: (chaves) => ipcRenderer.invoke("ev:save-reserves", chaves),
   saveSearch: (chaves) => ipcRenderer.invoke("ev:save-search", chaves),
@@ -70,6 +75,7 @@ contextBridge.exposeInMainWorld("ev", {
       attachment: "ev:attachment",
       arquivo: "ev:arquivo",
       escolhas: "ev:escolhas",
+      chats: "ev:chats",
     };
     const canal = canais[evento];
     if (canal) ipcRenderer.on(canal, (_e, payload) => handler(payload));

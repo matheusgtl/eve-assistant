@@ -138,22 +138,19 @@ for (const [, , painel, borda, texto, fraco, ac] of paletas) {
   assert.ok(razao(borda, painel) >= 1.25, `borda ${borda} some no painel ${painel}`);
 }
 
-// --------------- 6d. as barras do btop não podem ser apagadas por CSS
-// Isto já aconteceu DUAS vezes, com a mesma forma e nenhum erro no console:
-// uma regra que mira `.barra i` para pintar o bloco APAGADO acaba ganhando de
-// `.barra i.on-ok`, que pinta o bloco ACESO — e a barra inteira vira cinza.
-//   1ª vez: `:root[data-claro="1"] .barra i` (0,3,1) > `.barra i.on-ok` (0,2,1)
-//           → no modo claro, todas as barras do monitor sumiam.
-//   2ª vez: `.agente .barra i` (0,2,1) EMPATA com `.barra i.on-ok` e vem
-//           depois no arquivo → ganhava no desempate por ordem, e a barra do
-//           painel de agentes nunca acendia, nos dois temas.
-// O primeiro guarda só olhava regras de tema e por isso não pegou a segunda.
-// Este faz a conta de verdade: especificidade, e ordem no empate.
-assert.match(
-  html,
-  /\.barra i \{[^}]*background: var\(--barra-off\)/,
-  "o bloco apagado da barra precisa vir de --barra-off"
-);
+// --------------- 6d. as barras não podem ser apagadas por CSS
+// Isto já aconteceu DUAS vezes com as barras de blocos do btop, com a mesma
+// forma e nenhum erro no console: uma regra mais específica pintando a parte
+// APAGADA ganhava da que pintava a parte ACESA, e a barra inteira virava cinza
+// (no modo claro em 2026-10, e no painel de agentes depois).
+//
+// 25/11/2026: as barras viraram um trilho único com um preenchimento
+// (`.barra > .enche`), cuja cor vem da faixa (`.barra.ok`, `.meio`, `.alto`).
+// O risco é o mesmo, com outro nome: uma regra que pinte `.enche` com
+// especificidade maior que a da faixa deixa toda barra da mesma cor. Este
+// guarda faz a conta de verdade: especificidade, e ordem no empate.
+assert.match(html, /\.barra \{[^}]*background: var\(--trilho\)/, "o trilho vazio precisa vir de --trilho");
+assert.match(html, /\.barra > \.enche \{[^}]*transition:[^}]*background-color/, "a cor do preenchimento muda com transição");
 
 /// Especificidade de um seletor: [ids, classes/atributos/pseudoclasses, elementos].
 function especificidade(seletor) {
@@ -180,35 +177,35 @@ const regras = [...html.matchAll(/([^{}]+)\{([^}]*)\}/g)].map((m, i) => ({
   corpo: m[2],
 }));
 
-// Quem ACENDE um bloco: qualquer seletor que termine em .barra i.on-*
-const acesas = regras.flatMap((r) =>
+// Quem pinta o preenchimento pela FAIXA: .barra.ok > .enche e companhia.
+const faixas = regras.flatMap((r) =>
   r.seletores
-    .filter((sel) => /\.barra i\.on-/.test(sel) && /background/.test(r.corpo))
+    .filter((sel) => /\.barra\.(ok|meio|alto) > \.enche$/.test(sel) && /background/.test(r.corpo))
     .map((sel) => ({ sel, ordem: r.ordem, espec: especificidade(sel) }))
 );
-assert.ok(acesas.length >= 3, "as três faixas (ok/meio/alto) precisam pintar a barra");
+assert.strictEqual(faixas.length, 3, "as três faixas (ok/meio/alto) precisam pintar a barra");
 
-// Quem pinta o bloco em geral e PODERIA passar por cima das acesas.
+// Qualquer outra regra que pinte .enche não pode ganhar da faixa.
 const atropelos = [];
 for (const r of regras) {
   for (const sel of r.seletores) {
-    if (!/\.barra i\s*$/.test(sel)) continue;
+    if (!/\.enche\s*$/.test(sel) || /\.barra\.(ok|meio|alto|neutra) > \.enche$/.test(sel)) continue;
     if (!/background(-color)?:/.test(r.corpo)) continue;
     const espec = especificidade(sel);
-    for (const acesa of acesas) {
-      const ganhaPorPeso = maiorOuIgual(espec, acesa.espec) && espec.join() !== acesa.espec.join();
-      const ganhaPorOrdem = espec.join() === acesa.espec.join() && r.ordem > acesa.ordem;
-      if (ganhaPorPeso || ganhaPorOrdem) {
-        atropelos.push(`"${sel}" (${espec}) apaga "${acesa.sel}" (${acesa.espec})`);
-      }
+    for (const f of faixas) {
+      const ganha = maiorOuIgual(espec, f.espec) && (espec.join() !== f.espec.join() || r.ordem > f.ordem);
+      if (ganha) atropelos.push(`${sel} ganha de ${f.sel}`);
     }
   }
 }
 assert.strictEqual(
   atropelos.length,
   0,
-  "regra pintando .barra i por cima do bloco aceso — a barra nunca acende:\n  " + atropelos.join("\n  ")
+  "regra pintando .enche por cima da cor da faixa — a barra nunca muda de cor:\n  " + atropelos.join("\n  ")
 );
+
+// E o JavaScript usa as faixas: sem isto a cor nunca muda com o uso.
+assert.match(interfaceJs, /barra\.className = "barra " \+ \(faixa \|\| faixaDe\(f\)\)/);
 
 // ------- 6e. salvar uma chave não pode apagar as outras
 // Caso real de 27/10: ele salvou a chave do Serper e perdeu a do Tavily. A

@@ -109,7 +109,7 @@ function nomeDoArquivo(turnos) {
   return `${data}-${hora}-${apelido(tituloDe(turnos)) || "conversa"}.md`;
 }
 
-function markdown(turnos, nomeDela) {
+function markdown(turnos, nomeDela, ligacoes = []) {
   const d = new Date(Date.parse(turnos[0].hora || "") || Date.now());
   const fim = new Date(Date.parse(turnos[turnos.length - 1].hora || "") || Date.now());
   const hhmm = (x) => `${doisDigitos(x.getHours())}:${doisDigitos(x.getMinutes())}`;
@@ -138,6 +138,13 @@ function markdown(turnos, nomeDela) {
     const hora = t.hora ? hhmm(new Date(t.hora)) : "";
     linhas.push(`### ${quem}${hora ? ` · ${hora}` : ""}`, "", texto, "");
   }
+  // As notas que ela abriu e os aprendizados que gravou NESTA conversa. É o
+  // que liga o diário ao resto do cérebro no grafo do Obsidian (25/11/2026):
+  // sem isto cada conversa era uma ilha.
+  const unicas = [...new Set(ligacoes.filter(Boolean))];
+  linhas.push("---", "", "## Ligações", "");
+  for (const l of unicas) linhas.push(`- [[${l}]]`);
+  linhas.push("- [[CONVERSAS]] · [[CEREBRO]]", "");
   return linhas.join("\n");
 }
 
@@ -153,7 +160,7 @@ class Conversas {
   /// Abrir o app é um limite mais forte do que qualquer heurística de pausa: o
   /// histórico sobrevive ao fechamento, mas a conversa não. A pausa continua
   /// valendo DENTRO de uma sessão, para quem deixa a janela aberta o dia todo.
-  constructor({ pasta, nomeDela = "E.V.E", onDebug = () => {}, desde = Date.now() }) {
+  constructor({ pasta, nomeDela = "Sexta-Feira", onDebug = () => {}, desde = Date.now() }) {
     this.pasta = pasta;
     this.nomeDela = nomeDela;
     this.onDebug = onDebug;
@@ -163,7 +170,7 @@ class Conversas {
 
   /// Salva a conversa em andamento. Chamada depois de cada resposta dela.
   /// Reescreve o arquivo da conversa ATUAL; as anteriores ficam como estão.
-  async salvar(itens) {
+  async salvar(itens, { ligacoes = [] } = {}) {
     if (!this.pasta || !itens?.length) return null;
     // Só o que foi dito DESDE que o app abriu. O histórico guarda 120 entradas
     // e atravessa reinícios; sem este corte, a sessão de hoje herdaria a de
@@ -178,7 +185,7 @@ class Conversas {
     if (!atual?.length) return null;
 
     const arquivo = nomeDoArquivo(atual);
-    const conteudo = markdown(atual, this.nomeDela);
+    const conteudo = markdown(atual, this.nomeDela, ligacoes);
     if (this.ultimoEscrito.get(arquivo) === conteudo) return arquivo;
 
     await fs.mkdir(this.pasta, { recursive: true });
@@ -206,6 +213,8 @@ class Conversas {
         "# Conversas",
         "",
         `*${arquivos.length} conversa(s). Gerado automaticamente — a verdade são os arquivos.*`,
+        "",
+        "Ver também: [[CEREBRO]] · [[MEMORIA]] · [[APRENDIZADOS]]",
         "",
       ];
       let mesAtual = null;

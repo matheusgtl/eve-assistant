@@ -1,4 +1,9 @@
-// interface.js — a HUD da E.V.E.
+// interface.js — a tela da Sexta-Feira (a E.V.E até 25/11/2026).
+//
+// 25/11/2026: o layout passou a ser o das conversas do Claude — conversas à
+// esquerda, o chat no meio, e o painel dela à direita (esfera, contexto,
+// sistema e agentes). As barras deixaram de ser blocos e viraram um trilho só,
+// de pontas arredondadas, com a cor do nível.
 //
 // Organização do arquivo:
 //   1. temas
@@ -16,6 +21,16 @@
 // 1. Temas
 // ===========================================================================
 const TEMAS = {
+  // O tema da Sexta-Feira: os cinzas neutros do Claude e o ciano do olho dela.
+  sexta: {
+    nome: "sexta-feira", desc: "cinza neutro e o ciano do olho",
+    vars: {
+      "--fundo": "#1f2023", "--lateral": "#18191c", "--painel": "#26272b", "--campo": "#2b2c31",
+      "--borda": "#34363c", "--texto": "#ececec", "--fraco": "#9b9da4", "--ac": "#5cc8ff", "--ac2": "#a99bff",
+      "--ok": "#4ade80", "--meio": "#fbbf24", "--alto": "#f87171",
+    },
+    esfera: { idle: [92, 200, 255], listening: [110, 240, 180], thinking: [169, 155, 255], speaking: [130, 220, 255] },
+  },
   holografico: {
     nome: "holográfico", desc: "ciano sobre quase preto",
     vars: {
@@ -72,6 +87,14 @@ const TEMAS = {
 // clara escrita à mão, com os destaques escurecidos até terem contraste de
 // verdade sobre o branco.
 const CLAROS = {
+  sexta: {
+    vars: {
+      "--fundo": "#f7f7f5", "--lateral": "#efefec", "--painel": "#ffffff", "--campo": "#ffffff",
+      "--borda": "#dcdcd6", "--texto": "#1c1c1e", "--fraco": "#66676d", "--ac": "#0a72b3", "--ac2": "#5a43d6",
+      "--ok": "#16803c", "--meio": "#a35b00", "--alto": "#b42318",
+    },
+    esfera: { idle: [10, 114, 179], listening: [22, 128, 60], thinking: [90, 67, 214], speaking: [10, 114, 179] },
+  },
   holografico: {
     vars: {
       "--fundo": "#e8f0f7", "--painel": "#ffffff", "--borda": "#a7c2d7",
@@ -114,15 +137,23 @@ const CLAROS = {
   },
 };
 
-const LADOS_ESFERA = { pequena: "340px", media: "460px", grande: "580px" };
+// A esfera agora mora no painel da direita, que tem 318 px.
+const LADOS_ESFERA = { pequena: "180px", media: "230px", grande: "290px" };
 
 function aplicarVisual(cfg) {
-  const nomeTema = TEMAS[cfg.tema] ? cfg.tema : "holografico";
+  const nomeTema = TEMAS[cfg.tema] ? cfg.tema : "sexta";
   const tema = TEMAS[nomeTema];
   const claro = !!cfg.claro;
-  const paleta = claro ? CLAROS[nomeTema] || CLAROS.holografico : tema;
+  const paleta = claro ? CLAROS[nomeTema] || CLAROS.sexta : tema;
 
-  for (const [chave, valor] of Object.entries(paleta.vars)) {
+  // Os temas antigos não têm a cor da barra lateral nem a do campo de texto:
+  // saem do fundo e do painel, para nenhum tema ficar com cinza de outro.
+  const vars = {
+    "--lateral": paleta.vars["--fundo"],
+    "--campo": paleta.vars["--painel"],
+    ...paleta.vars,
+  };
+  for (const [chave, valor] of Object.entries(vars)) {
     document.documentElement.style.setProperty(chave, valor);
   }
   // O CSS tem uns poucos lugares que precisam saber do fundo claro — sombra,
@@ -141,25 +172,47 @@ function aplicarVisual(cfg) {
 }
 
 // ===========================================================================
-// 2. Monitor do sistema — barras no estilo btop
+// 2. Monitor do sistema — barras unificadas
 // ===========================================================================
-// Cada barra é uma fileira de blocos. O bloco tem a cor da FAIXA em que ele
-// está, não a cor do valor: os primeiros são verdes, os do meio amarelos, os
-// últimos vermelhos. Acendem da esquerda para a direita conforme o uso sobe —
-// é o que faz 80% parecer diferente de 20% antes mesmo de ler o número.
-const BLOCOS = 16;
-
+// Até 25/11/2026 cada barra era uma fileira de 16 blocos no estilo btop. Ele
+// pediu barras inteiras, de pontas arredondadas, "alterando as cores conforme
+// o maior ou menor uso". Então: um trilho, um preenchimento, e a cor do
+// preenchimento é a do NÍVEL (verde até 50%, âmbar até 80%, vermelho acima).
 const MEDIDAS = [
-  { id: "cpu", rot: "cpu" },
-  { id: "mem", rot: "mem" },
-  { id: "gpu", rot: "gpu" },
-  { id: "disco", rot: "disco" },
-  { id: "rede", rot: "rede" },
-  { id: "bat", rot: "bateria" },
-  { id: "temp", rot: "temp" },
+  { id: "cpu", rot: "CPU" },
+  { id: "mem", rot: "Memória" },
+  { id: "gpu", rot: "GPU" },
+  { id: "disco", rot: "Disco" },
+  { id: "rede", rot: "Rede" },
+  { id: "bat", rot: "Bateria" },
+  { id: "temp", rot: "Temperatura" },
 ];
 
 const elMedida = {};
+
+/// Uma barra: trilho arredondado com o preenchimento dentro.
+function criarBarra() {
+  const barra = document.createElement("div");
+  barra.className = "barra";
+  const enche = document.createElement("div");
+  enche.className = "enche";
+  barra.appendChild(enche);
+  return barra;
+}
+
+/// fracao = 0…1, ou null para "sem medida". `faixa` força a cor (bateria).
+function encherBarra(barra, fracao, faixa) {
+  const enche = barra.firstElementChild;
+  if (fracao == null) {
+    barra.className = "barra sem";
+    enche.style.width = "0%";
+    return;
+  }
+  const f = Math.max(0, Math.min(1, fracao));
+  barra.className = "barra " + (faixa || faixaDe(f));
+  // Um fio aparece mesmo em 0–1%: barra vazia parece quebrada.
+  enche.style.width = Math.max(f * 100, 2.5).toFixed(1) + "%";
+}
 
 (function montarMedidas() {
   const alvo = document.getElementById("medidas");
@@ -177,21 +230,13 @@ const elMedida = {};
     val.textContent = "—";
     linha.append(rot, val);
 
-    const barra = document.createElement("div");
-    barra.className = "barra";
-    const blocos = [];
-    for (let i = 0; i < BLOCOS; i++) {
-      const b = document.createElement("i");
-      barra.appendChild(b);
-      blocos.push(b);
-    }
-
+    const barra = criarBarra();
     const det = document.createElement("div");
     det.className = "det";
 
     caixa.append(linha, barra, det);
     alvo.appendChild(caixa);
-    elMedida[m.id] = { val, barra, blocos, det };
+    elMedida[m.id] = { val, barra, det };
   }
 })();
 
@@ -205,22 +250,14 @@ function faixaDe(fracao) {
 function pintar(id, texto, porcento, detalhe) {
   const m = elMedida[id];
   if (!m) return;
-
   m.val.textContent = texto;
   m.det.textContent = detalhe || "";
-
   if (porcento == null) {
     m.val.className = "val valorCor";
-    for (const b of m.blocos) b.className = "";
-    m.barra.style.opacity = ".35";
+    encherBarra(m.barra, null);
     return;
   }
-
-  m.barra.style.opacity = "1";
-  const acesos = Math.round((Math.max(0, Math.min(100, porcento)) / 100) * BLOCOS);
-  for (let i = 0; i < BLOCOS; i++) {
-    m.blocos[i].className = i < acesos ? "on-" + faixaDe((i + 1) / BLOCOS) : "";
-  }
+  encherBarra(m.barra, porcento / 100);
   m.val.className = "val valorCor " + faixaDe(porcento / 100);
 }
 
@@ -259,12 +296,8 @@ function mostrarMetricas(m) {
     // cor do NÍVEL — cheia é verde, acabando é vermelha —, que é o que o
     // número diz e o que se lê de relance.
     const b = elMedida.bat;
-    const acesos = Math.round((m.bateria.porcento / 100) * BLOCOS);
     const faixa = faixaDe(1 - m.bateria.porcento / 100);
-    for (let i = 0; i < BLOCOS; i++) {
-      b.blocos[i].className = i < acesos ? "on-" + faixa : "";
-    }
-    b.barra.style.opacity = "1";
+    encherBarra(b.barra, m.bateria.porcento / 100, faixa);
     b.val.textContent = m.bateria.porcento + "%";
     b.val.className = "val valorCor " + faixaDe(1 - m.bateria.porcento / 100);
     b.det.textContent = m.bateria.estado + (m.bateria.restante ? ` · ${m.bateria.restante}` : "");
@@ -283,7 +316,7 @@ function mostrarMetricas(m) {
 // O relógio bate de segundo em segundo, independente do painel.
 function tiqueRelogio() {
   const agora = new Date();
-  document.getElementById("relogioHora").textContent = agora.toLocaleTimeString("pt-BR");
+  document.getElementById("relogioHora").textContent = agora.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   document.getElementById("relogioData").textContent = agora
     .toLocaleDateString("pt-BR", { weekday: "short", day: "2-digit", month: "short", year: "numeric" })
     .replace(/\./g, "");
@@ -306,12 +339,31 @@ let estado = "idle";
 let micAberto = false;
 let configAtual = {};
 let ultimaLinhaEve = null;
+// Quem rola é a faixa inteira do chat; #rolo é a coluna de mensagens dentro dela.
+const rolagemEl = document.getElementById("rolo-externo");
 
 function perto() {
-  return roloEl.scrollHeight - roloEl.scrollTop - roloEl.clientHeight < 140;
+  return rolagemEl.scrollHeight - rolagemEl.scrollTop - rolagemEl.clientHeight < 140;
 }
 function rolar(forcar) {
-  if (forcar || perto()) roloEl.scrollTop = roloEl.scrollHeight;
+  atualizarVazio();
+  if (forcar || perto()) rolagemEl.scrollTop = rolagemEl.scrollHeight;
+}
+
+/// A conversa vazia mostra o olho dela e uma saudação, como o Claude.
+const vazioEl = document.getElementById("vazio");
+function atualizarVazio() {
+  const temConversa = !!roloEl.querySelector(".linha-log.voce, .linha-log.eve");
+  vazioEl.classList.toggle("show", !temConversa);
+  if (!temConversa) {
+    const h = new Date().getHours();
+    const periodo = h < 5 ? "Boa noite" : h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite";
+    document.getElementById("saudacao").textContent = configAtual.dono ? `${periodo}, ${configAtual.dono}` : periodo;
+  }
+}
+
+for (const b of document.querySelectorAll("#sugestoes [data-sugestao]")) {
+  b.addEventListener("click", () => window.ev.type(b.dataset.sugestao));
 }
 
 /// Escreve tratando **negrito** e `código`. Monta nós de texto, nunca HTML:
@@ -495,7 +547,7 @@ function registrar({ quem, texto, classe }) {
   const rotulo = document.createElement("span");
   rotulo.className = "quem";
   rotulo.textContent =
-    classe === "erro" ? "ERRO: " : quem === "eve" ? (configAtual.nome || "E.V.E") + ": " : "VOCÊ: ";
+    classe === "erro" ? "Erro" : quem === "eve" ? configAtual.nome || "Sexta-Feira" : "Você";
   linha.appendChild(rotulo);
 
   const txt = document.createElement("span");
@@ -516,7 +568,7 @@ function registrar({ quem, texto, classe }) {
 function registrarSistema(texto) {
   const linha = document.createElement("div");
   linha.className = "linha-log sis";
-  linha.textContent = "SIS: " + texto;
+  linha.textContent = texto;
   roloEl.appendChild(linha);
   rolar();
 }
@@ -525,7 +577,7 @@ function mostrarFerramenta(nome) {
   const alvo = ultimaLinhaEve || registrar({ quem: "eve", texto: "" });
   const f = document.createElement("span");
   f.className = "ferr";
-  f.textContent = "⎿ " + nome;
+  f.textContent = "⚙ " + nome.replace(/_/g, " ");
   alvo.appendChild(f);
   rolar();
 }
@@ -609,7 +661,9 @@ function setEstado(s, rotulo) {
   window.esfera?.estado(s);
 
   btnMicEl.classList.toggle("ligado", s === "listening" || micAberto);
-  btnMicEl.textContent = micAberto ? "microfone aberto" : s === "listening" ? "ouvindo…" : "microfone";
+  // Só o título: o botão é um ícone, e textContent apagaria o SVG.
+  btnMicEl.title = micAberto ? "microfone aberto — clique para fechar" : s === "listening" ? "ouvindo…" : "falar (espaço)";
+  document.getElementById("pilulaEstado").textContent = estadoEl.textContent || "pronta";
 
   // O estado do microfone já está escrito no próprio botão, acima: um selo
   // repetindo isso era a mesma informação ocupando o dobro do espaço.
@@ -681,10 +735,7 @@ pedirQuadroDeNivel();
 window.ev.on("config", (cfg) => {
   configAtual = { ...configAtual, ...cfg };
   mostrarMudo();
-  const nome = cfg.nome || "E.V.E";
-  document.getElementById("tituloNome").textContent = nome;
-  document.getElementById("marcaModelo").textContent = nome;
-  document.getElementById("rodapeFim").textContent = nome.toLowerCase();
+  mostrarNomes();
   aplicarVisual(configAtual);
   preencherConfig();
   setEstado(estado);
@@ -693,6 +744,8 @@ window.ev.on("config", (cfg) => {
 window.ev.on("history", (itens) => {
   roloEl.textContent = "";
   ultimaLinhaEve = null;
+  itensNaConversa = itens.length;
+  mostrarContexto();
   for (const i of itens) {
     // O item do arquivo carrega o cartão, não texto: o "📎 nome" gravado junto
     // é para o diário e para quem ler o historico.json à mão.
@@ -706,7 +759,7 @@ window.ev.on("history", (itens) => {
       classe: i.lembrete ? "lembrete" : "",
     });
   }
-  registrarSistema(itens.length ? "conversa recuperada." : "pronta. aperte espaço e fale.");
+  if (itens.length) registrarSistema("conversa recuperada — o fio dela vai junto para o agente.");
   rolar(true);
 });
 
@@ -736,6 +789,8 @@ window.ev.on("heard", ({ text, final }) => {
 
 window.ev.on("message", ({ quem, texto, lembrete, anexo }) => {
   parcialEl.textContent = "";
+  itensNaConversa++;
+  mostrarContexto();
   registrar({ quem, texto: anexo ? `[${anexo}] ${texto}` : texto, classe: lembrete ? "lembrete" : "" });
   atualizarLembretes();
 });
@@ -794,7 +849,14 @@ const algumaTelaAberta = () =>
 document.getElementById("esfera").addEventListener("click", () => window.ev.mic("toggle"));
 btnMicEl.addEventListener("click", () => window.ev.mic("toggle"));
 document.getElementById("btnInterromper").addEventListener("click", () => window.ev.interrupt());
-document.getElementById("btnLimpar").addEventListener("click", () => window.ev.reset());
+document.getElementById("btnLimpar").addEventListener("click", () => window.ev.newChat());
+
+// O painel da direita: some e volta (em janela estreita ele flutua por cima).
+document.getElementById("btnPainel").addEventListener("click", () => {
+  const largo = window.innerWidth > 1100;
+  document.body.classList.toggle(largo ? "sem-painel" : "com-painel");
+  requestAnimationFrame(() => window.esfera?.redimensionar());
+});
 document.getElementById("btnConfig").addEventListener("click", abrirConfig);
 document.getElementById("btnFecharConfig").addEventListener("click", fecharConfig);
 
@@ -843,9 +905,10 @@ window.addEventListener(
       abrirConfig();
       return;
     }
-    if (e.metaKey && e.key.toLowerCase() === "k") {
+    // ⌘N (e o ⌘K de antes): conversa nova. A anterior fica na barra lateral.
+    if (e.metaKey && ["k", "n"].includes(e.key.toLowerCase())) {
       e.preventDefault();
-      window.ev.reset();
+      window.ev.newChat();
       return;
     }
     if (e.metaKey && e.key.toLowerCase() === "m") {
@@ -1409,7 +1472,6 @@ async function alternarMudo() {
 function mostrarMudo() {
   if (!btnMudoEl) return;
   const mudo = !!configAtual.mudo;
-  btnMudoEl.textContent = mudo ? "voz off" : "voz on";
   btnMudoEl.classList.toggle("mudo", mudo);
   btnMudoEl.title = mudo
     ? "a voz está desligada — ela responde escrevendo (⌘M)"
@@ -1434,7 +1496,6 @@ const NOMES_AGENTE = {
 };
 
 const listaAgentesEl = document.getElementById("listaAgentes");
-const BLOCOS_AGENTE = 12;
 
 /// 1.234 → "1,2 mil". Número cru de cinco dígitos num painel de 9px vira
 /// borrão; o que importa aqui é a ordem de grandeza.
@@ -1545,20 +1606,13 @@ function mostrarAgentes(dados) {
     // que mais trabalhava (sem teto publicado) era o único sem barra: o painel
     // parecia quebrado justamente onde mais importava.
     if (l.barra) {
-      const barra = document.createElement("div");
-      // Cota usa a escala de perigo; fatia do dia, cor neutra (ver o CSS).
-      barra.className = "barra" + (l.barra.origem === "relativo" ? " relativa" : "");
-      barra.title = legendaDaBarra(l);
-      // A parte acesa toda na cor do NÍVEL, não um degradê por posição. Pela
-      // posição, 10% de uso acendia um bloco verde e 100% acendia a barra
-      // inteira em arco-íris — a cor deixava de significar "quanto".
+      // Um trilho só, com a cor do NÍVEL. Cota usa a escala de perigo; a
+      // fatia do dia (sem teto conhecido) fica numa cor neutra, porque ali
+      // "cheio" não quer dizer "acabando".
       const faixa = faixaDe(l.barra.fracao || 0);
-      const acesos = Math.round((l.barra.fracao || 0) * BLOCOS_AGENTE);
-      for (let i = 0; i < BLOCOS_AGENTE; i++) {
-        const b = document.createElement("i");
-        if (i < acesos) b.className = "aceso on-" + faixa;
-        barra.appendChild(b);
-      }
+      const barra = criarBarra();
+      encherBarra(barra, l.barra.fracao || 0, l.barra.origem === "relativo" ? "neutra" : faixa);
+      barra.title = legendaDaBarra(l);
       // A barra e o selo na mesma linha: "████░░░░  94% no minuto".
       const faixaBarra = document.createElement("div");
       faixaBarra.className = "faixaBarra";
@@ -1843,10 +1897,9 @@ function mostrarReservas() {
 // ===========================================================================
 (async function inicio() {
   configAtual = { ...configAtual, ...(await window.ev.getConfig()) };
-  const nome = configAtual.nome || "E.V.E";
-  document.getElementById("tituloNome").textContent = nome;
-  document.getElementById("marcaModelo").textContent = nome;
+  mostrarNomes();
   aplicarVisual(configAtual);
+  mostrarChats(await window.ev.chats());
   preencherConfig();
   mostrarReservas();
   mostrarPrincipal();
@@ -1856,3 +1909,96 @@ function mostrarReservas() {
   setEstado("idle");
   atualizarLembretes();
 })();
+
+// ===========================================================================
+// Conversas da barra lateral, nomes e contexto
+// ===========================================================================
+const listaChatsEl = document.getElementById("listaChats");
+const tituloConversaEl = document.getElementById("tituloConversa");
+let chatAtual = null;
+let itensNaConversa = 0;
+
+function quandoFoi(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const hoje = new Date();
+  const ontem = new Date(hoje.getTime() - 86_400_000);
+  if (d.toDateString() === hoje.toDateString()) return "hoje, " + d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  if (d.toDateString() === ontem.toDateString()) return "ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" }).replace(".", "");
+}
+
+function mostrarChats(lista) {
+  if (!Array.isArray(lista)) return;
+  listaChatsEl.textContent = "";
+  for (const c of lista) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chat" + (c.atual ? " atual" : "");
+    b.title = c.titulo;
+    b.textContent = c.titulo;
+    const q = document.createElement("span");
+    q.className = "quando";
+    q.textContent = quandoFoi(c.atualizada);
+    b.appendChild(q);
+    if (!c.atual) b.addEventListener("click", () => window.ev.openChat(c.id));
+    listaChatsEl.appendChild(b);
+    if (c.atual) {
+      chatAtual = c;
+      if (document.activeElement !== tituloConversaEl) tituloConversaEl.textContent = c.titulo;
+    }
+  }
+}
+window.ev.on("chats", mostrarChats);
+
+// Duplo clique no título da conversa: renomear. Enter grava, Esc desiste.
+tituloConversaEl.addEventListener("dblclick", () => {
+  tituloConversaEl.contentEditable = "true";
+  tituloConversaEl.focus();
+  document.getSelection()?.selectAllChildren(tituloConversaEl);
+});
+tituloConversaEl.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    tituloConversaEl.blur();
+  }
+  if (e.key === "Escape") {
+    e.preventDefault();
+    tituloConversaEl.textContent = chatAtual?.titulo || "";
+    tituloConversaEl.blur();
+  }
+});
+tituloConversaEl.addEventListener("blur", () => {
+  if (tituloConversaEl.contentEditable !== "true") return;
+  tituloConversaEl.contentEditable = "false";
+  const novo = tituloConversaEl.textContent.trim();
+  if (chatAtual && novo && novo !== chatAtual.titulo) window.ev.renameChat(chatAtual.id, novo);
+  else tituloConversaEl.textContent = chatAtual?.titulo || "";
+  document.body.focus();
+});
+
+function mostrarNomes() {
+  const nome = configAtual.nome || "Sexta-Feira";
+  document.getElementById("tituloNome").textContent = nome;
+  document.getElementById("marcaModelo").textContent = nome;
+  document.title = nome;
+  const dono = (configAtual.dono || "").trim();
+  document.getElementById("nomeDono").textContent = dono || "você";
+  document.getElementById("avatarDono").textContent = (dono || "?")[0].toUpperCase();
+  atualizarVazio();
+}
+
+/// O histórico guarda até 120 itens por conversa; o fio que vai para um
+/// agente novo é o fim dela. A barra mostra quanto da conversa já existe.
+const TETO_CONVERSA = 120;
+function mostrarContexto() {
+  const n = Math.min(itensNaConversa, TETO_CONVERSA);
+  const f = n / TETO_CONVERSA;
+  document.getElementById("contextoMsgs").textContent = `${n} de ${TETO_CONVERSA}`;
+  document.getElementById("contextoPct").textContent = Math.round(f * 100) + "%";
+  encherBarra(document.getElementById("contextoBarra"), f);
+  document.getElementById("contextoDet").textContent =
+    f >= 0.8
+      ? "A conversa está longa: as mensagens mais antigas começam a sair. Para um assunto novo, comece outra conversa (⌘N)."
+      : "Se o agente trocar ou você voltar a esta conversa, o que foi dito aqui vai junto para ele não se perder.";
+}

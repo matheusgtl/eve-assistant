@@ -1,7 +1,7 @@
 {
   "name": "eve-assistant",
-  "version": "2.0.0",
-  "description": "E.V.E — assistente pessoal de desktop com voz feminina, esfera holográfica, pesquisa na web por vários buscadores, leitura de PDF com OCR, skills e acesso ao Mac",
+  "version": "3.0.0",
+  "description": "Sexta-Feira (ex-E.V.E) — assistente pessoal de desktop com voz feminina, esfera de redes neurais, conversas no estilo do Claude, pesquisa na web por vários buscadores, leitura de PDF com OCR, skills e acesso ao Mac",
   "type": "commonjs",
   "main": "main.js",
   "scripts": {

@@ -652,15 +652,15 @@ const toolDefinitions = [
   {
     name: "anotar_memoria",
     description:
-      "Grava um processo ou fato para você saber nas próximas conversas. Use quando ele te " +
-      "ensinar como algo é feito, corrigir seu jeito, ou contar algo que vale lembrar.",
+      "Grava processo, fato ou aprendizado para as próximas conversas. Quando ele te corrigir, " +
+      "pasta aprendizados: o erro e o jeito certo.",
     input_schema: {
       type: "object",
       properties: {
         nome: { type: "string" },
         quando: { type: "string", description: "Em que situação consultar. Só esta linha fica no seu contexto." },
         conteudo: { type: "string", description: "Markdown. Comece com # Título. Cite outras notas com [[nome]]." },
-        pasta: { type: "string", enum: ["processos", "fatos"] },
+        pasta: { type: "string", enum: ["processos", "fatos", "aprendizados"] },
         relacionado: { type: "array", items: { type: "string" }, description: "Notas ligadas a esta." },
       },
       required: ["nome", "quando", "conteudo"],

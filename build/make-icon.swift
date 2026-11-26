@@ -1,93 +1,141 @@
-// make-icon.swift — o ícone do aplicativo.
+// make-icon.swift — os ícones da Sexta-Feira, a partir da arte dele.
 //
-// A versão anterior era um globo de arame: dezenas de meridianos, poeira de
-// pontos e brilho. Bonito a 512 px e uma mancha a 16, que é o tamanho em que
-// um ícone de verdade passa a maior parte da vida — Dock pequeno, Spotlight,
-// lista do Finder, barra de menus.
+// Uso:
+//   swift build/make-icon.swift app   <destino.png>   ícone do app, 1024×1024
+//   swift build/make-icon.swift logo  <destino.png>   logo da interface, 256×256
+//   swift build/make-icon.swift tray  <pasta>         ícone da barra de menus
 //
-// Então aqui a régua é uma só: **o desenho tem de sobreviver a 16 px**. Isso
-// corta quase tudo e deixa três formas, nenhuma sobre a outra:
-//   1. o anel — a esfera dela, reduzida ao contorno;
-//   2. uma órbita inclinada, que cruza o anel e dá o movimento;
-//   3. o núcleo, um ponto sólido no centro.
-// Sem degradê no traço, sem brilho, sem sombra: a 16 px nada disso aparece,
-// e a 512 só deixava o contorno menos nítido.
+// Até 25/11/2026 o ícone era desenhado aqui em código (disco + órbita). Agora
+// ele mandou a arte pronta — o olho com as linhas de rede — e ela mora em
+// assets/logo-original.png. O que este script faz é só o acabamento que a
+// imagem original não tem:
+//
+// 1. RECORTE. A arte vem com uma moldura preta em volta do quadrado
+//    arredondado (502×456, quadrado em x 40…463, y 17…435). Ícone de macOS com
+//    fundo preto nos cantos fica com quina quadrada no Dock.
+// 2. MÁSCARA no raio da Apple (22,5% do lado), para os cantos virarem
+//    transparência de verdade.
+// 3. MARGEM da grade do Big Sur: o corpo ocupa 824 de 1024, senão o ícone
+//    parece maior que todos os outros do Dock.
+//
+// A barra de menus é outra história: lá o macOS pede imagem "template" — preta
+// com transparência, que ele mesmo pinta de branco no modo escuro. A arte
+// colorida viraria um borrão de 18 px, então o olho é redesenhado em traço.
 
 import AppKit
 
-let LADO: CGFloat = 1024
-let destino = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "build/icon.png"
+let args = CommandLine.arguments
+let modo = args.count > 1 ? args[1] : "app"
+let destino = args.count > 2 ? args[2] : "build/icon.png"
+let raiz = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+let fonte = raiz.appendingPathComponent("assets/logo-original.png")
 
-let imagem = NSImage(size: NSSize(width: LADO, height: LADO))
-imagem.lockFocus()
+/// Um bitmap com o tamanho EXATO em pixels. NSImage.lockFocus desenha no
+/// tamanho da tela (o dobro, num Retina) e o PNG saía com 2048 px.
+func bitmap(_ lado: Int) -> NSBitmapImageRep {
+    NSBitmapImageRep(
+        bitmapDataPlanes: nil, pixelsWide: lado, pixelsHigh: lado,
+        bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+        colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+    )!
+}
 
-let ctx = NSGraphicsContext.current!.cgContext
-ctx.setShouldAntialias(true)
+func gravar(_ rep: NSBitmapImageRep, _ caminho: String) {
+    guard let png = rep.representation(using: .png, properties: [:]) else {
+        print("não consegui gerar o PNG"); exit(1)
+    }
+    try! png.write(to: URL(fileURLWithPath: caminho))
+    print("✓ \(caminho) (\(rep.pixelsWide) px)")
+}
 
-// ----------------------------------------------------------------- o fundo
-// Quadrado arredondado no raio da Apple (~22% do lado) e um degradê vertical
-// curto. O degradê é a única sutileza que resiste ao tamanho pequeno: dá
-// profundidade sem virar textura.
-let caixa = NSRect(x: 0, y: 0, width: LADO, height: LADO)
-let cantos = NSBezierPath(roundedRect: caixa, xRadius: LADO * 0.225, yRadius: LADO * 0.225)
-cantos.addClip()
+func desenhar(_ lado: Int, _ bloco: (CGContext, CGFloat) -> Void) -> NSBitmapImageRep {
+    let rep = bitmap(lado)
+    NSGraphicsContext.saveGraphicsState()
+    let g = NSGraphicsContext(bitmapImageRep: rep)!
+    NSGraphicsContext.current = g
+    g.cgContext.setShouldAntialias(true)
+    g.imageInterpolation = .high
+    bloco(g.cgContext, CGFloat(lado))
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
 
-let fundo = NSGradient(
-    colors: [
-        NSColor(calibratedRed: 0.07, green: 0.13, blue: 0.22, alpha: 1), // topo
-        NSColor(calibratedRed: 0.02, green: 0.05, blue: 0.10, alpha: 1), // base
-    ]
-)!
-fundo.draw(in: caixa, angle: -90)
+/// A arte recortada no quadrado arredondado, desenhada em `caixa`.
+func desenharArte(em caixa: NSRect) {
+    guard let original = NSImage(contentsOf: fonte),
+          let cg = original.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else {
+        print("não achei \(fonte.path)"); exit(1)
+    }
+    // Recorte quadrado em volta do corpo da arte, em pixels da imagem.
+    // Medido na arte de 25/11: o quadrado vai de x 40 a 463 e de y 17 a 435.
+    let w = CGFloat(cg.width), h = CGFloat(cg.height)
+    let lado = min(w, h) * (424.0 / 456.0)
+    let cx = w * (252.0 / 502.0), cy = h * (226.0 / 456.0)
+    let corte = CGRect(x: cx - lado / 2, y: cy - lado / 2, width: lado, height: lado).integral
+    guard let recorte = cg.cropping(to: corte) else { exit(1) }
 
-// ---------------------------------------------------------------- as formas
-// Primeira tentativa foi anel vazado + órbita + núcleo. A 512 px ficava ótimo
-// e a 16 px virava borrão: dois traços finos se cruzando no meio viram uma
-// mancha única, e o núcleo sumia dentro dela. A lição é velha e vale repetir
-// aqui: **contorno não reduz, massa reduz**.
-//
-// Então o corpo é um disco CHEIO e só a órbita é traço — um contraste de
-// formas, não dois traços competindo. Duas formas no total.
-let centro = NSPoint(x: LADO / 2, y: LADO / 2)
-let raio = LADO * 0.275
+    let raio = caixa.width * 0.225
+    NSGraphicsContext.saveGraphicsState()
+    NSBezierPath(roundedRect: caixa, xRadius: raio, yRadius: raio).addClip()
+    // Amplia 4% e centraliza: a moldura escura da arte fica fora da máscara.
+    let folga = caixa.width * 0.02
+    NSImage(cgImage: recorte, size: caixa.size)
+        .draw(in: caixa.insetBy(dx: -folga, dy: -folga), from: .zero, operation: .sourceOver, fraction: 1)
+    NSGraphicsContext.restoreGraphicsState()
+}
 
-// 1. O corpo: disco sólido.
-NSColor(calibratedRed: 0.42, green: 0.82, blue: 1.0, alpha: 1).setFill()
-NSBezierPath(
-    ovalIn: NSRect(x: centro.x - raio, y: centro.y - raio, width: raio * 2, height: raio * 2)
-).fill()
+switch modo {
+case "app":
+    gravar(desenhar(1024) { _, l in
+        let corpo = l * 824 / 1024
+        desenharArte(em: NSRect(x: (l - corpo) / 2, y: (l - corpo) / 2, width: corpo, height: corpo))
+    }, destino)
 
-// 2. A órbita, inclinada e cruzando o disco. Vai desenhada em DUAS partes:
-// primeiro um rasgo da cor do fundo, depois o traço branco dentro dele. Esse
-// contorno escuro é o que separa a órbita do disco quando os dois encostam —
-// sem ele, a 16 px branco sobre azul-claro desaparece.
-let orbitaW = raio * 1.62
-let orbitaH = raio * 0.30
-let traco = LADO * 0.044
+case "logo":
+    gravar(desenhar(256) { _, l in desenharArte(em: NSRect(x: 0, y: 0, width: l, height: l)) }, destino)
 
-ctx.saveGState()
-ctx.translateBy(x: centro.x, y: centro.y)
-ctx.rotate(by: -26 * .pi / 180)
-let caminho = NSBezierPath(
-    ovalIn: NSRect(x: -orbitaW, y: -orbitaH, width: orbitaW * 2, height: orbitaH * 2)
-)
-caminho.lineWidth = traco * 2.3
-NSColor(calibratedRed: 0.03, green: 0.07, blue: 0.13, alpha: 1).setStroke()
-caminho.stroke()
+case "tray":
+    // O olho em traço. 18 pt é o tamanho da barra de menus; @2x para Retina.
+    for (escala, sufixo) in [(1, ""), (2, "@2x")] {
+        let lado = 18 * escala
+        let rep = desenhar(lado) { ctx, l in
+            let s = l / 18
+            ctx.setStrokeColor(NSColor.black.cgColor)
+            ctx.setFillColor(NSColor.black.cgColor)
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            let meio = l / 2
+            // A amêndoa: duas curvas que se encontram nas pontas.
+            let esq = CGPoint(x: 1.2 * s, y: meio), dir = CGPoint(x: l - 1.2 * s, y: meio)
+            let olho = CGMutablePath()
+            olho.move(to: esq)
+            olho.addQuadCurve(to: dir, control: CGPoint(x: meio, y: meio + 8.6 * s))
+            olho.addQuadCurve(to: esq, control: CGPoint(x: meio, y: meio - 8.6 * s))
+            ctx.setLineWidth(1.35 * s)
+            ctx.addPath(olho)
+            ctx.strokePath()
+            // Uma linha da "rede" por dentro de cada pálpebra, mais fina: é o
+            // que faz o olho ser o DELA e não um ícone genérico de "ver".
+            if escala == 2 {
+                let rede = CGMutablePath()
+                rede.move(to: esq)
+                rede.addQuadCurve(to: dir, control: CGPoint(x: meio, y: meio + 5.6 * s))
+                rede.move(to: esq)
+                rede.addQuadCurve(to: dir, control: CGPoint(x: meio, y: meio - 5.6 * s))
+                ctx.setLineWidth(0.6 * s)
+                ctx.addPath(rede)
+                ctx.strokePath()
+            }
+            // Íris (anel) e núcleo (cheio).
+            ctx.setLineWidth(1.1 * s)
+            ctx.strokeEllipse(in: CGRect(x: meio - 3.1 * s, y: meio - 3.1 * s, width: 6.2 * s, height: 6.2 * s))
+            ctx.fillEllipse(in: CGRect(x: meio - 1.55 * s, y: meio - 1.55 * s, width: 3.1 * s, height: 3.1 * s))
+        }
+        gravar(rep, "\(destino)/trayTemplate\(sufixo).png")
+    }
 
-caminho.lineWidth = traco
-NSColor.white.setStroke()
-caminho.stroke()
-ctx.restoreGState()
-
-imagem.unlockFocus()
-
-guard let tiff = imagem.tiffRepresentation,
-      let bitmap = NSBitmapImageRep(data: tiff),
-      let png = bitmap.representation(using: .png, properties: [:])
-else {
-    print("não consegui gerar o PNG")
+default:
+    print("modo desconhecido: \(modo) (use app, logo ou tray)")
     exit(1)
 }
-try! png.write(to: URL(fileURLWithPath: destino))
-print("✓ ícone em \(destino)")

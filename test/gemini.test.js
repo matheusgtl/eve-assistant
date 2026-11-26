@@ -74,7 +74,7 @@ servidor.listen(0, async () => {
   const p1 = pedidos[0].payload;
   assert.strictEqual(pedidos[0].apiKey, "AIzaFalsa123", "a chave deve ir no cabeçalho");
   assert.match(pedidos[0].url, /gemini-2\.5-flash:streamGenerateContent$/, "deve pedir em streaming");
-  assert.ok(p1.systemInstruction.parts[0].text.includes("E.V."), "prompt de sistema presente");
+  assert.ok(p1.systemInstruction.parts[0].text.includes("Sexta-Feira"), "prompt de sistema presente");
   assert.strictEqual(p1.contents[0].role, "user");
   assert.strictEqual(p1.contents[0].parts[0].text, "quanta memória eu tenho?");
   assert.ok(p1.tools[0].function_declarations.length >= 6, "todas as ferramentas declaradas");

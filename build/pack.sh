@@ -1,5 +1,5 @@
 #!/bin/bash
-# pack.sh — gera o E.V.E.app completo: motor de escuta nativo, ícone, empacotamento e assinatura.
+# pack.sh — gera o Sexta-Feira.app completo: motor de escuta nativo, ícone, empacotamento e assinatura.
 set -e
 cd "$(dirname "$0")/.."
 
@@ -19,9 +19,10 @@ echo "› compilando o acesso ao Calendário (EventKit)…"
 swiftc -O native/ev-cal.swift -o native/ev-cal \
   -Xlinker -sectcreate -Xlinker __TEXT -Xlinker __info_plist -Xlinker native/cal-info.plist
 
-if [ ! -f build/icon.icns ]; then
+# Refaz o ícone quando a arte (assets/logo-original.png) ou o script mudam.
+if [ ! -f build/icon.icns ] || [ assets/logo-original.png -nt build/icon.icns ] || [ build/make-icon.swift -nt build/icon.icns ]; then
   echo "› gerando o ícone…"
-  swift build/make-icon.swift build/icon.png
+  swift build/make-icon.swift app build/icon.png
   rm -rf build/icon.iconset && mkdir build/icon.iconset
   for s in 16 32 64 128 256 512; do
     sips -z $s $s build/icon.png --out build/icon.iconset/icon_${s}x${s}.png >/dev/null
@@ -33,14 +34,17 @@ if [ ! -f build/icon.icns ]; then
 fi
 
 echo "› empacotando…"
-npx electron-packager . 'E.V.E' \
+# O bundle id continua com.matheus.eve DE PROPÓSITO: é por ele (e pela
+# assinatura) que o macOS guarda as permissões de microfone, fala e
+# Calendário. Trocar junto com o nome faria ele pedir tudo de novo.
+npx electron-packager . 'Sexta-Feira' \
   --platform=darwin --overwrite --out=dist \
   --app-bundle-id=com.matheus.eve \
   --extra-resource=native \
   --extend-info=build/Info.plist \
   --ignore="^/(dist|build)" >/dev/null
 
-APP=$(ls -d dist/E.V.E-darwin-*/E.V.E.app | head -1)
+APP=$(ls -d dist/Sexta-Feira-darwin-*/Sexta-Feira.app | head -1)
 
 echo "› aplicando ícone…"
 cp build/icon.icns "$APP/Contents/Resources/electron.icns"

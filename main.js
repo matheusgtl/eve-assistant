@@ -1,4 +1,4 @@
-// main.js — processo principal da E.V.E.
+// main.js — processo principal da Sexta-Feira (a E.V.E até 25/11/2026).
 //
 // Dono de: janela, configuração, voz, escuta, estado, painel do sistema,
 // lembretes e a ponte com a interface. O raciocínio vive em brains.js; as
@@ -9,7 +9,7 @@
 // de microfone sempre aberto precisam concordar sobre o que está acontecendo —
 // se cada lado guardasse o seu palpite, divergiriam na primeira corrida.
 
-const { app, BrowserWindow, ipcMain, shell, globalShortcut, Notification, dialog, screen } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, globalShortcut, Notification, dialog, screen, Tray, Menu, nativeImage } = require("electron");
 const { spawn, execFile } = require("node:child_process");
 const path = require("node:path");
 const fs = require("node:fs");
@@ -47,19 +47,29 @@ const { Agentes } = require("./agentes.js");
 const { lerPdf } = require("./pdf.js");
 const calendario = require("./calendario.js");
 const { Conversas } = require("./conversas.js");
+const { Chats } = require("./chats.js");
+const { Aprendizados, pareceCorrecao, gerarCerebro } = require("./aprendizados.js");
 const web = require("./web.js");
 
 // Fixa o nome ANTES de qualquer getPath: o app empacotado e o `npm start`
 // passam a usar a mesma pasta de configuração.
-app.setName("E.V.E");
+//
+// 25/11/2026: ela virou Sexta-Feira, mas as PASTAS continuam as da E.V.E.
+// O nome do app decide onde o Electron procura o config — e é lá que moram as
+// chaves, o histórico, os lembretes e o consumo. Trocar a pasta junto com o
+// nome faria ela abrir sem cérebro, pedindo chave de novo. O log também fica
+// onde sempre esteve (~/Library/Logs/E.V.E/eve.log).
+app.setName("Sexta-Feira");
+app.setPath("userData", path.join(app.getPath("appData"), "E.V.E"));
+app.setAppLogsPath(path.join(app.getPath("home"), "Library", "Logs", "E.V.E"));
 
 const PADROES = {
-  nome: "E.V.E",
-  pronuncia: "Ivi",
+  nome: "Sexta-Feira",
+  pronuncia: "Sexta-Feira",
   dono: "",
   estilo: "doce", // doce | direta | divertida
   proativa: true,
-  tema: "holografico",
+  tema: "sexta", // o tema do layout novo (25/11/2026); os antigos continuam na tela
   modoMic: "toque", // toque (espaço) | aberto (microfone sempre ligado)
   pausaFala: 2.5,   // segundos de silêncio até ela entender que você terminou
   notificacoes: true,
@@ -126,21 +136,37 @@ let indiceMemoria = null;
 // As notas do assunto da pergunta, já lidas (memoria.relevantes). Ficam de um
 // turno para o outro: a pergunta de continuação usa as do turno anterior.
 let notasAbertas = [];
-// Quando esta sessão começou: o que o histórico tem de antes disso é a
-// conversa anterior, que entra no prompt para ela não começar do zero.
-const INICIO_DA_SESSAO = Date.now();
+// A partir de quando o cérebro ATUAL acompanha a conversa. O que o histórico
+// tem de antes disso ele não viu, e entra no prompt ("O FIO DESTA CONVERSA")
+// para ele não começar do zero. Começa na abertura do app e anda em três
+// casos (25/11/2026): conversa nova ou trocada na barra lateral, "limpar", e
+// provedor que secou no meio da tarefa — o substituto chega sem histórico.
+let inicioDoCerebro = Date.now();
+// A pergunta em andamento e quando ela começou: a troca de provedor no meio
+// dela move o início para AQUI, porque a pergunta em si já vai na mensagem.
+let perguntaAtual = { texto: "", desde: Date.now() };
+// Notas e aprendizados que a conversa aberta tocou: viram links no diário dela
+// no Obsidian, que é o que liga a conversa ao resto do cérebro.
+const ligacoesDaConversa = new Set();
+let aprendizados = null;
+let indiceAprendizados = null;
+let correcaoNoTurno = false;
+let chats = null;
 
-/// O fim da conversa anterior, para o prompt. Só texto (cartão de arquivo não
-/// conta), só das últimas 48 horas, e no máximo 1.500 caracteres — contados de
-/// trás para frente, porque o que importa é onde a conversa PAROU.
+/// O que a conversa ABERTA tem de antes do cérebro atual, para o prompt. Só
+/// texto (cartão de arquivo não conta) e no máximo 1.800 caracteres — contados
+/// de trás para frente, porque o que importa é onde a conversa PAROU.
+///
+/// O limite de 48 horas que existia aqui saiu em 25/11/2026: com as conversas
+/// na barra lateral, voltar numa de semana passada é justamente o caso em que
+/// o fio mais importa.
 function conversaAnterior() {
-  const limite = INICIO_DA_SESSAO - 48 * 3600 * 1000;
   const turnos = lerHistorico().filter((i) => {
     const t = new Date(i.hora).getTime();
-    return (i.quem === "voce" || i.quem === "eve") && !i.arquivo && t < INICIO_DA_SESSAO && t > limite;
+    return (i.quem === "voce" || i.quem === "eve") && !i.arquivo && t < inicioDoCerebro;
   });
   const saida = [];
-  let resta = 1_500;
+  let resta = 1_800;
   for (const t of turnos.reverse()) {
     let texto = String(t.texto || "")
       .replace(/^\s*\|.*$/gm, "")     // tabela não cabe aqui
@@ -152,7 +178,7 @@ function conversaAnterior() {
     if (texto.length > resta) break;
     resta -= texto.length;
     saida.unshift({ quem: t.quem, texto, hora: t.hora });
-    if (saida.length >= 10) break;
+    if (saida.length >= 12) break;
   }
   return saida;
 }
@@ -213,7 +239,25 @@ function migrarConfigAntiga() {
       return;
     }
   } catch (err) {
-    console.error("[E.V.E] falha ao migrar configuração:", err.message);
+    console.error("[Sexta-Feira] falha ao migrar configuração:", err.message);
+  }
+}
+
+/// O nome novo chega para quem já usava: só troca o que ainda é o padrão
+/// antigo. Se ele tinha escolhido outro nome, fica o dele.
+function renomearParaSextaFeira() {
+  try {
+    const cfg = loadConfig();
+    if (cfg.renomeadaSexta) return;
+    if (!cfg.nome || cfg.nome === "E.V.E") cfg.nome = PADROES.nome;
+    if (!cfg.pronuncia || cfg.pronuncia === "Ivi") cfg.pronuncia = PADROES.pronuncia;
+    // O holográfico era o padrão, não uma escolha: vai para o tema novo.
+    if (!cfg.tema || cfg.tema === "holografico") cfg.tema = PADROES.tema;
+    cfg.renomeadaSexta = true;
+    saveConfig(cfg);
+    log("nome: E.V.E → Sexta-Feira");
+  } catch (err) {
+    log("não consegui renomear:", err.message);
   }
 }
 
@@ -344,8 +388,10 @@ function log(...parts) {
 // Estado
 // ---------------------------------------------------------------------------
 function setEstado(s, rotulo) {
+  const mudou = s !== estadoAtual;
   estadoAtual = s;
   send("ev:state", { state: s, rotulo, micAberto });
+  if (mudou) atualizarBandeja();
 }
 
 // ---------------------------------------------------------------------------
@@ -653,7 +699,7 @@ async function notificar({ titulo, mensagem }) {
   if (!loadConfig().notificacoes) return;
   try {
     if (Notification.isSupported()) {
-      const n = new Notification({ title: titulo || "E.V.E", body: mensagem, silent: false });
+      const n = new Notification({ title: titulo || loadConfig().nome || "Sexta-Feira", body: mensagem, silent: false });
       n.on("click", () => {
         win?.show();
         win?.focus();
@@ -667,7 +713,7 @@ async function notificar({ titulo, mensagem }) {
   // Reserva: o próprio macOS, pelo osascript.
   execFile("/usr/bin/osascript", [
     "-e",
-    `display notification ${JSON.stringify(mensagem)} with title ${JSON.stringify(titulo || "E.V.E")}`,
+    `display notification ${JSON.stringify(mensagem)} with title ${JSON.stringify(titulo || loadConfig().nome || "Sexta-Feira")}`,
   ]);
 }
 
@@ -790,7 +836,7 @@ function tell(cmd) {
     return true;
   } catch (err) {
     log("erro ao enviar", cmd, err.message);
-    send("ev:error", { message: "A escuta parou de responder. Reinicie a E.V.E." });
+    send("ev:error", { message: "A escuta parou de responder. Reinicie a Sexta-Feira." });
     listener = null;
     return false;
   }
@@ -969,6 +1015,9 @@ function promptDoSistema({ canal } = {}) {
     skills: indiceSkills,
     notasAbertas,
     conversaAnterior: conversaAnterior(),
+    tituloConversa: chats?.aberta().titulo || "",
+    aprendizados: indiceAprendizados,
+    correcao: correcaoNoTurno,
     agora: new Date(),
   });
 }
@@ -998,8 +1047,15 @@ function iniciarMemoria() {
     onDebug: (msg) => log("memória:", msg),
   });
   log("memória em:", memoria.pasta);
+  // Os aprendizados moram dentro da memória (aprendizados/), para o Obsidian
+  // ver um cérebro só: memória, aprendizados, conversas e skills ligados pela
+  // nota CEREBRO.md.
+  aprendizados = new Aprendizados({ pasta: memoria.pasta, onDebug: (msg) => log(msg) });
   memoria
     .preparar()
+    .then(() => gerarCerebro(memoria.pasta, { nome: loadConfig().nome || "Sexta-Feira" }))
+    .then(() => aprendizados.gerarMapa())
+    .then(() => atualizarIndiceAprendizados())
     .then(() => atualizarIndiceMemoria())
     .catch((err) => log("memória: não consegui preparar o cofre:", err.message));
 
@@ -1011,7 +1067,7 @@ function iniciarMemoria() {
   // viaja no contexto dela. Conversa salva é para ELE reler.
   conversas = new Conversas({
     pasta: path.join(memoria.pasta, "Conversas"),
-    nomeDela: loadConfig().nome || "E.V.E",
+    nomeDela: loadConfig().nome || "Sexta-Feira",
     onDebug: (msg) => log(msg),
     // Esta sessão começa agora. O que foi dito antes pertence às conversas
     // anteriores, mesmo que o histórico ainda o traga.
@@ -1035,6 +1091,15 @@ async function atualizarIndiceSkills() {
     log("skills:", indiceSkills.total, "disponível(is)");
   } catch (err) {
     log("skills: não consegui ler a pasta:", err.message);
+  }
+}
+
+async function atualizarIndiceAprendizados() {
+  if (!aprendizados) return;
+  try {
+    indiceAprendizados = await aprendizados.paraPrompt();
+  } catch (err) {
+    log("aprendizados: não consegui ler:", err.message);
   }
 }
 
@@ -1146,6 +1211,10 @@ async function ask(userText, canal = "texto") {
   // Uma skill escrita no Obsidian agora mesmo já vale nesta pergunta: reler é
   // o que dispensa qualquer passo de sincronização (e reiniciar o app).
   await atualizarIndiceSkills();
+  await atualizarIndiceAprendizados();
+  correcaoNoTurno = pareceCorrecao(userText);
+  if (correcaoNoTurno) log("aprendizado: a fala parece uma correção");
+  for (const n of notasAbertas) ligacoesDaConversa.add(n.nome);
 
   // Abre o bloco desta pergunta no log — inclusive o que ele ESCREVEU, que antes
   // não aparecia (só a fala, pela linha da escuta).
@@ -1160,7 +1229,12 @@ async function ask(userText, canal = "texto") {
   send("ev:escolhas", null); // botões antigos saem: a pergunta já foi respondida
 
   const anexo = await lerAnexoPendente();
+  // Antes do anotar: o item desta pergunta tem hora >= desde, e por isso não
+  // entra no "fio" se o provedor trocar no meio dela (a pergunta já vai na
+  // própria mensagem).
+  perguntaAtual = { texto: userText, desde: Date.now() };
   anotar("voce", userText, { canal, anexo: anexo?.nome });
+  enviarChats();
   send("ev:message", { quem: "voce", texto: userText, anexo: anexo?.nome });
   setEstado("thinking");
 
@@ -1252,7 +1326,10 @@ async function ask(userText, canal = "texto") {
         enviarAgentes();
       },
       onProvedor: (provedor) => {
-        log("provedor trocado para", provedor, "(o histórico anterior não vai com ele)");
+        // O provedor novo não tem o histórico do anterior, mas recebe o fio da
+        // conversa no prompt: tudo o que foi dito antes desta pergunta.
+        inicioDoCerebro = perguntaAtual.desde;
+        log("provedor trocado para", provedor, "(o fio da conversa vai no prompt)");
         send("ev:notice", { message: `troquei para ${provedor} — o provedor anterior bateu o limite.` });
       },
       onModel: (model) => {
@@ -1327,7 +1404,11 @@ async function ask(userText, canal = "texto") {
   // conversa em andamento custa alguns quilobytes e não perde nada.
   //
   // Sem await: ele não precisa esperar o disco para ouvir a resposta.
-  conversas?.salvar(lerHistorico()).catch((err) => log("conversa não salva:", err.message));
+  conversas
+    ?.salvar(lerHistorico(), { ligacoes: [...ligacoesDaConversa] })
+    .catch((err) => log("conversa não salva:", err.message));
+  correcaoNoTurno = false;
+  enviarChats();
 }
 
 // ---------------------------------------------------------------------------
@@ -1479,6 +1560,110 @@ function iniciarLembretes() {
 }
 
 // ---------------------------------------------------------------------------
+// Conversas da barra lateral (chats.js)
+// ---------------------------------------------------------------------------
+function gravarHistorico(itens) {
+  fs.mkdirSync(app.getPath("userData"), { recursive: true });
+  fs.writeFileSync(historicoPath(), JSON.stringify((itens || []).slice(-120)));
+}
+
+function enviarChats() {
+  if (!chats) return;
+  try {
+    send("ev:chats", chats.listar());
+  } catch (err) {
+    log("conversas: não consegui listar:", err.message);
+  }
+}
+
+/// Depois de abrir outra conversa (ou uma nova): o cérebro esquece a anterior
+/// e passa a receber o fio DESTA pelo prompt — é o que impede o agente de se
+/// perder na troca. A conversa que saiu não é apagada: fica no chats.json.
+function aposTrocarDeConversa(aberta, motivo) {
+  stopSpeaking();
+  brain?.cancelar?.();
+  brain?.reset();
+  inicioDoCerebro = Date.now();
+  notasAbertas = [];
+  ligacoesDaConversa.clear();
+  // O diário no Obsidian começa um arquivo novo a partir daqui.
+  if (conversas) conversas.desde = Date.now();
+  escolhasDoTurno = null;
+  send("ev:escolhas", null);
+  for (const item of aberta.itens) liberarArquivo(item.arquivo?.caminho);
+  send("ev:history", aberta.itens);
+  enviarChats();
+  setEstado("idle");
+  log(`conversa ${motivo}: ${JSON.stringify(aberta.titulo)} (${aberta.itens.length} itens; o fio vai no prompt)`);
+}
+
+// ---------------------------------------------------------------------------
+// Ícone na barra de menus
+// ---------------------------------------------------------------------------
+let tray = null;
+let saindo = false;
+
+function mostrarJanela() {
+  if (!win || win.isDestroyed()) createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+  win.webContents.focus();
+}
+
+/// O olho em traço (assets/trayTemplate*.png, gerado por build/make-icon.swift).
+/// "Template" no nome faz o macOS pintar sozinho de claro ou escuro.
+function criarBandeja() {
+  try {
+    const imagem = nativeImage.createFromPath(path.join(__dirname, "assets", "trayTemplate.png"));
+    imagem.setTemplateImage(true);
+    tray = new Tray(imagem);
+    tray.setToolTip(loadConfig().nome || "Sexta-Feira");
+    atualizarBandeja();
+  } catch (err) {
+    log("não consegui pôr o ícone na barra de menus:", err.message);
+  }
+}
+
+function atualizarBandeja() {
+  if (!tray || tray.isDestroyed()) return;
+  const cfg = loadConfig();
+  const nome = cfg.nome || "Sexta-Feira";
+  const rotulo = { idle: "pronta", listening: "ouvindo…", thinking: "pensando…", speaking: "falando…" };
+  tray.setToolTip(`${nome} — ${rotulo[estadoAtual] || "pronta"}`);
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: `${nome} · ${rotulo[estadoAtual] || "pronta"}`, enabled: false },
+      { type: "separator" },
+      { label: `Abrir ${nome}`, click: mostrarJanela },
+      { label: "Falar", accelerator: "Alt+Space", click: () => { mostrarJanela(); mic("start"); } },
+      {
+        label: "Nova conversa",
+        click: () => {
+          mostrarJanela();
+          aposTrocarDeConversa(chats.nova(), "nova");
+        },
+      },
+      {
+        label: "Voz silenciada",
+        type: "checkbox",
+        checked: !!cfg.mudo,
+        click: (item) => {
+          const c = loadConfig();
+          c.mudo = item.checked;
+          saveConfig(c);
+          if (c.mudo) stopSpeaking();
+          send("ev:config", configPublica());
+          atualizarBandeja();
+        },
+      },
+      { type: "separator" },
+      { label: `Sair da ${nome}`, accelerator: "Command+Q", click: () => app.quit() },
+    ])
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Janela
 // ---------------------------------------------------------------------------
 function createWindow() {
@@ -1495,8 +1680,8 @@ function createWindow() {
     height: Math.max(620, Math.min(altura, area.height)),
     minWidth: 560,
     minHeight: 620,
-    title: "E.V.E",
-    backgroundColor: "#07090f",
+    title: "Sexta-Feira",
+    backgroundColor: "#0e1013",
     titleBarStyle: "hiddenInset",
     vibrancy: "under-window",
     webPreferences: {
@@ -1507,6 +1692,15 @@ function createWindow() {
   });
 
   if (guardada?.maximizada) win.maximize();
+
+  // Com o ícone na barra de menus, fechar a janela só a esconde: ela continua
+  // ouvindo o ⌥Espaço, avisando lembretes e a um clique no olho lá em cima.
+  // Sair de verdade é ⌘Q ou "Sair" no menu do ícone.
+  win.on("close", (e) => {
+    if (saindo) return;
+    e.preventDefault();
+    win.hide();
+  });
 
   // Guarda o tamanho só quando ele para de mudar: gravar a cada pixel do
   // arrasto escreveria no disco dezenas de vezes por segundo.
@@ -1542,8 +1736,13 @@ function createWindow() {
 
 app.whenReady().then(() => {
   migrarConfigAntiga();
+  renomearParaSextaFeira();
   separarChaveDoGemini();
   migrarChavePrincipal();
+  chats = new Chats({
+    arquivo: path.join(app.getPath("userData"), "chats.json"),
+    historico: { ler: lerHistorico, gravar: gravarHistorico },
+  });
   iniciarLembretes();
   iniciarMemoria();
   agentes = new Agentes({
@@ -1565,6 +1764,22 @@ app.whenReady().then(() => {
       const r = registro.resultadoDeFerramenta(resultado);
       turnoAtual?.ferramenta(r.ok);
       log(`  ↳ ${nome} ${r.ok ? "✓" : "✗"} ${ms} ms · ${r.texto}`);
+      // Aprender com o erro: toda falha vai para o diário de erros no cofre, e
+      // a que se repete volta no prompt como alerta (aprendizados.js).
+      if (!r.ok) {
+        aprendizados
+          ?.registrarFalha({ ferramenta: nome, erro: r.texto.replace(/^erro:\s*/, ""), pedido: perguntaAtual.texto })
+          .then(() => atualizarIndiceAprendizados());
+      }
+      // A nota que ela gravou entra nas ligações da conversa.
+      if (r.ok && nome === "anotar_memoria") {
+        try {
+          const dados = typeof resultado === "string" ? JSON.parse(resultado) : resultado;
+          const nota = dados?.nota || dados?.nome || dados?.arquivo;
+          if (typeof nota === "string") ligacoesDaConversa.add(nota.replace(/\.md$/, ""));
+          if (/aprendizados/.test(String(nota))) aprendizados?.gerarMapa().then(() => atualizarIndiceAprendizados());
+        } catch {}
+      }
     },
     // A ferramenta pediu o sim dele: os botões Sim/Não entram no fim desta resposta.
     onPedidoDeSim: ({ nome }) => {
@@ -1624,12 +1839,14 @@ app.whenReady().then(() => {
 
   const temChave = initBrain();
   createWindow();
+  criarBandeja();
   startListener();
   iniciarPainel();
 
   win.webContents.once("did-finish-load", () => {
     send("ev:config", configPublica());
     send("ev:history", lerHistorico());
+    enviarChats();
     send("ev:setup", { needed: !temChave });
     if (ultimaAmostra) send("ev:metrics", ultimaAmostra);
     enviarAgentes();
@@ -1650,24 +1867,24 @@ app.whenReady().then(() => {
     }, 3000);
   });
 
-  // ⌥Espaço chama a E.V.E de qualquer aplicativo.
+  // ⌥Espaço chama a Sexta-Feira de qualquer aplicativo.
   const ok = globalShortcut.register("Alt+Space", () => {
-    if (!win || win.isDestroyed()) return;
-    win.show();
-    win.focus();
-    win.webContents.focus();
+    mostrarJanela();
     mic("start");
   });
   if (!ok) log("não consegui registrar ⌥Espaço (outro app já usa)");
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else mostrarJanela();
   });
 });
 
 app.on("window-all-closed", () => app.quit());
 
 app.on("before-quit", () => {
+  saindo = true;
+  tray?.destroy();
   stopSpeaking();
   clearInterval(painelTimer);
   lembretes?.parar();
@@ -1683,6 +1900,24 @@ app.on("before-quit", () => {
 // Ponte com a interface
 // ---------------------------------------------------------------------------
 ipcMain.handle("ev:mic", (_e, acao) => mic(acao));
+// As conversas da barra lateral.
+ipcMain.handle("ev:chats", () => (chats ? chats.listar() : []));
+ipcMain.handle("ev:chat-new", () => {
+  if (!chats) return { ok: false };
+  aposTrocarDeConversa(chats.nova(), "nova");
+  return { ok: true };
+});
+ipcMain.handle("ev:chat-open", (_e, id) => {
+  const aberta = chats?.abrir(String(id || ""));
+  if (!aberta) return { ok: false, erro: "essa conversa não existe mais" };
+  aposTrocarDeConversa(aberta, "aberta");
+  return { ok: true };
+});
+ipcMain.handle("ev:chat-rename", (_e, { id, titulo } = {}) => {
+  const ok = !!chats?.renomear(String(id || ""), titulo);
+  if (ok) enviarChats();
+  return { ok };
+});
 ipcMain.handle("ev:type", (_e, texto) => ask(String(texto || "").trim(), "texto"));
 ipcMain.handle("ev:debug", (_e, msg) => log("interface:", msg));
 ipcMain.handle("ev:metrics-now", () => amostrarPainel());
@@ -1731,10 +1966,12 @@ ipcMain.handle("ev:interrupt", () => {
 
 ipcMain.handle("ev:reset", () => {
   brain?.reset();
+  inicioDoCerebro = Date.now();
   try {
     fs.writeFileSync(historicoPath(), "[]");
   } catch {}
   send("ev:history", []);
+  enviarChats();
   const cfg = loadConfig();
   const msg = `Pronto, esqueci nossa conversa. Começando do zero.`;
   anotar("eve", msg);
@@ -2130,7 +2367,7 @@ ipcMain.handle("ev:clear-attachment", () => {
 });
 ipcMain.handle("ev:choose-file", async () => {
   const r = await dialog.showOpenDialog(win, {
-    title: "Mandar um arquivo para a E.V.E",
+    title: "Mandar um arquivo para a Sexta-Feira",
     properties: ["openFile"],
     buttonLabel: "Anexar",
   });

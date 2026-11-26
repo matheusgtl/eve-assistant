@@ -50,12 +50,17 @@ function cofreDoObsidian() {
 ///
 /// A subpasta importa: as notas dela ficam visíveis no Obsidian que ele já
 /// abre, sem se misturar com as notas dele.
+/// A E.V.E virou Sexta-Feira em 25/11/2026, e a pasta do cofre foi junto.
+/// A antiga é MOVIDA (não copiada) na primeira abertura: ver mudarDeNome.
+const NOME_DA_PASTA = "Sexta-Feira";
+const NOME_ANTIGO = "E.V.E";
+
 function PASTA(configurada) {
   if (process.env.EV_MEMORIA_DIR) return process.env.EV_MEMORIA_DIR;
   if (configurada) return configurada;
   const cofre = cofreDoObsidian();
-  if (cofre) return path.join(cofre, "E.V.E");
-  return path.join(os.homedir(), "Documents", "E.V.E");
+  if (cofre) return path.join(cofre, NOME_DA_PASTA);
+  return path.join(os.homedir(), "Documents", NOME_DA_PASTA);
 }
 
 const PASTA_ANTIGA = path.join(os.homedir(), "Documents", "E.V.E");
@@ -286,6 +291,7 @@ class Memoria {
   /// A pasta .obsidian existir é o que faz o Obsidian reconhecer isto como
   /// cofre, em vez de pedir "abrir pasta como cofre" na mão.
   async preparar() {
+    await this.mudarDeNome();
     await this.mudarDeCasa();
     await fsp.mkdir(path.join(this.pasta, "processos"), { recursive: true });
     await fsp.mkdir(path.join(this.pasta, "fatos"), { recursive: true });
@@ -309,10 +315,10 @@ class Memoria {
           "",
           "# Sobre esta pasta",
           "",
-          "Isto é a memória da E.V.E, e é um cofre do Obsidian.",
+          "Isto é a memória da Sexta-Feira, e é um cofre do Obsidian.",
           "",
           "Cada arquivo é um processo (como fazer algo) ou um fato (algo que vale lembrar).",
-          "O `quando:` no topo é o que a E.V.E lê em toda pergunta para saber que o",
+          "O `quando:` no topo é o que a Sexta-Feira lê em toda pergunta para saber que o",
           "documento existe — o conteúdo ela só abre quando precisa.",
           "",
           "Pode escrever notas aqui pelo Obsidian: ela enxerga sozinha, sem sincronizar nada.",
@@ -325,6 +331,22 @@ class Memoria {
     // Gera o mapa já na preparação: quem abrir o cofre no Obsidian pela
     // primeira vez encontra uma porta de entrada em vez de uma pasta crua.
     await this.gerarMapa();
+  }
+
+  /// O cofre dela se chamava "E.V.E" até 25/11/2026. Se a pasta nova ainda não
+  /// existe e a antiga está ao lado, ela é RENOMEADA: mover não perde nada, os
+  /// links do Obsidian são por nome de nota, e copiar deixaria duas memórias
+  /// divergindo. Se as duas existirem, nada é mexido — decidir qual vale é dele.
+  async mudarDeNome() {
+    if (path.basename(this.pasta) !== NOME_DA_PASTA || fs.existsSync(this.pasta)) return;
+    const antiga = path.join(path.dirname(this.pasta), NOME_ANTIGO);
+    if (!fs.existsSync(antiga)) return;
+    try {
+      await fsp.rename(antiga, this.pasta);
+      this.onDebug(`cofre renomeado: ${antiga} → ${this.pasta}`);
+    } catch (err) {
+      this.onDebug(`não consegui renomear ${antiga}: ${err.message}`);
+    }
   }
 
   /// A memória já morou em ~/Documents/E.V.E, fora do Obsidian. Se ela mudou
@@ -525,7 +547,7 @@ class Memoria {
       };
     }
 
-    const subpasta = /^fatos/i.test(pasta) ? "fatos" : "processos";
+    const subpasta = /^fatos/i.test(pasta) ? "fatos" : /^aprend/i.test(pasta) ? "aprendizados" : "processos";
     // O nome não repete a pasta: "fatos/fatos-perfil" vira "fatos/perfil".
     const slug = apelido(String(nome).replace(new RegExp(`^${subpasta}[-/\\s]+`, "i"), ""));
     const arquivo = path.join(subpasta, slug + ".md");
@@ -705,13 +727,15 @@ class Memoria {
         "quando: nunca — este arquivo é gerado automaticamente",
         "---",
         "",
-        "# Memória da E.V.E",
+        "# Memória da Sexta-Feira",
         "",
         `*Gerado automaticamente. ${itens.length} documento(s). Editar aqui não muda nada —`,
         "o que vale é o `quando:` dentro de cada arquivo.*",
         "",
+        "Ver também: [[CEREBRO]] · [[APRENDIZADOS]] · [[CONVERSAS]]",
+        "",
       ];
-      for (const grupo of ["processos", "fatos"]) {
+      for (const grupo of ["processos", "fatos", "aprendizados"]) {
         const doGrupo = itens.filter((i) => i.nome.startsWith(grupo + "/"));
         if (!doGrupo.length) continue;
         linhas.push(`## ${grupo}`, "");

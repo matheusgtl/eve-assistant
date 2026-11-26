@@ -3,25 +3,25 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>A E.V.E usa o microfone para ouvir seus comandos de voz.</string>
+  <string>A Sexta-Feira usa o microfone para ouvir seus comandos de voz.</string>
   <key>NSSpeechRecognitionUsageDescription</key>
-  <string>A E.V.E transcreve sua fala para entender o que você pede.</string>
+  <string>A Sexta-Feira transcreve sua fala para entender o que você pede.</string>
   <key>NSCalendarsUsageDescription</key>
-  <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+  <string>A Sexta-Feira põe e consulta compromissos no seu Calendário quando você pede.</string>
   <key>NSCalendarsFullAccessUsageDescription</key>
-  <string>A E.V.E põe e consulta compromissos no seu Calendário quando você pede.</string>
+  <string>A Sexta-Feira põe e consulta compromissos no seu Calendário quando você pede.</string>
   <key>NSRemindersUsageDescription</key>
-  <string>A E.V.E põe os seus compromissos também no app Lembretes, para avisarem no Mac e no iPhone.</string>
+  <string>A Sexta-Feira põe os seus compromissos também no app Lembretes, para avisarem no Mac e no iPhone.</string>
   <key>NSRemindersFullAccessUsageDescription</key>
-  <string>A E.V.E põe os seus compromissos também no app Lembretes, para avisarem no Mac e no iPhone.</string>
+  <string>A Sexta-Feira põe os seus compromissos também no app Lembretes, para avisarem no Mac e no iPhone.</string>
   <key>NSAppleEventsUsageDescription</key>
-  <string>A E.V.E controla outros aplicativos quando você pede — abrir, tocar música, mandar mensagem, mover arquivo para o Lixo.</string>
+  <string>A Sexta-Feira controla outros aplicativos quando você pede — abrir, tocar música, mandar mensagem, mover arquivo para o Lixo.</string>
   <key>NSDesktopFolderUsageDescription</key>
-  <string>A E.V.E cria e lê arquivos na sua Mesa quando você pede.</string>
+  <string>A Sexta-Feira cria e lê arquivos na sua Mesa quando você pede.</string>
   <key>NSDocumentsFolderUsageDescription</key>
-  <string>A E.V.E cria e lê arquivos em Documentos quando você pede.</string>
+  <string>A Sexta-Feira cria e lê arquivos em Documentos quando você pede.</string>
   <key>NSDownloadsFolderUsageDescription</key>
-  <string>A E.V.E lê e organiza seus Downloads quando você pede.</string>
+  <string>A Sexta-Feira lê e organiza seus Downloads quando você pede.</string>
   <key>LSMinimumSystemVersion</key>
   <string>11.0</string>
 </dict>

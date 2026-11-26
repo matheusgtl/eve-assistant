@@ -1,6 +1,6 @@
-# E.V.E
+# Sexta-Feira (ex-E.V.E)
 
-Assistente de voz em português para macOS. Electron, JavaScript CommonJS, helpers em Swift. Sem TypeScript nem lint.
+Assistente de voz em português para macOS. Chamava-se E.V.E até 25/11/2026: pastas de dados, log, bundle id e certificado continuam com o nome antigo de propósito (README, início). Electron, JavaScript CommonJS, helpers em Swift. Sem TypeScript nem lint.
 O `README.md` explica o porquê de cada decisão: **leia a seção do assunto antes de mudar comportamento**.
 
 ## Comandos
@@ -14,8 +14,10 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 ## Onde fica
 - `main.js`: Electron, voz e canais; `preload.js`: ponte; `renderer/`: interface
 - `brains.js`: prompt, provedores e corrente de reserva; `agentes.js`: consumo
+- `chats.js`: conversas da barra lateral; `aprendizados.js`: erros e lições no cofre
 - `tools.js`: ferramentas e travas; `escolhas.js`: botões de resposta e o sim que só ele dá; `memoria.js`, `conversas.js`, `skills.js`: cofre do Obsidian
 - `registro.js`: formato do `~/Library/Logs/E.V.E/eve.log` (leia para diagnosticar)
+- `build/make-icon.swift`: ícone, logo e ícone da barra de menus a partir de `assets/logo-original.png`
 - `gastos.js`, `calculo.js`, `calendario.js`, `lembretes.js`, `web.js`, `pdf.js`, `sistema.js`, `tts.js`
 - `native/*.swift`: escuta, PDF e Calendário
 - `esfera.js`, `index.html` e `interface.js` na **raiz** são cópias ignoradas: edite as de `renderer/`

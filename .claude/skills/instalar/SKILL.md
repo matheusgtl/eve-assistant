@@ -1,9 +1,9 @@
 ---
 name: instalar
-description: Instala a versão atual da E.V.E em ~/Applications, somente se a verificação e a assinatura passarem. Use ao terminar qualquer mudança no app (autorizado, sem perguntar) ou quando pedirem para instalar, reinstalar ou atualizar.
+description: Instala a versão atual da Sexta-Feira (ex-E.V.E) em ~/Applications/Sexta-Feira.app, somente se a verificação e a assinatura passarem. Use ao terminar qualquer mudança no app (autorizado, sem perguntar) ou quando pedirem para instalar, reinstalar ou atualizar.
 ---
 
-# Instalar a E.V.E
+# Instalar a Sexta-Feira
 
 1. **Instale sozinho** quando uma versão nova ficar pronta: ele autorizou em 25/11/2026. Não precisa perguntar.
 2. **Revise** o diff desde a última instalação. Mudou `Info.plist`, helper Swift ou assinatura? Avise que o macOS pode pedir permissões de novo.

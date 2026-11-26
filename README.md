@@ -1,14 +1,20 @@
-# E.V.E
+# Sexta-Feira
 
-Assistente pessoal de desktop no estilo JARVIS — voz feminina em português, esfera de dados holográfica que reage à conversa, acesso real ao Mac e à internet.
+Assistente pessoal de desktop no espírito da FRIDAY do Homem de Ferro — voz feminina em português, esfera de redes neurais que reage à conversa, acesso real ao Mac e à internet, e um cérebro no Obsidian que aprende com os erros.
 
-Ela se chama **E.V.E** e se pronuncia **Ivi**. Esses dois campos são configuráveis: o nome aparece na janela, a pronúncia é o que a voz lê em voz alta (soletrar "E ponto V ponto E" fica horrível).
+Ela se chama **Sexta-Feira** desde 25/11/2026; antes era a **E.V.E** ("Ivi"). Nome e pronúncia continuam configuráveis: o nome aparece na janela, a pronúncia é o que a voz lê em voz alta. Na primeira abertura depois da troca, quem ainda estava com o nome padrão antigo passa para o novo (`renomearParaSextaFeira` no `main.js`); nome escolhido à mão fica.
+
+**O que NÃO mudou de nome, de propósito:** a pasta de dados (`~/Library/Application Support/E.V.E/`, com as chaves, o histórico e os lembretes), o log (`~/Library/Logs/E.V.E/eve.log`), o bundle id (`com.matheus.eve`) e o certificado de assinatura. Trocar qualquer um deles faria ela abrir sem chave ou o macOS pedir todas as permissões de novo. O cofre do Obsidian, esse sim, passou de `E.V.E/` para `Sexta-Feira/`: a pasta é **renomeada** (não copiada) na primeira abertura, e só se a nova ainda não existir.
 
 É um **aplicativo nativo do macOS**. Não abre navegador, não sobe servidor, não tem URL.
 
 ## Instalado em
 
-`~/Applications/E.V.E.app` — abra pelo Launchpad, pelo Spotlight (⌘Espaço → "E.V.E") ou com dois cliques.
+`~/Applications/Sexta-Feira.app` — abra pelo Launchpad, pelo Spotlight (⌘Espaço → "Sexta-Feira"), com dois cliques ou pelo **olho na barra de menus**. A instalação apaga o `E.V.E.app` antigo, que abriria o mesmo app com os mesmos dados.
+
+Fechar a janela só a esconde: ela continua no olho da barra de menus, ouvindo o ⌥Espaço e avisando lembretes. O menu do olho tem abrir, falar, nova conversa, silenciar a voz e sair. O ícone é uma imagem *template* (`assets/trayTemplate*.png`): o macOS pinta de claro ou escuro sozinho.
+
+O ícone do app vem da arte em `assets/logo-original.png`; `build/make-icon.swift` recorta o quadrado, aplica a máscara de cantos da Apple e gera o ícone, a logo da tela (`renderer/logo.png`) e o da barra de menus. O `pack.sh` refaz o `.icns` quando a arte muda.
 
 ## Primeira vez
 
@@ -26,7 +32,13 @@ Ela se chama **E.V.E** e se pronuncia **Ivi**. Esses dois campos são configurá
 
 ## A tela
 
-Três colunas, no estilo de uma HUD de terminal: à esquerda os dois monitores (sistema e agentes), no centro a esfera com o estado e a linha de volume, e à direita **a conversa e o campo de escrever, no mesmo painel** — quem escreve está lendo a resposta logo acima, e dois quadros separados partiam essa leitura em duas. Em cima, o nome, o relógio e os botões de claro/escuro, limpar e configurações; embaixo, os atalhos.
+Desde 25/11/2026, o layout das conversas do Claude, em três faixas:
+
+- **Esquerda — conversas.** Nova conversa (⌘N, também ⌘K), configurações (⌘,) e a lista das conversas. Clicar numa antiga a reabre; a que estava aberta fica guardada (`chats.js`: o `historico.json` continua sendo a aberta, e o `chats.json` guarda as outras inteiras — trocar nunca apaga nada). Duplo clique no título lá em cima renomeia.
+- **Centro — o chat.** A mensagem dele numa bolha à direita, a resposta dela em texto corrido com o olho ao lado, as ferramentas usadas como linhas discretas (`⚙ web search`). Conversa vazia mostra o olho, uma saudação e sugestões. O compositor é a caixa arredondada embaixo: anexar, silenciar a voz, microfone e enviar.
+- **Direita — o painel dela.** A esfera de redes neurais (clique para falar), o estado, o **contexto da conversa**, o monitor do sistema e o uso dos agentes. O botão no canto da barra lateral esconde o painel; em janela estreita ele flutua.
+
+O tema padrão é o **sexta-feira**: os cinzas neutros do Claude com o ciano do olho. Os temas antigos continuam nas configurações.
 
 O campo de escrever **cresce com o texto** até um teto e então rola. Campo de uma linha escondia o que você acabou de escrever assim que passava da largura — que é exatamente quando reler importa. **Enter** envia, **⇧enter** quebra linha.
 
@@ -99,7 +111,7 @@ O consumo sobrevive a fechar o app, e dado de outro dia vira zero em vez de ser 
 
 Coluna da esquerda, atualizada a cada 2 segundos: CPU, memória, GPU, disco, rede, bateria e temperatura, mais tempo ligado, número de processos e versão do sistema.
 
-As barras seguem a ideia do **btop**: cada bloco tem a cor da faixa em que ele está — os primeiros verdes, os do meio amarelos, os últimos vermelhos — e acendem da esquerda para a direita. Dá para ver 80% sem ler o número. A bateria é a exceção: nela cheio é bom, então a escala inverte.
+As barras são **um trilho só, de pontas arredondadas** (até 25/11/2026 eram fileiras de blocos no estilo btop). A cor do preenchimento é a do nível e muda com transição: verde até 50%, âmbar até 80%, vermelho acima. A bateria é a exceção: nela cheio é bom, então a escala inverte. As barras dos agentes seguem a mesma regra; a "fatia do dia" (provedor sem teto conhecido) fica numa cor neutra, porque ali cheio não quer dizer acabando.
 
 De onde vem cada número:
 
@@ -136,6 +148,25 @@ Os mesmos números entram no contexto dela a cada pergunta — por isso ela resp
 - **Memória** — consultar e escrever processos e fatos no cofre de `.md` (seção acima).
 - **Skills** — abrir o roteiro de uma skill, criar uma nova, e salvar a conversa num `.md` do cofre.
 - **Mensagens** — iMessage e e-mail pelo Mail, e WhatsApp (ela abre a conversa com o texto pronto e dá o enter pelo System Events). Em todos os casos ela lê em voz alta para quem vai e o texto inteiro, e só manda depois do seu sim.
+
+## Contexto de cada conversa
+
+O cérebro (o modelo) só lembra do que viu desde que começou. Isso acontece em três momentos: o app abriu, ele **trocou de conversa** na barra lateral, ou **o provedor secou** e outro assumiu no meio da tarefa. Em todos, o `main.js` marca `inicioDoCerebro`, e o prompt leva **"O FIO DESTA CONVERSA"**: as últimas falas da conversa aberta que o cérebro atual não viu (até 12 falas, 1.800 caracteres), com o título da conversa e a ordem de continuar a tarefa sem perguntar de novo. Antes só o primeiro caso existia (e com limite de 48 h); a troca de provedor descartava a conversa inteira.
+
+O painel da direita mostra quanto da conversa existe (o histórico guarda 120 itens por conversa) e avisa quando ela fica longa.
+
+## Aprendizados: ela não repete o erro
+
+Pedido dele em 25/11/2026 (`aprendizados.js`). Duas metades:
+
+- **O que deu errado é do código.** Toda ferramenta que volta com erro entra em `aprendizados/erros-de-ferramenta.md` no cofre, agrupada (número e caminho não contam) e com quantas vezes aconteceu. O que se repete volta no prompt como alerta.
+- **O jeito certo é dela.** Quando a fala dele parece uma correção ("não é isso", "tá errado", "eu te disse que…"), o prompt daquele turno manda ela fazer certo e gravar um aprendizado (`anotar_memoria`, pasta `aprendizados`): o erro, o jeito certo e o `quando:`.
+
+Toda lição volta em **toda** pergunta, no bloco "O QUE VOCÊ JÁ APRENDEU" (até 1.400 caracteres, as mais novas primeiro). Lição que só mora no disco não muda comportamento.
+
+## O cérebro no Obsidian
+
+Memória, aprendizados, conversas e skills são uma rede só. A nota `CEREBRO.md` liga os índices (`MEMORIA`, `APRENDIZADOS`, `CONVERSAS`); cada conversa salva termina com **Ligações** para as notas que ela abriu e os aprendizados que gravou naquela conversa. No grafo do Obsidian isso aparece como uma rede de neurônios conversando, e não como pastas soltas.
 
 ## A memória dela (cofre do Obsidian)
 
