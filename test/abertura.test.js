@@ -13,6 +13,7 @@ const L = 1200;
 const A = 800;
 const arcos = [];
 let curvas = 0;
+const pausas = [];
 const ctx = {
   setTransform() {}, clearRect() {}, beginPath() {}, moveTo() {}, stroke() {}, fill() {},
   lineTo(x, y) {
@@ -77,6 +78,8 @@ global.window = {
   addEventListener() {},
   removeEventListener() {},
   matchMedia: () => ({ matches: false }),
+  // a esfera do painel: a abertura pausa e devolve
+  esfera: { pausa: (sim) => pausas.push(sim) },
   ev: {
     abertura: async () => ({ mostrar: true, saudacao: "Bom dia, Teste", data: "quinta-feira, 26 de novembro", rodape: "340 neurônios", neuronios: 340, nasceram: 6 }),
   },
@@ -93,12 +96,15 @@ eval(fs.readFileSync(path.join(__dirname, "..", "renderer", "abertura.js"), "utf
 
   // roda até ela terminar sozinha, de 1/60 s em 1/60 s
   let fim = null;
+  const tempos = []; // ms de JavaScript por quadro (o canvas aqui é falso: é só a conta)
   for (let i = 0; i < 60 * 6 && quadro; i++) {
     const fn = quadro;
     quadro = null;
     agora = i * (1000 / 60);
     arcos.length = 0;
+    const t0 = process.hrtime.bigint();
     fn(agora);
+    tempos.push(Number(process.hrtime.bigint() - t0) / 1e6);
     if (camada.style.opacity === "0") {
       fim = agora;
       break;
@@ -121,8 +127,15 @@ eval(fs.readFileSync(path.join(__dirname, "..", "renderer", "abertura.js"), "utf
   const meio = (topoEsfera + fimTexto) / 2;
   assert.ok(Math.abs(meio - A / 2) < A * 0.06, `conjunto fora do centro na vertical: meio em ${meio.toFixed(0)} de ${A}`);
 
+  assert.deepStrictEqual(pausas, [true, false], "a esfera pausa enquanto a abertura cobre a tela, e volta no fim");
   assert.ok(curvas > 100, `as ligações deviam ser curvas: só ${curvas} curvas desenhadas`);
-  console.log(`✓ abertura: ${curvas} curvas · termina em ${(fim / 1000).toFixed(2)} s · centro do conjunto ${centroX.toFixed(0)},${meio.toFixed(0)} numa janela ${L}×${A}`);
+  // 27/11/2026: a conta de cada quadro tem de caber folgada nos 16 ms de um
+  // quadro a 60 Hz, sobrando para o desenho de verdade. A versão das curvas
+  // de 26/11 criava dezenas de milhares de objetos por quadro.
+  const quentes = tempos.slice(5).sort((a, b) => a - b); // os primeiros aquecem o JIT
+  const mediana = quentes[quentes.length >> 1];
+  assert.ok(mediana < 4, `a conta de um quadro levou ${mediana.toFixed(2)} ms (mediana): pesada demais`);
+  console.log(`✓ abertura: ${curvas} curvas · ${mediana.toFixed(2)} ms de conta por quadro · termina em ${(fim / 1000).toFixed(2)} s · centro do conjunto ${centroX.toFixed(0)},${meio.toFixed(0)} numa janela ${L}×${A}`);
 })().catch((err) => {
   console.error(err);
   process.exit(1);

@@ -319,6 +319,18 @@ assert.ok(neuralQ.segmentos < holo.segmentos, `o neural tira a casca decorativa:
 assert.strictEqual(window.esfera.modelo("inexistente"), "holografica", "modelo desconhecido vira holográfica");
 assert.strictEqual(window.esfera.modelo(), "holografica");
 
+// --- pausada (27/11/2026): coberta pela abertura do dia, não desenha e dorme mais ---
+{
+  const antes = chamadas.segmentos;
+  window.esfera.pausa(true);
+  laco(20000);
+  assert.strictEqual(chamadas.segmentos, antes, "pausada, a esfera não desenha nada");
+  assert.ok(agendamento.ms >= 400, `pausada, ela dorme ~500 ms entre olhadas (pediu ${agendamento.ms} ms)`);
+  window.esfera.pausa(false);
+  laco(20600);
+  assert.ok(chamadas.segmentos > antes, "despausada, volta a desenhar");
+}
+
 
 console.log("✓ esfera holográfica: geometria, estados, tema e custo de desenho");
 console.log(

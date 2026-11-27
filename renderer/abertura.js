@@ -67,9 +67,12 @@
     document.body.appendChild(camada);
 
     let fim = false;
+    // A esfera do painel fica coberta: não precisa desenhar por baixo.
+    window.esfera?.pausa?.(true);
     const fechar = () => {
       if (fim) return;
       fim = true;
+      window.esfera?.pausa?.(false);
       camada.style.opacity = "0";
       setTimeout(() => camada.remove(), 450);
       window.removeEventListener("keydown", fechar);
@@ -116,100 +119,115 @@
     const cor = (a) => `rgba(${rgb[0]},${rgb[1]},${rgb[2]},${a})`;
     const NASCEU = (a) => `rgba(120,255,190,${a})`;
 
+    // DESEMPENHO (27/11/2026, "deixa a animação mais fluida"). A versão das
+    // curvas criava, A CADA QUADRO, um objeto por neurônio, duas listas
+    // filtradas, e ~470 ligações × 9 amostras × 5 objetos de ponto — dezenas
+    // de milhares de objetos por quadro, e o coletor de lixo travava a
+    // animação no meio. Agora tudo mora em Float32Array criados uma vez, as
+    // contas são feitas no lugar, e o giro usa cos/sen somados (sem
+    // trigonometria por neurônio). O desenho é o mesmo.
+
     // Uma camada por grupo, de cima para baixo, como a rede é montada.
     const total = Math.max(40, Math.min(400, d.neuronios || 334));
     const novos = Math.min(total, d.nasceram || 0);
     const camadas = [0.22, 0.38, 0.3, 0.1]; // sentidos, inter, motores, o resto
-    const pontos = [];
+    // por neurônio, fixo: posição solta, ponto na esfera (sem giro), quando nasce
+    const X0 = new Float32Array(total), Y0 = new Float32Array(total);
+    const BX = new Float32Array(total), BY = new Float32Array(total), BZ = new Float32Array(total);
+    const NASCE = new Float32Array(total);
+    const NOVO = new Uint8Array(total);
+    // por neurônio, a cada quadro
+    const PX = new Float32Array(total), PY = new Float32Array(total), PZ = new Float32Array(total);
+    const EX = new Float32Array(total), EY = new Float32Array(total), VIS = new Float32Array(total);
     let k = 0;
     camadas.forEach((frac, c) => {
       const n = c === 3 ? total - k : Math.round(total * frac);
       for (let i = 0; i < n; i++, k++) {
         const ang = Math.random() * Math.PI * 2;
         const raio = 0.18 + Math.random() * 0.3;
-        pontos.push({
-          // solto em volta do centro, camada por camada de cima para baixo
-          x0: 0.5 + Math.cos(ang) * raio * 0.75,
-          y0: 0.5 + ((c - 1.5) / 1.5) * 0.22 + (Math.random() - 0.5) * 0.12,
-          // destino: a casca de uma esfera no centro (projeção de um ponto sorteado)
-          lat: Math.asin(Math.random() * 2 - 1),
-          lon: Math.random() * Math.PI * 2,
-          nasce: 0.02 + (k / total) * 0.6, // quando aparece (s)
-          novo: k >= total - novos,
-        });
+        // solto em volta do centro, camada por camada de cima para baixo
+        X0[k] = 0.5 + Math.cos(ang) * raio * 0.75;
+        Y0[k] = 0.5 + ((c - 1.5) / 1.5) * 0.22 + (Math.random() - 0.5) * 0.12;
+        // destino: a casca de uma esfera no centro (um ponto sorteado nela)
+        const lat = Math.asin(Math.random() * 2 - 1);
+        const lon = Math.random() * Math.PI * 2;
+        BX[k] = Math.cos(lat) * Math.cos(lon);
+        BY[k] = Math.sin(lat);
+        BZ[k] = Math.cos(lat) * Math.sin(lon);
+        NASCE[k] = 0.02 + (k / total) * 0.6; // quando aparece (s)
+        NOVO[k] = k >= total - novos ? 1 : 0;
       }
     });
-    const ligacoes = [];
-    for (let i = 0; i < total * 1.4; i++) {
+    const nLig = Math.round(total * 1.4);
+    const LA = new Uint16Array(nLig), LB = new Uint16Array(nLig);
+    const LQ = new Float32Array(nLig), LC = new Float32Array(nLig);
+    for (let i = 0; i < nLig; i++) {
       const a = (Math.random() * total) | 0;
-      const b = Math.min(total - 1, a + 1 + ((Math.random() * 40) | 0));
-      // o terceiro valor é quando a ligação começa a se desenhar; o quarto, a
-      // curvatura dela (um lado ou o outro, nunca reta)
-      const curva = (0.12 + Math.random() * 0.22) * (Math.random() < 0.5 ? -1 : 1);
-      ligacoes.push([a, b, 0.35 + Math.random() * 0.75, curva]);
+      LA[i] = a;
+      LB[i] = Math.min(total - 1, a + 1 + ((Math.random() * 40) | 0));
+      LQ[i] = 0.35 + Math.random() * 0.75; // quando a ligação começa a se desenhar
+      // a curvatura dela enquanto solta (um lado ou o outro, nunca reta)
+      LC[i] = (0.12 + Math.random() * 0.22) * (Math.random() < 0.5 ? -1 : 1);
+    }
+    const LPROG = new Float32Array(nLig); // quanto de cada ligação já está desenhado (0 = nada)
+
+    // LIGAÇÕES CURVAS. Soltas, cada uma é uma Bézier quadrática de lado;
+    // conforme a esfera fecha, vira o ARCO DA ESFERA entre os dois neurônios
+    // (círculo máximo, projetado). O ponto da ligação `i` em `u` sai em ox/oy.
+    let ox = 0, oy = 0;
+    let fecha = 0, cg = 1, sg = 0;
+    function pontoDaLigacao(i, u) {
+      const a = LA[i], b = LB[i];
+      const px = PX[a], py = PY[a], qx = PX[b], qy = PY[b];
+      const dx = qx - px, dy = qy - py;
+      const cxL = (px + qx) / 2 - dy * LC[i], cyL = (py + qy) / 2 + dx * LC[i];
+      const v = 1 - u;
+      let sx = v * v * px + 2 * v * u * cxL + u * u * qx;
+      let sy = v * v * py + 2 * v * u * cyL + u * u * qy;
+      if (fecha > 0) {
+        // o arco: interpola na esfera (sem giro), normaliza, gira e projeta
+        let x = BX[a] + (BX[b] - BX[a]) * u, y = BY[a] + (BY[b] - BY[a]) * u, z = BZ[a] + (BZ[b] - BZ[a]) * u;
+        const m = Math.sqrt(x * x + y * y + z * z);
+        if (m > 1e-3) {
+          x /= m; y /= m; z /= m;
+          const xr = x * cg - z * sg, zr = z * cg + x * sg;
+          const f = 3 / (3 + zr);
+          // o arco é corrigido para as pontas de agora (que ainda estão chegando)
+          const ax = cx + xr * R * f - (EX[a] + (EX[b] - EX[a]) * u) + px + dx * u;
+          const ay = cy + y * R * f - (EY[a] + (EY[b] - EY[a]) * u) + py + dy * u;
+          sx += (ax - sx) * fecha;
+          sy += (ay - sy) * fecha;
+        }
+      }
+      ox = sx;
+      oy = sy;
     }
 
-    // LIGAÇÕES CURVAS (26/11: "as linhas que ligam os neurônios mais lisas e
-    // curvas"). Cada ligação é uma Bézier quadrática: o ponto de controle sai
-    // do meio da reta, de lado, e — quando a esfera já fechou — também para
-    // fora do centro, para a curva acompanhar a casca em vez de cortá-la.
-    const controle = (p, q, curva, fecha) => {
-      const mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
-      const dx = q.x - p.x, dy = q.y - p.y;
-      const ox = mx - cx, oy = my - cy;
-      return {
-        x: mx - dy * curva + ox * 0.35 * fecha,
-        y: my + dx * curva + oy * 0.35 * fecha,
-      };
-    };
-    // ponto da curva em u (0..1)
-    const naCurva = (p, c, q, u) => {
-      const v = 1 - u;
-      return { x: v * v * p.x + 2 * v * u * c.x + u * u * q.x, y: v * v * p.y + 2 * v * u * c.y + u * u * q.y };
-    };
-    // ponto do arco da esfera (círculo máximo) entre dois neurônios, em u,
-    // já projetado como a esfera é projetada
-    const naEsfera = (a, b, u) => {
-      let x = a[0] + (b[0] - a[0]) * u, y = a[1] + (b[1] - a[1]) * u, z = a[2] + (b[2] - a[2]) * u;
-      const m = Math.hypot(x, y, z);
-      if (m < 1e-3) return null; // opostos: sem arco único
-      x /= m; y /= m; z /= m;
-      const f = 3 / (3 + z);
-      return { x: cx + x * R * f, y: cy + y * R * f };
-    };
-    // A ligação em u: a Bézier solta virando o arco da esfera, pela fase `fecha`.
-    const caminhoDaLigacao = (p, q, c, u, fecha) => {
-      const solta = naCurva(p, c, q, u);
-      if (fecha <= 0) return solta;
-      // As pontas (p, q) já estão na posição misturada; o arco é mistura do meio.
-      const arco = naEsfera(p.u, q.u, u);
-      if (!arco) return solta;
-      // a reta entre as pontas reais, para corrigir o arco às pontas de agora
-      const ex = { x: p.x + (q.x - p.x) * u, y: p.y + (q.y - p.y) * u };
-      const a0 = naEsfera(p.u, q.u, 0), a1 = naEsfera(p.u, q.u, 1);
-      const base = { x: a0.x + (a1.x - a0.x) * u, y: a0.y + (a1.y - a0.y) * u };
-      const naCasca = { x: ex.x + (arco.x - base.x), y: ex.y + (arco.y - base.y) };
-      return { x: solta.x + (naCasca.x - solta.x) * fecha, y: solta.y + (naCasca.y - solta.y) * fecha };
-    };
-    // Traça a curva de 0 até `ate` com quadráticas pelos pontos médios das
-    // amostras: liso, sem quina, e com poucas chamadas.
-    const AMOSTRAS = 8;
-    const tracarSuave = (ponto, ate) => {
-      const pts = [];
-      for (let i = 0; i <= AMOSTRAS; i++) pts.push(ponto((i / AMOSTRAS) * ate));
-      ctx.moveTo(pts[0].x, pts[0].y);
-      for (let i = 1; i < pts.length - 1; i++) {
-        const mx = (pts[i].x + pts[i + 1].x) / 2, my = (pts[i].y + pts[i + 1].y) / 2;
-        ctx.quadraticCurveTo(pts[i].x, pts[i].y, mx, my);
+    // Traça de 0 até `ate` com quadráticas pelos pontos médios das amostras:
+    // liso, sem quina. As amostras vão para um buffer reaproveitado.
+    const AMOSTRAS = 7;
+    const AM = new Float32Array((AMOSTRAS + 1) * 2);
+    function tracar(i, ate) {
+      for (let s = 0; s <= AMOSTRAS; s++) {
+        pontoDaLigacao(i, (s / AMOSTRAS) * ate);
+        AM[s * 2] = ox;
+        AM[s * 2 + 1] = oy;
       }
-      const fim = pts[pts.length - 1];
-      ctx.quadraticCurveTo(fim.x, fim.y, fim.x, fim.y);
-    };
+      ctx.moveTo(AM[0], AM[1]);
+      for (let s = 1; s < AMOSTRAS; s++) {
+        ctx.quadraticCurveTo(AM[s * 2], AM[s * 2 + 1], (AM[s * 2] + AM[s * 2 + 2]) / 2, (AM[s * 2 + 1] + AM[s * 2 + 3]) / 2);
+      }
+      ctx.quadraticCurveTo(AM[AMOSTRAS * 2], AM[AMOSTRAS * 2 + 1], AM[AMOSTRAS * 2], AM[AMOSTRAS * 2 + 1]);
+    }
 
     const t0 = performance.now();
     const DURACAO = 2.6;
     let textoMostrado = false;
     const suave = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+    // As cores são texto: montadas uma vez, não a cada quadro.
+    const COR_NEURONIO = cor(0.85), COR_NOVO = NASCEU(0.85), COR_SINAL = "rgba(255,255,255,.85)";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
 
     function quadro(agora) {
       if (fim) return;
@@ -218,78 +236,69 @@
       ctx.clearRect(0, 0, L, A);
       // os pontos soltos se medem pelo centro do conjunto, não da janela
       const dy = cy - A / 2;
-      const fecha = suave((t - 0.95) / 0.65); // 0 = solto, 1 = na esfera
+      fecha = suave((t - 0.95) / 0.65); // 0 = solto, 1 = na esfera
       const giro = t * 0.9;
+      cg = Math.cos(giro);
+      sg = Math.sin(giro);
 
-      const pos = pontos.map((p) => {
-        const cl = Math.cos(p.lat);
-        const x3 = cl * Math.cos(p.lon + giro), y3 = Math.sin(p.lat), z3 = cl * Math.sin(p.lon + giro);
-        const f = 3 / (3 + z3);
-        const ex = cx + x3 * R * f, ey = cy + y3 * R * f;
-        return {
-          x: p.x0 * L + (ex - p.x0 * L) * fecha,
-          y: p.y0 * A + dy + (ey - p.y0 * A - dy) * fecha,
-          z: z3 * fecha,
-          u: [x3, y3, z3], // o ponto na esfera (raio 1), para as ligações seguirem a casca
-          vis: suave((t - p.nasce) / 0.18),
-          novo: p.novo,
-        };
-      });
+      for (let i = 0; i < total; i++) {
+        const xr = BX[i] * cg - BZ[i] * sg, zr = BZ[i] * cg + BX[i] * sg;
+        const f = 3 / (3 + zr);
+        const ex = cx + xr * R * f, ey = cy + BY[i] * R * f;
+        EX[i] = ex;
+        EY[i] = ey;
+        const lx = X0[i] * L, ly = Y0[i] * A + dy;
+        PX[i] = lx + (ex - lx) * fecha;
+        PY[i] = ly + (ey - ly) * fecha;
+        PZ[i] = zr * fecha;
+        VIS[i] = suave((t - NASCE[i]) / 0.18);
+      }
 
-      // ligações se desenhando, como curvas. Soltas, cada uma é uma Bézier de
-      // lado; conforme a esfera fecha, ela vira o ARCO DA ESFERA entre os dois
-      // neurônios (círculo máximo, projetado). 26/11/2026: a Bézier sozinha
-      // ainda cortava a esfera por dentro — "as ligações devem seguir o formato
-      // da esfera". A curva é amostrada e desenhada com quadráticas pelos
-      // pontos médios, então não há quina em lugar nenhum.
+      // ligações se desenhando
       ctx.lineWidth = 0.8;
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
-      ctx.strokeStyle = cor(0.18 * (1 - fecha * 0.45));
+      ctx.strokeStyle = cor((0.18 * (1 - fecha * 0.45)).toFixed(3));
       ctx.beginPath();
-      const curvas = [];
-      for (const [a, b, quando, curva] of ligacoes) {
-        const prog = suave((t - quando) / 0.3);
-        const p = pos[a], q = pos[b];
+      for (let i = 0; i < nLig; i++) {
+        const a = LA[i], b = LB[i];
+        const prog = suave((t - LQ[i]) / 0.3);
         // a ponta escondida atrás da esfera não tem neurônio desenhado
-        if (prog <= 0 || p.vis < 1 || q.vis < 1 || p.z > 0.6 || q.z > 0.6) { curvas.push(null); continue; }
-        const c = controle(p, q, curva, 0);
-        const ponto = (u) => caminhoDaLigacao(p, q, c, u, fecha);
-        curvas.push(ponto);
-        tracarSuave(ponto, prog);
+        if (prog <= 0 || VIS[a] < 1 || VIS[b] < 1 || PZ[a] > 0.6 || PZ[b] > 0.6) {
+          LPROG[i] = 0;
+          continue;
+        }
+        LPROG[i] = prog;
+        tracar(i, prog);
       }
       ctx.stroke();
 
       // sinais correndo pelas curvas já prontas
-      ctx.fillStyle = "rgba(255,255,255,.85)";
+      ctx.fillStyle = COR_SINAL;
       ctx.beginPath();
-      for (let i = 0; i < ligacoes.length; i += 7) {
-        const quando = ligacoes[i][2];
-        const ponto = curvas[i];
-        if (!ponto || t < quando + 0.3) continue;
-        const u = ((t - quando) * 2 + i * 0.13) % 1;
-        const { x, y } = ponto(u);
-        ctx.moveTo(x + 1.3, y);
-        ctx.arc(x, y, 1.3, 0, Math.PI * 2);
+      for (let i = 0; i < nLig; i += 7) {
+        if (LPROG[i] < 1) continue;
+        pontoDaLigacao(i, ((t - LQ[i]) * 2 + i * 0.13) % 1);
+        ctx.moveTo(ox + 1.3, oy);
+        ctx.arc(ox, oy, 1.3, 0, Math.PI * 2);
       }
       ctx.fill();
 
-      // os neurônios
-      for (const [lista, pintor] of [[pos.filter((p) => !p.novo), cor], [pos.filter((p) => p.novo), NASCEU]]) {
-        ctx.fillStyle = pintor(0.85);
+      // os neurônios: duas passadas (os de sempre e os que nasceram), sem listas
+      for (let novo = 0; novo < 2; novo++) {
+        if (novo && !novos) break;
+        ctx.fillStyle = novo ? COR_NOVO : COR_NEURONIO;
         ctx.beginPath();
-        for (const p of lista) {
-          if (p.vis <= 0 || p.z > 0.6) continue;
-          const r = (1.2 + (1 - p.vis) * 3) * (p.novo ? 1.4 : 1);
-          ctx.moveTo(p.x + r, p.y);
-          ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+        for (let i = 0; i < total; i++) {
+          if (NOVO[i] !== novo || VIS[i] <= 0 || PZ[i] > 0.6) continue;
+          const r = (1.2 + (1 - VIS[i]) * 3) * (novo ? 1.4 : 1);
+          ctx.moveTo(PX[i] + r, PY[i]);
+          ctx.arc(PX[i], PY[i], r, 0, Math.PI * 2);
         }
         ctx.fill();
       }
 
       // a esfera se fecha: contorno e o núcleo acendendo
       if (fecha > 0) {
-        ctx.strokeStyle = cor(0.35 * fecha);
+        ctx.strokeStyle = cor((0.35 * fecha).toFixed(3));
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.arc(cx, cy, R * 1.06, 0, Math.PI * 2);

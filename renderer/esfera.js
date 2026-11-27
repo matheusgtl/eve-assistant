@@ -763,8 +763,12 @@
 
   // Parada, ela não precisa de 30 quadros por segundo — e é assim que ela
   // passa a maior parte do tempo.
+  // Pausada (27/11/2026): a abertura do dia cobre a janela inteira, e a esfera
+  // seguia desenhando por baixo, disputando o quadro com a animação. Pausada,
+  // ela acorda 2 vezes por segundo só para ver se já pode voltar.
+  let pausada = false;
   const alvoDeFps = () =>
-    estado !== "idle" || nivel > 0.01 ? perfil.fps : perfil.parado;
+    pausada ? 2 : estado !== "idle" || nivel > 0.01 ? perfil.fps : perfil.parado;
 
   // DORMIR entre quadros, em vez de acordar junto com a tela e desistir.
   // A versão antiga pedia requestAnimationFrame sempre e saía fora quando
@@ -787,7 +791,7 @@
   function laco(tempo) {
     quadroPedido = false;
     ultimoQuadro = performance.now();
-    desenhar(tempo);
+    if (!pausada) desenhar(tempo);
     agendar();
   }
 
@@ -797,6 +801,8 @@
 
   window.esfera = {
     estado: (e) => (estado = e || "idle"),
+    // Para de desenhar enquanto algo cobre a esfera (a abertura do dia).
+    pausa: (sim) => (pausada = !!sim),
     nivel: (v) => (nivel = Math.max(0, Math.min(1, v || 0))),
     tema: (cores) => {
       CORES = { ...CORES, ...(cores || {}) };
