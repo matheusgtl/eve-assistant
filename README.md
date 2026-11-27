@@ -184,6 +184,8 @@ Lição no prompt é pedido, não garantia: em 25/11/2026 ela respondeu "Tudo ce
 
 Memória, aprendizados, conversas e skills são uma rede só. A nota `CEREBRO.md` liga os índices (`MEMORIA`, `APRENDIZADOS`, `CONVERSAS`); cada conversa salva termina com **Ligações** para as notas que ela abriu e os aprendizados que gravou naquela conversa. No grafo do Obsidian isso aparece como uma rede de neurônios conversando, e não como pastas soltas.
 
+**Glossário (27/11/2026).** `GLOSSARIO.md` (`glossario.js`), ligado pelo `CEREBRO.md`, explica em português simples cada palavra que o cofre usa: fato, processo, assembleia, limiar, lembrança, fio, trava... É gerado a cada abertura e os números (limiares, tetos, validade das lembranças, iniciativas por dia) vêm das constantes do código, então não envelhece. Fica com `quando: nunca`, fora do índice que viaja nas perguntas. As conversas salvas têm título `# DD/MM/AAAA às HH:MM — Assunto`, e o índice `CONVERSAS.md` mostra o assunto no link (`[[arquivo|Assunto]]`), não o nome do arquivo.
+
 ## A memória dela (cofre do Obsidian)
 
 A memória dela mora **dentro do cofre que você já usa no Obsidian**, numa subpasta `E.V.E/`. Ela descobre o cofre sozinha pelo registro do Obsidian (`obsidian.json`) e usa o mais recentemente aberto; sem nenhum cofre, cria um próprio em `~/Documents/E.V.E`. Para mandar noutro lugar, `memoriaDir` no `config.json`.

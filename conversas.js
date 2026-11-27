@@ -102,6 +102,20 @@ function tituloDe(turnos) {
   return corte || "conversa";
 }
 
+/// O assunto escrito no título da nota ("# 27/11/2026 às 17:29 — Assunto"),
+/// sem a data. Null se a nota não tem título (aí o link mostra o arquivo).
+async function assuntoDoArquivo(arquivo) {
+  try {
+    const texto = await fs.readFile(arquivo, "utf8");
+    const m = texto.match(/^# (.+)$/m);
+    if (!m) return null;
+    const assunto = m[1].replace(/^\d{2}\/\d{2}\/\d{4}(?: às \d{2}:\d{2})?\s*[—-]\s*/, "").replace(/[|\[\]]/g, " ").trim();
+    return assunto || null;
+  } catch {
+    return null;
+  }
+}
+
 function nomeDoArquivo(turnos) {
   const d = new Date(Date.parse(turnos[0].hora || "") || Date.now());
   const data = `${d.getFullYear()}-${doisDigitos(d.getMonth() + 1)}-${doisDigitos(d.getDate())}`;
@@ -126,7 +140,8 @@ function markdown(turnos, nomeDela, ligacoes = []) {
     "tags: [conversa]",
     "---",
     "",
-    `# ${titulo[0].toUpperCase() + titulo.slice(1)}`,
+    // 27/11/2026: ele pediu títulos com a data e o assunto, "de forma bonita".
+    `# ${doisDigitos(d.getDate())}/${doisDigitos(d.getMonth() + 1)}/${d.getFullYear()} às ${hhmm(d)} — ${titulo[0].toUpperCase() + titulo.slice(1)}`,
     "",
     `*${d.toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long", year: "numeric" })}, ${hhmm(d)}–${hhmm(fim)}*`,
     "",
@@ -232,7 +247,10 @@ class Conversas {
           linhas.push("", `## ${mesNome[0].toUpperCase() + mesNome.slice(1)}`, "");
           mesAtual = mesNome;
         }
-        linhas.push(`- **${dia}/${mes}, ${hh}:${mm}** — [[Conversas/${f.replace(/\.md$/, "")}]]`);
+        // O link mostra o assunto, não o nome do arquivo (27/11/2026).
+        const assunto = await assuntoDoArquivo(path.join(this.pasta, f));
+        const nome = f.replace(/\.md$/, "");
+        linhas.push(`- **${dia}/${mes}, ${hh}:${mm}** — [[Conversas/${nome}${assunto ? `|${assunto}` : ""}]]`);
       }
       await fs.writeFile(path.join(this.pasta, "CONVERSAS.md"), linhas.join("\n") + "\n");
     } catch (err) {

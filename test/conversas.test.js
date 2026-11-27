@@ -159,7 +159,7 @@ function continuar() {
     assert.match(texto, /^---\nquando: nunca/, "conversa não pode entrar no contexto dela");
     assert.match(texto, /tags: \[conversa\]/);
     assert.match(texto, /turnos: 2/, "dois turnos: a pergunta e a resposta inteira");
-    assert.match(texto, /^# Quais os avisos desse mês\?$/m, "um H1 com o título");
+    assert.match(texto, /^# \d{2}\/\d{2}\/2026 às \d{2}:\d{2} — Quais os avisos desse mês\?$/m, "um H1 com data, hora e título");
     assert.match(texto, /^### Matheus · \d{2}:\d{2}$/m, "cabeçalho por turno");
     assert.match(texto, /^### E\.V\.E · \d{2}:\d{2}$/m);
     // A resposta dela inteira, com a lista de pé.
@@ -189,7 +189,10 @@ function continuar() {
     assert.match(indice, /# Conversas/);
     assert.match(indice, /quando: nunca/, "o índice também fica fora do contexto dela");
     for (const f of todos) {
-      assert.ok(indice.includes(`[[Conversas/${f.replace(/\.md$/, "")}]]`), `${f} não está no índice`);
+      // O link mostra o assunto (27/11/2026), não o nome do arquivo.
+      const titulo = fs.readFileSync(path.join(pasta, f), "utf8").match(/^# (\d{2}\/\d{2}\/\d{4} às \d{2}:\d{2}) — (.+)$/m);
+      assert.ok(titulo, `${f}: o título leva data, hora e assunto`);
+      assert.ok(indice.includes(`[[Conversas/${f.replace(/\.md$/, "")}|${titulo[2]}]]`), `${f} não está no índice com o assunto`);
     }
     assert.match(indice, /## Novembro de 2026/, "agrupado por mês");
 

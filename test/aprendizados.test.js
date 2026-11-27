@@ -89,7 +89,7 @@ const { Aprendizados, assinatura, pareceCorrecao, resumoDaLicao, gerarCerebro } 
   assert.match(fs.readFileSync(path.join(pasta, "aprendizados", "APRENDIZADOS.md"), "utf8"), /\[\[aprendizados\/evento-sem-hora\]\]/);
   await gerarCerebro(pasta);
   const cerebro = fs.readFileSync(path.join(pasta, "CEREBRO.md"), "utf8");
-  for (const l of ["[[MEMORIA]]", "[[APRENDIZADOS]]", "[[CONVERSAS]]"]) assert.ok(cerebro.includes(l), l);
+  for (const l of ["[[MEMORIA]]", "[[APRENDIZADOS]]", "[[CONVERSAS]]", "[[GLOSSARIO]]"]) assert.ok(cerebro.includes(l), l);
 
   // 8. Sem pasta, nada quebra.
   assert.strictEqual(await new Aprendizados({}).registrarFalha({ ferramenta: "x", erro: "y" }), null);
