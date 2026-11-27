@@ -97,4 +97,77 @@ const ERRO_FINDER = "erro: Command failed: /usr/bin/osascript -e tell applicatio
   assert.match(aviso, /Nada foi feito/);
 }
 
-console.log("✓ honestidade: falha de ferramenta não vira \"feito\"");
+// 8. Log de 27/11/2026, 17:29–17:40: três "Correção: nem tudo deu certo" que
+// eram mentira — a falha já tinha sido resolvida no mesmo turno.
+const { resultadoDeFerramenta } = require("../registro.js");
+const ERRO_PARECIDA = JSON.stringify({
+  erro: 'já existe "CEREBRO" sobre este assunto. Reescreva ELA com anotar_memoria (nome "CEREBRO", pasta "CEREBRO"), juntando o que é novo ao texto abaixo — não crie outra nota. Se for mesmo outro assunto, chame de novo com o mesmo nome e eu crio.',
+});
+const ERRO_COFRE = JSON.stringify({
+  error: "Não escreva no cofre da memória com write_file: isso pula o backup, o frontmatter e o índice. Para gravar ou atualizar uma nota, use anotar_memoria — e se ele recusou por apagar demais, chame-o DE NOVO com o texto que ele devolveu mais o seu acréscimo.",
+  use: "anotar_memoria",
+});
+const OK = JSON.stringify({ ok: true });
+
+// 8a. A memória recusou o nome novo e mandou reescrever "CEREBRO"; ela reescreveu.
+{
+  const h = new Honestidade();
+  h.chamou("anotar_memoria", { nome: "cerebro-da-sexta-feira" });
+  h.resultado("anotar_memoria", resultadoDeFerramenta(ERRO_PARECIDA));
+  h.chamou("anotar_memoria", { nome: "CEREBRO" });
+  h.resultado("anotar_memoria", resultadoDeFerramenta(OK));
+  assert.strictEqual(h.aviso("Reescrevi o CEREBRO com as ligações novas."), null, "fez o que a recusa pediu");
+}
+
+// 8b. write_file no cofre foi barrado e mandou usar anotar_memoria na mesma nota.
+{
+  const h = new Honestidade();
+  h.chamou("write_file", { filepath: "/Users/x/Obsidian/Sexta-Feira/processos/cerebro.md" });
+  h.resultado("write_file", resultadoDeFerramenta(ERRO_COFRE));
+  h.chamou("anotar_memoria", { nome: "CEREBRO" });
+  h.resultado("anotar_memoria", resultadoDeFerramenta(OK));
+  assert.strictEqual(h.aviso("Atualizei a nota do cérebro."), null);
+}
+
+// 8c. Comando que só procura (find, ls) e falhou é consulta, não ação.
+{
+  const h = new Honestidade();
+  h.chamou("run_command", { command: "find ~/.memoria -type f" });
+  h.resultado("run_command", { ok: false, texto: "erro: Command failed: find ~/.memoria -type f find: No such file or directory" });
+  h.chamou("run_command", { command: "ls -la ~/x | head -5" });
+  h.resultado("run_command", { ok: false, texto: "erro: No such file" });
+  assert.strictEqual(h.aviso("Renomeei os títulos das conversas."), null);
+}
+
+// 8d. Mas a trava continua apertada: o desvio só vale para o alvo que a
+// recusa indicou, e comando que mexe em algo continua sendo ação.
+{
+  const h = new Honestidade();
+  h.chamou("write_file", { filepath: "/Users/x/Obsidian/Sexta-Feira/processos/cerebro.md" });
+  h.resultado("write_file", resultadoDeFerramenta(ERRO_COFRE));
+  h.chamou("anotar_memoria", { nome: "outra-nota" });
+  h.resultado("anotar_memoria", resultadoDeFerramenta(OK));
+  assert.ok(h.aviso("Atualizei a nota do cérebro."), "gravou outra nota: a falha continua");
+
+  const h2 = new Honestidade();
+  h2.chamou("anotar_memoria", { nome: "cerebro-da-sexta-feira" });
+  h2.resultado("anotar_memoria", resultadoDeFerramenta(ERRO_PARECIDA));
+  assert.ok(h2.aviso("Anotei."), "recusada e nunca refeita: a falha continua");
+
+  for (const command of ["find ~ -name '*.tmp' -delete", "find . -exec rm {} \\;", "ls > lista.txt", "ls && rm a", "cat a | tee b", "rm -rf x", "mv a b"]) {
+    const h3 = new Honestidade();
+    h3.chamou("run_command", { command });
+    h3.resultado("run_command", { ok: false, texto: "erro: x" });
+    assert.ok(h3.aviso("Feito."), `comando que age continua sendo ação: ${command}`);
+  }
+
+  // e um trash_file que deu certo não salva outro que falhou
+  const h4 = new Honestidade();
+  h4.chamou("trash_file", { filepath: "~/a.dmg" });
+  h4.resultado("trash_file", { ok: false, texto: "erro: timeout" });
+  h4.chamou("trash_file", { filepath: "~/b.dmg" });
+  h4.resultado("trash_file", { ok: true, texto: "ok" });
+  assert.ok(h4.aviso("Removi os dois."));
+}
+
+console.log("✓ honestidade: falha de ferramenta não vira \"feito\"; falha resolvida não vira \"não consegui\"");

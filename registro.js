@@ -50,7 +50,15 @@ function resultadoDeFerramenta(resultado) {
     }
   }
   if (r?.needs_confirmation) return { ok: true, texto: "pediu o sim" };
-  if (r?.error || r?.erro) return { ok: false, texto: "erro: " + curto(r.error || r.erro, 140) };
+  if (r?.error || r?.erro) {
+    const erro = String(r.error || r.erro);
+    // A recusa que diz o caminho certo ("use anotar_memoria", "reescreva o
+    // nome X"): a honestidade usa para saber se ela seguiu (27/11/2026).
+    const nome = erro.match(/\(nome "([^"]+)"/)?.[1] || null;
+    const falhou = { ok: false, texto: "erro: " + curto(erro, 140) };
+    if (r.use || nome) falhou.desvio = { ferramenta: r.use || null, alvo: nome };
+    return falhou;
+  }
   return { ok: true, texto: "ok" };
 }
 

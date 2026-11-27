@@ -9,7 +9,9 @@
 // O código sabe o que de fato aconteceu: cada ferramenta de AÇÃO que voltou
 // com erro e não deu certo depois com o mesmo alvo. No fim do turno, se a
 // resposta dela não reconhece nenhuma falha, o código acrescenta a verdade.
-// Consulta que falha (busca, leitura) não entra: não é algo que ela "fez".
+// Consulta que falha (busca, leitura, comando que só olha) não entra: não é
+// algo que ela "fez". E falha que ela resolveu no mesmo turno — seguindo o
+// caminho que a própria recusa indicou — também não (27/11/2026).
 
 /// Ferramentas que FAZEM algo no mundo, com o nome que vai no aviso.
 const ACOES = {
@@ -48,6 +50,26 @@ function alvoDe(args = {}) {
   return curto.length > 60 ? curto.slice(0, 57) + "…" : curto;
 }
 
+/// O alvo para comparar tentativas: "cerebro.md", "CEREBRO" e
+/// "processos/cerebro" são a mesma nota.
+function chave(alvo) {
+  return String(alvo || "")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().split("/").pop().replace(/\.md$/, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+
+// Comando que só olha (procura, lista, lê). Se falhou, é consulta que falhou,
+// como read_file — não algo que ela "fez" (log de 27/11/2026, 17:39: um
+// `find ~/.memoria` sem resultado virou "Não consegui rodar o comando").
+// Qualquer coisa que possa mexer (redirecionar, encadear, -delete, -exec)
+// continua sendo ação.
+const SO_OLHA = new Set(["find", "ls", "cat", "head", "tail", "grep", "rg", "wc", "stat", "file", "du", "df", "pwd", "which", "mdfind", "echo", "tree", "sort", "uniq", "cut"]);
+function soOlha(comando) {
+  const c = String(comando || "").trim();
+  if (!c || /[;&>`]|\$\(|\s-(?:delete|exec|execdir|ok|okdir|fprint\w*)\b/.test(c)) return false;
+  return c.split("|").every((parte) => SO_OLHA.has(parte.trim().split(/\s+/)[0]));
+}
+
 /// A resposta dela já admite que algo deu errado?
 const ADMITE =
   /n[ãa]o (?:consegui|deu|foi poss[íi]vel|funcionou|rolou)|falh(?:ou|aram|a)|\berro\b|deu errado|n[ãa]o saiu|tentei,? mas|sem sucesso|n[ãa]o (?:removi|apaguei|movi|criei|gravei|mandei)/i;
@@ -70,8 +92,9 @@ class Honestidade {
     this.chamadas = [];
   }
 
-  chamou(nome, args) {
-    this.chamadas.push({ nome, alvo: alvoDe(args), ok: null, motivo: "" });
+  chamou(nome, args = {}) {
+    const consulta = nome === "run_command" && soOlha(args.command);
+    this.chamadas.push({ nome, alvo: alvoDe(args), ok: null, motivo: "", consulta, desvio: null });
   }
 
   /// `r` é o registro.resultadoDeFerramenta: { ok, texto }.
@@ -80,15 +103,27 @@ class Honestidade {
     if (!c) return;
     c.ok = !!r?.ok;
     c.motivo = c.ok ? "" : motivoDe(r?.texto);
+    if (!c.ok && r?.desvio) c.desvio = r.desvio;
+  }
+
+  /// Uma chamada posterior resolveu esta falha? Ou a mesma ação no mesmo
+  /// alvo deu certo, ou a recusa indicou outro caminho (outra ferramenta ou
+  /// outra nota) e ela seguiu esse caminho, com sucesso, no alvo indicado.
+  resolvida(c, depois) {
+    const ferramenta = c.desvio?.ferramenta || c.nome;
+    const alvo = chave(c.desvio?.alvo || c.alvo);
+    return depois.some(
+      (d) =>
+        d.ok &&
+        ((d.nome === c.nome && d.alvo === c.alvo) ||
+          (c.desvio && d.nome === ferramenta && chave(d.alvo) === alvo))
+    );
   }
 
   /// Ações que falharam e não deram certo depois, no mesmo alvo.
   pendentes() {
     return this.chamadas.filter(
-      (c, i) =>
-        c.ok === false &&
-        ACOES[c.nome] &&
-        !this.chamadas.slice(i + 1).some((d) => d.nome === c.nome && d.alvo === c.alvo && d.ok)
+      (c, i) => c.ok === false && ACOES[c.nome] && !c.consulta && !this.resolvida(c, this.chamadas.slice(i + 1))
     );
   }
 
@@ -103,7 +138,7 @@ class Honestidade {
     const resto = falhas.length > 4 ? ` e mais ${falhas.length - 4}` : "";
     // "O resto foi feito" só quando alguma AÇÃO deu certo: senão o aviso que
     // corrige a mentira mentiria também.
-    const algumaFeita = this.chamadas.some((c) => c.ok && ACOES[c.nome]);
+    const algumaFeita = this.chamadas.some((c) => c.ok && ACOES[c.nome] && !c.consulta);
     return (
       `Correção: nem tudo deu certo. Não consegui ${itens.join("; ")}${resto}. ` +
       (algumaFeita ? "O resto foi feito." : "Nada foi feito.") +
@@ -112,4 +147,4 @@ class Honestidade {
   }
 }
 
-module.exports = { Honestidade, reconheceFalha, alvoDe, motivoDe, ACOES };
+module.exports = { Honestidade, reconheceFalha, alvoDe, motivoDe, soOlha, chave, ACOES };
