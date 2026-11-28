@@ -77,11 +77,17 @@ async function pedir(chave, metodo, caminho, corpo) {
 /// Aceita o id puro, com ou sem hífens, ou o link inteiro que ele copia do
 /// Notion ("https://www.notion.so/Minha-pagina-1a2b…"). Null se não houver id.
 function idDe(texto) {
-  const t = String(texto || "");
-  const achados = t.replace(/-/g, "").match(/[0-9a-f]{32}/gi);
-  if (!achados) return null;
-  const h = achados[achados.length - 1].toLowerCase(); // no link, o id é o fim
-  return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  const t = String(texto || "").trim();
+  const formatar = (h) => `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
+  // UUID com hífens, em qualquer lugar.
+  const uuid = t.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+  if (uuid) return uuid[0].toLowerCase();
+  // No link, o id são os 32 últimos caracteres do último pedaço do caminho.
+  // 27/11/2026: "Meu-Dashboard-253ea19b…" — tirando os hífens, o "d" de
+  // Dashboard grudava no id e o primeiro bloco de 32 saía errado.
+  const pedaco = t.split(/[?#]/)[0].replace(/\/+$/, "").split("/").pop().replace(/-/g, "");
+  const fim = pedaco.match(/([0-9a-f]{32})$/i);
+  return fim ? formatar(fim[1].toLowerCase()) : null;
 }
 
 const textoRico = (lista) => (Array.isArray(lista) ? lista.map((r) => r.plain_text || "").join("") : "");

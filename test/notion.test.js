@@ -72,6 +72,10 @@ servidor.listen(0, async () => {
     assert.strictEqual(idDe(PAG), comHifens(PAG));
     assert.strictEqual(idDe(`https://www.notion.so/meu/Estudos-de-Python-${PAG}?pvs=4`), comHifens(PAG));
     assert.strictEqual(idDe("estudos"), null);
+    // 27/11/2026: palavra do título terminando em letra hexadecimal ("Dashboard")
+    assert.strictEqual(idDe(`https://app.notion.com/p/Meu-Dashboard-${PAG}`), comHifens(PAG));
+    assert.strictEqual(idDe(`https://app.notion.com/p/${PAG}`), comHifens(PAG));
+    assert.strictEqual(idDe(comHifens(PAG)), comHifens(PAG));
 
     const n = new Notion(CHAVE);
     assert.deepStrictEqual(await n.testar(), { nome: "Sexta-Feira" });
@@ -113,6 +117,30 @@ servidor.listen(0, async () => {
     assert.strictEqual((await chamar({ consulta: "python" })).resultados.length, 2);
     assert.match((await chamar({ consulta: "nada aqui" })).aviso, /compartilhou com a integração/);
     assert.match((await chamar({ id: PAG })).texto, /revisar dicionários/);
+
+    // Log de 27/11/2026, 23:09: a busca devolvia o `url` de cada página e ela
+    // lia com read_webpage (12 vezes, 16 s cada, a página de login do Notion)
+    // em vez de chamar notion com o id. A busca não dá mais link, dá o id e a
+    // dica; e read_webpage num link do Notion manda para a ferramenta certa.
+    const busca = await chamar({ consulta: "python" });
+    assert.ok(busca.resultados.every((r) => r.id && !("url" in r)), "busca dá id, não link");
+    assert.match(busca.dica, /notion com o id/);
+    for (const url of [`https://app.notion.com/p/Meu-Dashboard-${PAG}`, `https://www.notion.so/Estudos-${PAG}`, `notion.so/${PAG}`]) {
+      const r = JSON.parse(await runTool("read_webpage", { url }));
+      assert.strictEqual(r.use, "notion", `${url}: manda para o notion`);
+      assert.strictEqual(r.id, comHifens(PAG), "já com o id certo");
+      assert.match(r.error, /notion/);
+    }
+    // Sem chave em Conexões, link do Notion segue para a web normalmente (página publicada).
+    configurar({ notionKey: () => null, web: { lerPagina: async (u) => ({ url: u, titulo: "pública", texto: "ok" }) } });
+    assert.strictEqual(JSON.parse(await runTool("read_webpage", { url: `https://www.notion.so/${PAG}` })).titulo, "pública");
+    configurar({ notionKey: () => CHAVE });
+
+    // 23:07: com a chave salva e nada compartilhado, o aviso a fez pedir a
+    // chave NO CHAT. O aviso diz que a chave já está ok, e que não se pede chave.
+    const vazio = await chamar({ consulta: "nada aqui" });
+    assert.match(vazio.aviso, /chave já está conectada/);
+    assert.match(vazio.aviso, /não peça a chave/i);
 
     // não é ação: a trava de honestidade não a conta, e ela não pede sim
     const { ACOES } = require("../honestidade.js");

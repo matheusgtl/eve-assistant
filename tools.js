@@ -15,7 +15,7 @@
 //   3. Mandar mensagem para outra pessoa exige confirmação — o destinatário é
 //      gente, e não existe desfazer.
 
-const { Notion } = require("./notion.js");
+const { Notion, idDe: idDeNotion } = require("./notion.js");
 const { exec, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const fs = require("node:fs/promises");
@@ -1242,15 +1242,23 @@ const executors = {
       const n = new Notion(ctx.notionKey?.() || null);
       if (id) return await n.ler(id);
       const achados = await n.buscar(consulta || "");
+      // 27/11/2026, 23:07: sem página compartilhada ela pediu a chave no chat,
+      // e a chave já estava salva. O aviso diz o que falta de verdade.
+      const naoPeca = " A chave já está conectada; não peça a chave a ele.";
       if (!achados.length) {
         return {
           resultados: [],
           aviso: consulta
-            ? `nada com "${consulta}" no título. Ela só vê o que ele compartilhou com a integração (na página: ··· → Conexões).`
-            : "nenhuma página compartilhada com a integração ainda (na página: ··· → Conexões → a integração).",
+            ? `nada com "${consulta}" no título. Ela só vê o que ele compartilhou com a integração (na página: ··· → Conexões).${naoPeca}`
+            : `a chave já está conectada, mas nenhuma página foi compartilhada com a integração ainda (na página: ··· → Conexões → a integração).${naoPeca}`,
         };
       }
-      return { resultados: achados };
+      // 23:09: com o `url` na mão ela lia cada página com read_webpage (a tela
+      // de login do Notion, 16 s cada). Sem link, só o id e a dica.
+      return {
+        resultados: achados.map(({ url, ...resto }) => resto),
+        dica: "para ler uma, chame notion com o id.",
+      };
     } catch (err) {
       return { error: err.message };
     }
@@ -1280,6 +1288,12 @@ const executors = {
   },
 
   async read_webpage({ url }) {
+    // Link do Notion com a chave em Conexões: a web só vê a tela de login
+    // (27/11/2026, 23:09). Sem chave, segue: pode ser página publicada.
+    const id = /(^|\/\/|\.)(notion\.so|notion\.com)\//i.test(String(url || "")) && ctx.notionKey?.() ? idDeNotion(url) : null;
+    if (id) {
+      return { error: "isso é página do Notion dele: leia com a ferramenta notion e este id.", use: "notion", id };
+    }
     try {
       const p = await ctx.web.lerPagina(url);
       return { url: p.url, titulo: p.titulo, texto: p.texto, truncado: p.truncado };
