@@ -331,4 +331,4 @@ class Mente {
   }
 }
 
-module.exports = { Mente, Iniciativa, frase, duracao, DISPENSA, AGRADECE, INTERVALO, LIMIAR_HZ, ACUMULO, MAX_POR_DIA };
+module.exports = { Mente, Iniciativa, frase, duracao, DISPENSA, AGRADECE, INTERVALO, INTERVALO_GERAL, DEPOIS_DE_CONVERSAR, FATO, LIMIAR_HZ, ACUMULO, MAX_POR_DIA };

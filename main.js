@@ -50,7 +50,7 @@ const calendario = require("./calendario.js");
 const { Conversas } = require("./conversas.js");
 const { Chats, TETO_ITENS } = require("./chats.js");
 const { Aprendizados, pareceCorrecao, gerarCerebro } = require("./aprendizados.js");
-const { gerarGlossario } = require("./glossario.js");
+const { gerarGlossario, gerarTravas } = require("./glossario.js");
 const { Honestidade } = require("./honestidade.js");
 const web = require("./web.js");
 
@@ -1139,6 +1139,7 @@ function iniciarMemoria() {
     .preparar()
     .then(() => gerarCerebro(memoria.pasta, { nome: loadConfig().nome || "Sexta-Feira" }))
     .then(() => gerarGlossario(memoria.pasta, { nome: loadConfig().nome || "Sexta-Feira" }))
+    .then(() => gerarTravas(memoria.pasta, { nome: loadConfig().nome || "Sexta-Feira" }))
     .then(() => aprendizados.gerarMapa())
     .then(() => atualizarIndiceAprendizados())
     .then(() => atualizarIndiceMemoria())

@@ -223,7 +223,10 @@ servidor.listen(0, async () => {
   recebidos.length = 0;
   const ditos3 = [];
   const b3 = montar();
-  await b3.ask("oi", { ...ops, onSay: (t) => ditos3.push(t), onTool: () => {} });
+  const debug3 = [];
+  await b3.ask("oi", { ...ops, onDebug: (m) => debug3.push(m), onSay: (t) => ditos3.push(t), onTool: () => {} });
+  // 27/11/2026, 22:38: sem isto o log não dizia que a conversa tinha secado.
+  assert.ok(debug3.some((m) => /voz de conversa secou/.test(m)), `o motivo vai para o log: ${JSON.stringify(debug3)}`);
   const fala3 = ditos3.join(" ");
   assert.ok(fala3.trim().length > 0, "limite da conversa não pode virar silêncio");
   assert.ok(

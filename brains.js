@@ -2380,7 +2380,12 @@ class CerebroDeDuasVozes {
   constructor({ acao, conversa, onDebug }) {
     this.acao = acao;
     this.conversa = conversa;
-    this.onDebug = onDebug || (() => {});
+    this.onDebugFixo = onDebug || null;
+    this.debugDoTurno = null;
+  }
+
+  onDebug(msg) {
+    (this.debugDoTurno || this.onDebugFixo)?.(msg);
   }
 
   // A identidade visível é a do cérebro de ação: é ele que manda no turno, e é
@@ -2428,6 +2433,11 @@ class CerebroDeDuasVozes {
 
   async ask(userText, opcoes) {
     const { onSay, onTool, anexo } = opcoes;
+    // 27/11/2026, 22:38: ela respondeu "fui desenvolvido por pesquisadores da
+    // NVIDIA" e o log não dizia por quê. O main passa o onDebug em CADA
+    // pergunta, e esta classe só olhava o do construtor (que ninguém passa):
+    // "voz de conversa secou" nunca chegou no log.
+    this.debugDoTurno = opcoes.onDebug || null;
 
     // Montado ANTES: o ask da ação vai empurrar a pergunta no histórico dela.
     const antes = this.historicoDeTexto();

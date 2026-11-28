@@ -1,4 +1,5 @@
-// glossario.js — GLOSSARIO.md, o dicionário do cérebro no Obsidian.
+// glossario.js — as notas que explicam o cérebro: GLOSSARIO.md (o dicionário)
+// e TRAVAS.md (o que ela nunca faz sozinha).
 //
 // 27/11/2026: "cria um glossário para o cérebro". O cofre fala uma língua
 // própria (fato, processo, assembleia, limiar, lembrança, fio, trava...) que
@@ -16,10 +17,14 @@ const fsp = require("node:fs/promises");
 const path = require("node:path");
 const { LIMIAR_INICIO, LIMIAR_MIN, LIMIAR_AJUSTE, OCULTOS_MAX } = require("./pensamento.js");
 const { MAX: MAX_LEMBRANCAS, VALIDADE, SIMILARIDADE_MIN } = require("./lembrancas.js");
-const { MAX_POR_DIA, LIMIAR_HZ } = require("./iniciativa.js");
+const { MAX_POR_DIA, LIMIAR_HZ, ACUMULO, INTERVALO, INTERVALO_GERAL, DEPOIS_DE_CONVERSAR } = require("./iniciativa.js");
 
 const pct = (x) => `${Math.round(x * 100)}%`;
 const dias = (ms) => Math.round(ms / 86_400_000);
+const tempo = (ms) => {
+  const min = Math.round(ms / 60_000);
+  return min >= 60 && min % 60 === 0 ? `${min / 60} h` : `${min} min`;
+};
 
 /// As seções: [título, [[termo, explicação], ...]]. Termos em ordem de
 /// leitura (do mais geral ao mais específico), não alfabética: quem lê de
@@ -87,7 +92,7 @@ function secoes(nome) {
     [
       "As travas (o que ela nunca faz sozinha)",
       [
-        ["Trava", "uma regra no código, não no prompt: nenhum modelo convence o código a pular."],
+        ["Trava", "uma regra no código, não no prompt: nenhum modelo convence o código a pular. A lista completa está em [[TRAVAS]]."],
         ["Sim", "o que não tem volta (apagar, mandar mensagem para alguém) espera o seu sim, nesta conversa. O sim de uma conversa não aprova o pedido de outra."],
         ["Honestidade", "se uma ferramenta falhou e a resposta diz que deu certo, o código corrige a fala antes de chegar em você."],
         ["Respeito", "as iniciativas têm intervalo mínimo, teto por dia e silêncio depois de vocês conversarem."],
@@ -114,8 +119,105 @@ function textoDoGlossario({ nome = "Sexta-Feira" } = {}) {
     for (const [termo, explicacao] of termos) linhas.push(`- **${termo}** — ${explicacao}`);
     linhas.push("");
   }
-  linhas.push("Ver também: [[CEREBRO]] · [[MEMORIA]] · [[REDE]]", "");
+  linhas.push("Ver também: [[CEREBRO]] · [[TRAVAS]] · [[MEMORIA]] · [[REDE]]", "");
   return linhas.join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// TRAVAS.md — 27/11/2026: "anota essas travas no cérebro dela".
+//
+// Diferente do glossário, esta nota tem um `quando:` de verdade: ela abre
+// quando ele pergunta das travas, e assim ela explica as próprias regras com
+// os números certos, em vez de inventar. Fora disso custa uma linha no índice.
+// Cada número vem da constante que de fato trava (test/glossario.test.js
+// confere); a lista é a mesma de CLAUDE.md, "Regras".
+// ---------------------------------------------------------------------------
+const QUANDO_TRAVAS =
+  "ele perguntar quais são as suas travas, limites, regras ou o que você não pode fazer sozinha";
+
+function gruposDeTravas() {
+  return [
+    [
+      "1. O que não tem volta espera o sim dele",
+      [
+        "**Terminal:** `rm -r`/`-rf` (até escondido no meio de outros comandos, como `echo oi && rm -rf`), `sudo`, `curl … | sh` e `>` por cima de arquivo que existe pedem o sim. O que só lê ou se desfaz continua livre.",
+        "**AppleScript** passa pela mesma régua: não é atalho em volta do terminal.",
+        "**Lixo:** fora da pasta dele, ou a pasta inteira dele, pede o sim.",
+        "**Mensagem para outra pessoa:** nada sai sem o sim; antes, ela lê em voz alta para quem vai e o que diz.",
+        // 27/11: a lista que eu disse a ele no chat punha "apagar evento/gasto"
+        // aqui. Não é verdade: esses não pedem o sim. A nota diz o que existe.
+        "**Sem sim, mas com rede de proteção:** `write_file` por cima de arquivo que existe guarda uma cópia `.bak`; apagar evento ou lembrete só com o id que veio da lista (id inventado ou misturado é recusado); o livro de gastos guarda backup do mês.",
+        "**O sim é dele, não dela:** `confirmed=true` mandado pelo modelo sozinho é ignorado. O sim vale para aquele pedido, uma vez; mudar de assunto ou dizer não descarta o pedido; e o sim de uma conversa não aprova o pedido de outra.",
+      ],
+    ],
+    [
+      "2. Verdade",
+      [
+        "**Honestidade:** se uma ação falhou e a resposta diz que deu certo, o código corrige antes de chegar nele (\"Correção: nem tudo deu certo…\"). Falha que ela resolveu no mesmo pedido, seguindo o caminho que a recusa indicou, não conta.",
+        "**Ferramenta que falha devolve erro claro**, nunca um \"ok\" calado.",
+        "**Duas vozes:** a nvidia decide e age; o groq/qwen só conversa. Juntas numa só, a voz de conversa dizia ter feito o que não fez.",
+        "**Conta é do código:** gastos e cálculos são somados pelo código, nunca pelo modelo. Dinheiro não perde dado nem muda de data em silêncio.",
+      ],
+    ],
+    [
+      "3. Memória",
+      [
+        "**A memória não se apaga:** toda reescrita guarda backup.",
+        "Texto novo que apagaria demais da nota antiga é recusado.",
+        "`write_file` e `edit_file` não gravam no cofre: o caminho é `anotar_memoria`.",
+        "Nota duplicada não nasce: se já existe uma sobre o assunto, ela reescreve aquela.",
+      ],
+    ],
+    [
+      "4. O que ela faz sozinha, sem os agentes",
+      [
+        "**A rede de linguagem só lê** (hora, bateria, lembretes, como ela está). Criar, mandar ou apagar é sempre dos agentes.",
+        `**Os ajustes dela** (voz, abrir com o Mac) são a única exceção, e pedem ${pct(LIMIAR_AJUSTE)} de confiança.`,
+        `**Ela só responde sozinha acima do limiar:** começa em ${pct(LIMIAR_INICIO)}, nunca fica abaixo de ${pct(LIMIAR_MIN)}, e sobe a cada correção dele.`,
+        `**Lembranças** (respostas aprendidas com os agentes) só guardam conhecimento firme: nada que usou ferramenta, nada que envelhece (notícias, preço, \"hoje\"), nada sobre ele ou os dados dele, nenhum pedido ou ação. Até ${MAX_LEMBRANCAS}, cada uma vale ${dias(VALIDADE)} dias.`,
+        "**Lembrança nunca passa na frente de um sim pendente**, e \"não era isso\" faz ela esquecer.",
+      ],
+    ],
+    [
+      "5. Iniciativa (falar por conta própria)",
+      [
+        `**Vontade sustentada:** ${LIMIAR_HZ} Hz na rede e um acúmulo de ${ACUMULO}. Um pico sozinho não basta.`,
+        `**No máximo ${MAX_POR_DIA} por dia**, com ${tempo(INTERVALO_GERAL)} entre uma e outra.`,
+        `**Cada tipo tem o seu intervalo:** pausa ${tempo(INTERVALO.PAUSA)}, dormir ${tempo(INTERVALO.DORMIR)}, cumprimentar ${tempo(INTERVALO.SAUDAR)}, avisar do Mac ${tempo(INTERVALO.AVISAR)}, puxar conversa ${tempo(INTERVALO.PAPO)}.`,
+        `**Silêncio depois de conversar:** ${tempo(DEPOIS_DE_CONVERSAR)}.`,
+        "**Respeito:** um neurônio inibidor apaga a vontade de interromper quando ele está ocupado.",
+        "**Verdade:** só fala se o fato for real: pausa só com 75 min seguidos no Mac; dormir só entre 23h e 5h e com ele mexendo no Mac; avisar só na bateria, com 20% ou menos; puxar conversa só depois de 8 h sem conversar.",
+      ],
+    ],
+  ];
+}
+
+function textoDasTravas({ nome = "Sexta-Feira" } = {}) {
+  const linhas = [
+    "---",
+    `quando: ${QUANDO_TRAVAS}`,
+    "tags: [cerebro, travas]",
+    "---",
+    "",
+    `# As travas da ${nome}`,
+    "",
+    "*Regras que moram no código, não no prompt: nenhum modelo convence o código a pular. Só mudam se o Matheus pedir. Gerado automaticamente — os números vêm do código.*",
+    "",
+  ];
+  for (const [titulo, itens] of gruposDeTravas()) {
+    linhas.push(`## ${titulo}`, "");
+    for (const i of itens) linhas.push(`- ${i}`);
+    linhas.push("");
+  }
+  linhas.push("Ver também: [[CEREBRO]] · [[GLOSSARIO]]", "");
+  return linhas.join("\n");
+}
+
+async function gerarTravas(raiz, opcoes = {}) {
+  if (!raiz) return;
+  try {
+    await fsp.writeFile(path.join(raiz, "TRAVAS.md"), textoDasTravas(opcoes));
+  } catch {}
 }
 
 async function gerarGlossario(raiz, opcoes = {}) {
@@ -125,4 +227,4 @@ async function gerarGlossario(raiz, opcoes = {}) {
   } catch {}
 }
 
-module.exports = { gerarGlossario, textoDoGlossario, secoes };
+module.exports = { gerarGlossario, textoDoGlossario, secoes, gerarTravas, textoDasTravas, gruposDeTravas, QUANDO_TRAVAS };
