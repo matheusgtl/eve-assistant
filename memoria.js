@@ -576,8 +576,12 @@ class Memoria {
     // que já existe, para ela reescrever ali. Se for mesmo outro assunto,
     // a segunda chamada com o mesmo nome passa.
     if (!fs.existsSync(caminho) && this.recusadaPorParecida !== slug) {
-      const parecidas = await this.relevantes(`${quando || ""} ${titulo || ""} ${nome}`, { maximo: 1, orcamento: 4000 });
-      const parecida = parecidas[0];
+      // Só nota DELA conta (fatos/, processos/, aprendizados/). As da raiz
+      // (CEREBRO, MEMORIA, GLOSSARIO…) o código gera a cada abertura; em
+      // 27/11/2026, 17:29 a CEREBRO.md recusou duas notas novas e a recusa
+      // mandou gravar numa "pasta CEREBRO" que não existe.
+      const parecidas = await this.relevantes(`${quando || ""} ${titulo || ""} ${nome}`, { maximo: 3, orcamento: 4000 });
+      const parecida = parecidas.find((p) => /^(fatos|processos|aprendizados)\//.test(p.nome));
       if (parecida && parecida.pontos >= 5) {
         this.recusadaPorParecida = slug;
         return {

@@ -19,7 +19,10 @@ function carimbo(d = new Date()) {
   );
 }
 
-const linha = (partes, d = new Date()) => `[${carimbo(d)}] ${partes.join(" ")}`;
+// 27/11/2026, 22:51: a chave do Notion colada no chat foi escrita inteira no
+// log. Toda linha passa pela régua de segredos.js.
+const { redigir } = require("./segredos.js");
+const linha = (partes, d = new Date()) => `[${carimbo(d)}] ${redigir(partes.join(" "))}`;
 
 /// O log cresce para sempre. Passou do teto, o atual vira eve.log.1 (o
 /// anterior a ele sai) e começa um novo: sempre há o último pedaço inteiro.

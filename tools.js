@@ -16,6 +16,7 @@
 //      gente, e não existe desfazer.
 
 const { Notion, idDe: idDeNotion } = require("./notion.js");
+const { temSegredo } = require("./segredos.js");
 const { exec, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const fs = require("node:fs/promises");
@@ -251,6 +252,24 @@ function cortarTextoLongo(texto, teto = TETO_TEXTO_FERRAMENTA) {
 function alvoDeAbrir(target) {
   const t = String(target || "").trim();
   return t === "~" || t.startsWith("~/") ? resolvePath(t) : t;
+}
+
+/// Caminho de LEITURA: se não existe a partir do HOME mas existe no cofre,
+/// é o cofre. 27/11/2026, 17:33: "~/processos/cerebro.md" e
+/// ".memoria/conversas" — ela escreve o caminho da nota como se o cofre fosse
+/// a pasta dele, e cada ENOENT custava um passo. Só para ler; escrever no
+/// cofre continua sendo do anotar_memoria.
+function resolverLeitura(p) {
+  const full = resolvePath(p);
+  const cofre = ctx.memoria?.pasta;
+  if (!cofre || fsSync.existsSync(full)) return full;
+  const relativo = String(p || "")
+    .replace(/^~\/?/, "")
+    .replace(/^\.?memoria\//i, "")
+    .replace(/^\/+/, "");
+  if (!relativo || path.isAbsolute(String(p || "")) ) return full;
+  const noCofre = path.join(cofre, relativo);
+  return fsSync.existsSync(noCofre) ? noCofre : full;
 }
 
 function resolvePath(p) {
@@ -813,7 +832,7 @@ const executors = {
 
   async read_file({ filepath }) {
     try {
-      const full = resolvePath(filepath);
+      const full = resolverLeitura(filepath);
       const info = await fs.stat(full);
       if (info.isDirectory()) {
         return { error: "isso é uma pasta, não um arquivo", use: "list_directory" };
@@ -934,7 +953,7 @@ const executors = {
 
   async list_directory({ dirpath }) {
     try {
-      const full = resolvePath(dirpath);
+      const full = resolverLeitura(dirpath);
       const entradas = await fs.readdir(full, { withFileTypes: true });
       const itens = [];
       for (const e of entradas.slice(0, 300)) {
@@ -1240,16 +1259,37 @@ const executors = {
   async notion({ consulta, id } = {}) {
     try {
       const n = new Notion(ctx.notionKey?.() || null);
+      // Vários ids de uma vez (até 5): "ler tudo" eram 16 passos para 12
+      // páginas e acabava sem resposta (27/11/2026, 23:12).
+      const ids = String(id || "").split(/[\s,;]+/).filter(Boolean);
+      if (ids.length > 1) {
+        const lidas = [];
+        for (const um of ids.slice(0, 5)) {
+          try {
+            lidas.push({ id: um, ...(await n.ler(um)) });
+          } catch (err) {
+            lidas.push({ id: um, error: err.message });
+          }
+        }
+        const r = { paginas: lidas };
+        if (ids.length > 5) r.aviso = `li as 5 primeiras; faltam ${ids.length - 5}.`;
+        if (lidas.every((l) => l.error)) r.error = lidas[0].error;
+        return r;
+      }
       if (id) return await n.ler(id);
-      const achados = await n.buscar(consulta || "");
+      // 28/11/2026, 02:44: "ler tudo no notion" virou a busca pela palavra
+      // "tudo" no título. Pedido de tudo é a lista inteira.
+      const tudo = /^\s*(tud[oa]|todas?|todos|tudo que tem|everything|all|\*)\s*$/i.test(consulta || "");
+      const termo = tudo ? "" : consulta || "";
+      const achados = await n.buscar(termo, termo ? 10 : 50);
       // 27/11/2026, 23:07: sem página compartilhada ela pediu a chave no chat,
       // e a chave já estava salva. O aviso diz o que falta de verdade.
       const naoPeca = " A chave já está conectada; não peça a chave a ele.";
       if (!achados.length) {
         return {
           resultados: [],
-          aviso: consulta
-            ? `nada com "${consulta}" no título. Ela só vê o que ele compartilhou com a integração (na página: ··· → Conexões).${naoPeca}`
+          aviso: termo
+            ? `nada com "${termo}" no título. Ela só vê o que ele compartilhou com a integração (na página: ··· → Conexões).${naoPeca}`
             : `a chave já está conectada, mas nenhuma página foi compartilhada com a integração ainda (na página: ··· → Conexões → a integração).${naoPeca}`,
         };
       }
@@ -1257,7 +1297,7 @@ const executors = {
       // de login do Notion, 16 s cada). Sem link, só o id e a dica.
       return {
         resultados: achados.map(({ url, ...resto }) => resto),
-        dica: "para ler uma, chame notion com o id.",
+        dica: "para ler, chame notion com o id; para várias, até 5 ids juntos no id, separados por vírgula.",
       };
     } catch (err) {
       return { error: err.message };
@@ -1265,6 +1305,10 @@ const executors = {
   },
 
   async web_search({ query }) {
+    // 27/11/2026, 22:51: a chave do Notion dele foi dentro de uma busca.
+    if (temSegredo(query)) {
+      return { error: "a busca levava uma chave secreta dele. Chave nunca vai para a web: tire-a e busque de novo." };
+    }
     try {
       const r = await ctx.web.pesquisar(query, {
         chaves: ctx.chavesDeBusca(),
@@ -1288,6 +1332,7 @@ const executors = {
   },
 
   async read_webpage({ url }) {
+    if (temSegredo(url)) return { error: "o link levava uma chave secreta dele. Chave nunca vai para a web." };
     // Link do Notion com a chave em Conexões: a web só vê a tela de login
     // (27/11/2026, 23:09). Sem chave, segue: pode ser página publicada.
     const id = /(^|\/\/|\.)(notion\.so|notion\.com)\//i.test(String(url || "")) && ctx.notionKey?.() ? idDeNotion(url) : null;
@@ -1543,11 +1588,73 @@ async function runTool(name, input) {
   return resultado;
 }
 
+/// Outros nomes que o modelo usa para o mesmo campo. A chave é o campo do
+/// schema; a lista, os nomes errados que já apareceram (ou que são o campo de
+/// uma ferramenta vizinha: `texto` é do create_reminder, `titulo` do
+/// criar_lembrete_app).
+const APELIDOS_DE_CAMPO = {
+  titulo: ["texto", "title", "nome", "name", "assunto"],
+  texto: ["titulo", "text", "mensagem", "message"],
+  filepath: ["path", "caminho", "arquivo", "file"],
+  dirpath: ["path", "caminho", "pasta", "dir"],
+  query: ["consulta", "busca", "pergunta", "q"],
+  url: ["link", "endereco"],
+  command: ["comando", "cmd"],
+};
+
+/// Corrige o campo obrigatório que veio com outro nome e diz qual falta.
+///
+/// 28/11/2026, 02:45: criar_lembrete_app ONZE vezes com `texto` no lugar de
+/// `titulo`. O erro ("o lembrete precisa de um título") não dizia o NOME do
+/// campo, então ela foi trocando o que podia — inclusive a data dele, de
+/// quinta para "em 10 minutos". Devolve { args } ou { args, error }.
+function ajustarArgumentos(nome, entrada) {
+  const def = toolDefinitions.find((t) => t.name === nome);
+  const args = { ...(entrada || {}) };
+  if (!def) return { args };
+  const props = def.input_schema?.properties || {};
+  const faltam = [];
+  for (const campo of def.input_schema?.required || []) {
+    if (args[campo] != null && args[campo] !== "") continue;
+    const apelido = (APELIDOS_DE_CAMPO[campo] || []).find(
+      (a) => !(a in props) && args[a] != null && args[a] !== ""
+    );
+    if (apelido) {
+      args[campo] = args[apelido];
+      delete args[apelido];
+    } else {
+      faltam.push(campo);
+    }
+  }
+  // Campo que não é desta ferramenta mas é apelido de um campo OPCIONAL dela.
+  for (const [campo, apelidos] of Object.entries(APELIDOS_DE_CAMPO)) {
+    if (!(campo in props) || (args[campo] != null && args[campo] !== "")) continue;
+    const apelido = apelidos.find((a) => !(a in props) && args[a] != null && args[a] !== "");
+    if (apelido) {
+      args[campo] = args[apelido];
+      delete args[apelido];
+    }
+  }
+  if (!faltam.length) return { args };
+  const campos = Object.keys(props)
+    .map((p) => ((def.input_schema.required || []).includes(p) ? `${p} (obrigatório)` : p))
+    .join(", ");
+  const mandou = Object.keys(entrada || {}).join(", ") || "nada";
+  return {
+    args,
+    error:
+      `faltou o campo ${faltam.map((f) => `"${f}"`).join(" e ")}. Os campos de ${nome} são: ${campos}. ` +
+      `Você mandou: ${mandou}. Chame de novo com o nome certo, sem mudar o que ele pediu.`,
+  };
+}
+
 async function executar(name, input) {
   const fn = executors[name];
   if (!fn) return JSON.stringify({ error: `Ferramenta desconhecida: ${name}` });
   try {
-    let args = input || {};
+    const ajuste = ajustarArgumentos(name, input);
+    if (ajuste.error) return JSON.stringify({ error: ajuste.error });
+    let args = ajuste.args;
     // confirmed=true só vale se ELE disse sim a esta mesma chamada (escolhas.js).
     // Sem isso, o modelo se autoconfirmava: 25/11, trash_file com confirmed="true"
     // logo na primeira chamada.
@@ -1575,5 +1682,5 @@ async function executar(name, input) {
 }
 
 module.exports = {
-  toolDefinitions, runTool, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim, confirmacoes, alvoDeAbrir,
+  toolDefinitions, runTool, ajustarArgumentos, configurar, isDangerous, DANGEROUS, sobrescreveArquivo, lixoPrecisaDoSim, confirmacoes, alvoDeAbrir,
 };

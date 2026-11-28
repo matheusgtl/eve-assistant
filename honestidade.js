@@ -129,7 +129,14 @@ class Honestidade {
 
   /// O texto a acrescentar no fim da resposta, ou null se não precisa.
   aviso(resposta) {
-    const falhas = this.pendentes();
+    // A mesma falha no mesmo alvo é uma só (28/11/2026, 02:45: nove iguais).
+    const vistas = new Set();
+    const falhas = this.pendentes().filter((c) => {
+      const k = `${ACOES[c.nome]}\u0000${chave(c.alvo)}\u0000${c.motivo}`;
+      if (vistas.has(k)) return false;
+      vistas.add(k);
+      return true;
+    });
     if (!falhas.length || reconheceFalha(resposta)) return null;
     const itens = falhas.slice(0, 4).map((c) => {
       const o_que = `${ACOES[c.nome]}${c.alvo ? ` “${c.alvo}”` : ""}`;

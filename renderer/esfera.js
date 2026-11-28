@@ -42,6 +42,12 @@
 //     ligações curvas sobre a superfície e um núcleo que brilha com a
 //     atividade TOTAL da rede. A mesma rede, os mesmos disparos; muda só a
 //     moldura. Sem dados da rede, o "neural" mostra a holográfica.
+//   • "camadas" (28/11/2026, pedido dele: "outro modelo de holograma para
+//     ver a rede neural funcionando") — a mesma rede como DIAGRAMA de rede
+//     neural em 3D: cada grupo numa placa holográfica, na ordem em que o
+//     sinal anda (sentidos → interneurônios → assembleias → motores), as
+//     ligações reais como fios retos entre as populações e os disparos
+//     atravessando de uma placa para a outra. Sem dados, mostra a holográfica.
 
 (function () {
   const canvas = document.getElementById("esfera");
@@ -85,7 +91,7 @@
   const FRACAO_ACENTO = 0.1;
 
   let estado = "idle";
-  const MODELOS = ["holografica", "neural"];
+  const MODELOS = ["holografica", "neural", "camadas"];
   let modelo = "holografica";
   // Fundo claro muda três decisões, e nenhuma delas se resolve invertendo cor:
   //   • o realce era branco. Branco sobre branco não existe — vira tinta escura;
@@ -231,6 +237,7 @@
       p.lon = a && b ? Math.atan2(Math.sin(a.lon) + Math.sin(b.lon), Math.cos(a.lon) + Math.cos(b.lon)) : 0;
       p.raio = 1.07;
     }
+    montarCamadas(pools);
     const antigos = new Set((rede?.pools || []).map((p) => p.nome));
     const neuronios = [];
     for (const p of pools) {
@@ -246,6 +253,7 @@
           brilho: 0,
           nasceu: novo ? 1 : 0, // anel de nascimento
         };
+        posicaoEmCamada(n, id);
         p.neuronios.push(n);
         neuronios.push(n);
       }
@@ -255,6 +263,44 @@
       .map(([a, b, w]) => ({ de: pools[a], para: pools[b], peso: w }));
     rede = { versao: topo.versao, pools, neuronios, ligacoes };
     sinais.length = 0;
+  }
+
+  // --- modelo CAMADAS: a rede como diagrama em placas ----------------------
+  // A ordem é a do caminho do sinal em rede.js: o sentido dispara, os
+  // interneurônios misturam, a assembleia aprendida liga sentido a motor, e o
+  // motor é a vontade de agir. Grupo sem população não ganha placa.
+  const ORDEM_DAS_PLACAS = ["sentido", "inter", "assembleia", "motor"];
+  const RAIO_DA_PLACA = 0.58;
+  let placas = {}; // grupo → x da placa
+
+  function montarCamadas(pools) {
+    const presentes = ORDEM_DAS_PLACAS.filter((g) => pools.some((p) => p.grupo === g));
+    placas = {};
+    presentes.forEach((g, i) => {
+      placas[g] = presentes.length === 1 ? 0 : -0.92 + (1.84 * i) / (presentes.length - 1);
+    });
+    for (const g of presentes) {
+      const doGrupo = pools.filter((p) => p.grupo === g);
+      const giro = ORDEM_DAS_PLACAS.indexOf(g) * 0.7;
+      doGrupo.forEach((p, k) => {
+        const ang = (k / doGrupo.length) * Math.PI * 2 + giro;
+        const r = doGrupo.length === 1 ? 0 : RAIO_DA_PLACA * (0.55 + 0.45 * ((k * 0.618) % 1));
+        p.cx = placas[g];
+        p.cy = Math.sin(ang) * r;
+        p.cz = Math.cos(ang) * r;
+      });
+    }
+    // Grupo fora da ordem conhecida (não deveria existir): fica no meio.
+    for (const p of pools) if (p.cx === undefined) Object.assign(p, { cx: 0, cy: 0, cz: 0 });
+  }
+
+  /// Onde o neurônio fica no modelo camadas: numa bolinha em volta da
+  /// população dele, sempre no mesmo lugar (ruído fixo pelo índice).
+  function posicaoEmCamada(n, id) {
+    const espalho = 0.07 + Math.min(0.06, Math.sqrt(n.pool.n) * 0.008);
+    n.cx = n.pool.cx + (fixo(id, 4) - 0.5) * espalho * 0.6;
+    n.cy = n.pool.cy + (fixo(id, 5) - 0.5) * espalho * 2;
+    n.cz = n.pool.cz + (fixo(id, 6) - 0.5) * espalho * 2;
   }
 
   function receberRede(dados) {
@@ -435,6 +481,153 @@
     }
   }
 
+  /// Quanto um ponto do modelo camadas aparece pela profundidade: aqui nada
+  /// é "atrás da esfera", então o fundo esmaece em vez de sumir.
+  const nevoa = (f) => Math.max(0.18, Math.min(1, 0.3 + (f - 0.78) * 1.4));
+
+  /// As placas: um anel por camada, de frente para o eixo do sinal, e um
+  /// eixo fraco ligando as placas pelo centro.
+  function desenharPlacas(cor, sopro, tempo) {
+    const aneis = novoAgrupador(2);
+    const passos = 40;
+    for (const g of Object.keys(placas)) {
+      const x = placas[g] * sopro;
+      const r = (RAIO_DA_PLACA + 0.1) * sopro * (1 + Math.sin(tempo / 1600 + x * 3) * 0.015);
+      let anterior = null;
+      for (let i = 0; i <= passos; i++) {
+        const a = (i / passos) * Math.PI * 2;
+        const atual = projetarXYZ(x, Math.sin(a) * r, Math.cos(a) * r);
+        pontosDesenhados++;
+        if (anterior) aneis.add(anterior, atual, nevoa((anterior.f + atual.f) / 2) * 0.32 * reforco());
+        anterior = atual;
+      }
+    }
+    const xs = Object.values(placas);
+    if (xs.length > 1) {
+      const a = projetarXYZ(Math.min(...xs) * sopro, 0, 0);
+      const b = projetarXYZ(Math.max(...xs) * sopro, 0, 0);
+      aneis.add(a, b, 0.12 * reforco());
+    }
+    aneis.pintar(cor, 1);
+  }
+
+  /// A rede em camadas: fios retos entre as populações que se ligam (acesos
+  /// com o disparo de quem manda), os neurônios em volta da população e os
+  /// sinais atravessando de placa em placa.
+  function desenharCamadas(tempo, cor, sopro) {
+    const dt = ultimoTempoRede === null ? 33 : Math.min(200, Math.max(0, tempo - ultimoTempoRede));
+    ultimoTempoRede = tempo;
+    const quente = ACENTO;
+    const ponto = (o) => projetarXYZ(o.cx * sopro, o.cy * sopro, o.cz * sopro);
+
+    // fios: um por ligação entre populações. Parado, fica o desenho fraco da
+    // rede (é um diagrama); disparando, acende na proporção do disparo × peso.
+    const fios = novoAgrupador(FAIXAS_FIO);
+    const fiosInib = novoAgrupador(FAIXAS_FIO);
+    for (const l of rede.ligacoes) {
+      if (l.de === l.para) continue;
+      const atividade = Math.min(1, l.de.taxa / 25) * Math.min(1, Math.abs(l.peso) * 4);
+      const a = ponto(l.de);
+      const b = ponto(l.para);
+      pontosDesenhados += 2;
+      const alpha = Math.min(1, (0.05 + atividade * 0.8) * nevoa((a.f + b.f) / 2) * reforco());
+      (l.peso < 0 ? fiosInib : fios).add(a, b, alpha);
+    }
+    fios.pintar(cor, 0.7);
+    fiosInib.pintar(quente, 0.7);
+
+    // sinais: mesma regra da esfera (disparo real × peso), em linha reta
+    if (perfil.particulas) {
+      for (const l of rede.ligacoes) {
+        if (sinais.length >= SINAIS_MAX) break;
+        if (l.de === l.para) continue;
+        const chance = (l.de.taxa / 25) * Math.abs(l.peso) * 3 * (dt / 1000);
+        if (Math.random() < chance) {
+          const de = l.de.neuronios[(Math.random() * l.de.n) | 0];
+          const para = l.para.neuronios[(Math.random() * l.para.n) | 0];
+          if (de && para) sinais.push({ de, para, t: 0, inib: l.peso < 0 });
+        }
+      }
+    }
+
+    // neurônios
+    const baldes = [new Map(), new Map()];
+    const aneis = [];
+    for (const n of rede.neuronios) {
+      if (Math.random() < n.taxa * (dt / 1000)) n.brilho = 1;
+      n.brilho *= Math.exp(-dt / 150);
+      if (n.nasceu > 0) n.nasceu = Math.max(0, n.nasceu - dt / 4000);
+      const q = ponto(n);
+      pontosDesenhados++;
+      const base = 0.25 + Math.min(0.35, n.taxa / 60);
+      const alpha = Math.min(1, (base + n.brilho * 0.75) * nevoa(q.f) * reforco());
+      const r = Math.max(0.7, (1.1 + n.brilho * 1.8) * q.f * 1.3);
+      const k = n.pool.tipo === "inh" ? 1 : 0;
+      const faixa = Math.min(FAIXAS_NEURONIO - 1, (alpha * FAIXAS_NEURONIO) | 0);
+      let lista = baldes[k].get(faixa);
+      if (!lista) baldes[k].set(faixa, (lista = []));
+      lista.push({ q, r });
+      if (n.nasceu > 0) aneis.push({ q, r: r + (1 - n.nasceu) * 10 });
+    }
+    const cores = [cor, quente];
+    baldes.forEach((mapa, k) => {
+      for (const [faixa, itens] of mapa) {
+        ctx.fillStyle = rgba(cores[k], ((faixa + 0.5) / FAIXAS_NEURONIO).toFixed(3));
+        ctx.beginPath();
+        for (const { q, r } of itens) {
+          ctx.moveTo(q.x + r, q.y);
+          ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+    });
+    if (aneis.length) {
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rgba(COR_NASCIMENTO, 0.5);
+      ctx.beginPath();
+      for (const { q, r } of aneis) {
+        ctx.moveTo(q.x + r, q.y);
+        ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+      }
+      ctx.stroke();
+    }
+
+    // sinais viajando, com um rastro curto atrás (é o que mostra a direção)
+    const exc = [];
+    const inib = [];
+    const rastro = novoAgrupador(2);
+    for (let i = sinais.length - 1; i >= 0; i--) {
+      const s = sinais[i];
+      s.t += dt / 700;
+      if (s.t >= 1) {
+        s.para.brilho = Math.max(s.para.brilho, 0.6);
+        sinais.splice(i, 1);
+        continue;
+      }
+      const em = (t) => ({
+        cx: s.de.cx + (s.para.cx - s.de.cx) * t,
+        cy: s.de.cy + (s.para.cy - s.de.cy) * t + Math.sin(Math.PI * t) * 0.05,
+        cz: s.de.cz + (s.para.cz - s.de.cz) * t,
+      });
+      const q = ponto(em(s.t));
+      const atras = ponto(em(Math.max(0, s.t - 0.12)));
+      pontosDesenhados += 2;
+      rastro.add(atras, q, 0.5 * nevoa(q.f));
+      (s.inib ? inib : exc).push({ q, r: Math.max(0.8, 2 * q.f) });
+    }
+    rastro.pintar(realce(), 1);
+    for (const [lista, c] of [[exc, realce()], [inib, quente]]) {
+      if (!lista.length) continue;
+      ctx.fillStyle = rgba(c, (0.65 + nivel * 0.3).toFixed(3));
+      ctx.beginPath();
+      for (const { q, r } of lista) {
+        ctx.moveTo(q.x + r, q.y);
+        ctx.arc(q.x, q.y, r, 0, Math.PI * 2);
+      }
+      ctx.fill();
+    }
+  }
+
   /// Os sinais correm pelas trilhas — é o que a referência não mostra (é uma
   /// imagem parada) e que esta precisa ter: alguma coisa viva circulando.
   const pulsos = [];
@@ -548,6 +741,12 @@
     // O modelo neural troca a casca decorativa (arcos, trilhas, poeira) por
     // uma casca mínima: a figura passa a ser só a rede.
     const neural = modelo === "neural" && !!rede;
+    const camadas = modelo === "camadas" && !!rede;
+    if (camadas) {
+      desenharPlacas(cor, sopro, tempo);
+      desenharCamadas(tempo, cor, sopro);
+      return;
+    }
     if (neural) desenharCasca(cor, sopro);
     else {
     // --- 1. arcos de círculo máximo ---------------------------------------
@@ -820,6 +1019,8 @@
       return modelo;
     },
     modelos: () => [...MODELOS],
+    // O x de cada placa do modelo camadas (para o teste conferir a ordem).
+    placas: () => ({ ...placas }),
     neuronios: () => (rede ? rede.neuronios.length : 0),
     custo: () => ({
       fps: perfil.fps,

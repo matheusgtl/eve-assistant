@@ -421,11 +421,56 @@ const SEMELHANCA_MAXIMA = 0.6;
 /// crédito de verdade (mil por mês no Tavily).
 const FERRAMENTAS_DIFUSAS = new Set(["web_search"]);
 
+/// O texto do erro de uma saída de ferramenta, ou null se deu certo.
+function erroDaSaida(saida) {
+  try {
+    const r = JSON.parse(saida);
+    const e = r?.error || r?.erro;
+    return e && !r.repetida ? String(e) : null;
+  } catch {
+    return null;
+  }
+}
+
+/// Quantas vezes a MESMA ferramenta pode devolver o MESMO erro num pedido.
+/// 28/11/2026, 02:45: criar_lembrete_app onze vezes com "o lembrete precisa de
+/// um título", cada uma com argumentos um pouco diferentes — a guarda exata
+/// não via. Duas falhas iguais bastam para saber que a terceira também falha.
+const MESMO_ERRO_MAXIMO = 2;
+
 function guardaDeRepeticao(executar = runTool) {
   const vezes = new Map();
   const buscas = []; // as queries já feitas NESTA resposta
+  const erros = new Map(); // `${nome}\0${erro}` → quantas vezes
+  const conta = { passos: 0, falhas: 0 };
 
-  return async function rodar(nome, args) {
+  async function rodar(nome, args) {
+    conta.passos++;
+    const saida = await rodarComGuarda(nome, args);
+    const erro = erroDaSaida(saida);
+    if (erro || /"repetida":true/.test(saida)) conta.falhas++;
+    if (erro) {
+      const k = `${nome}\u0000${erro}`;
+      erros.set(k, (erros.get(k) || 0) + 1);
+    }
+    return saida;
+  }
+  rodar.resumo = () => ({ ...conta });
+
+  async function rodarComGuarda(nome, args) {
+    const igual = [...erros.entries()].find(
+      ([k, n]) => n >= MESMO_ERRO_MAXIMO && k.startsWith(nome + "\u0000")
+    );
+    if (igual) {
+      const erro = igual[0].split("\u0000")[1];
+      return JSON.stringify({
+        error:
+          `${nome} já falhou ${igual[1]} vezes com o mesmo erro ("${erro.slice(0, 160)}"). Pare de tentar. ` +
+          "Não mude o que ele pediu (data, hora, texto, destino) para contornar, nem troque por outra " +
+          "ferramenta que faz outra coisa: diga a ele o que falhou e o motivo.",
+        repetida: true,
+      });
+    }
     const assinatura = `${nome}\u0000${JSON.stringify(args ?? {})}`;
     const n = (vezes.get(assinatura) || 0) + 1;
     vezes.set(assinatura, n);
@@ -462,8 +507,27 @@ function guardaDeRepeticao(executar = runTool) {
     }
 
     return executar(nome, args);
-  };
+  }
+
+  return rodar;
 }
+
+/// O recado quando os passos acabam. 27/11/2026, 23:12 e 28/11, 02:44: cinco
+/// vezes "Executei vários passos e ainda não terminei", sem dizer o quê — ele
+/// apertava "Continua" sem saber se algo andou.
+function recadoDoLimite(rodar) {
+  const { passos, falhas } = rodar?.resumo?.() || { passos: MAX_TURNS, falhas: 0 };
+  const deram = falhas ? ` (${falhas} deram erro)` : "";
+  return `Fiz ${passos} passos${deram} e ainda não terminei. Quer que eu continue de onde parei?`;
+}
+
+/// O último pedido quando os passos acabam: sem ferramenta, ela conta o que
+/// já conseguiu e o que falta, em vez da frase pronta. Nota interna; sai do
+/// histórico depois.
+const NOTA_DO_LIMITE =
+  "(Nota interna, não é dele: acabaram os passos deste pedido. Não chame ferramenta. Em poucas " +
+  "frases, diga o que você JÁ conseguiu, com o que encontrou, e o que falta. Termine perguntando " +
+  "se ele quer que você continue de onde parou.)";
 
 // Quanto de conversa anterior viaja em cada pedido.
 //
@@ -1445,7 +1509,7 @@ class GeminiBrain {
     throw erro;
   }
 
-  async ask(userText, { onSay, onTool, onDebug, onModel, onUso, canal, anexo }) {
+  async ask(userText, { onSay, onTool, onDebug, onModel, onUso, canal, anexo, onLimite }) {
     if (!this.model) await this.carregarCandidatos(onDebug);
     this.abortador = new AbortController();
     this.contents.push({ role: "user", parts: partesDoUsuario(userText, anexo) });
@@ -1507,7 +1571,8 @@ class GeminiBrain {
       this.contents.push({ role: "user", parts: answers });
     }
 
-    onSay("Executei vários passos e ainda não terminei. Quer que eu continue?");
+    onLimite?.();
+    onSay(recadoDoLimite(rodar));
   }
 }
 
@@ -1940,7 +2005,7 @@ class OpenAIBrain {
     }
   }
 
-  async ask(userText, { onSay, onTool, onDebug, canal, anexo, onModeloProvedor, onUso }) {
+  async ask(userText, { onSay, onTool, onDebug, canal, anexo, onModeloProvedor, onUso, onLimite }) {
     this.abortador = new AbortController();
     this.messages.push({ role: "user", content: conteudoOpenAI(userText, anexo) });
     this.messages = podarHistorico(this.messages, FORMATO_OPENAI, tetoDe(this.provider, !this.semFerramentas));
@@ -1990,7 +2055,37 @@ class OpenAIBrain {
       }
     }
 
-    onSay("Executei vários passos e ainda não terminei. Quer que eu continue?");
+    // Sem passos: um último pedido, sem ferramenta (tool_choice "none"), para
+    // ela dizer o que conseguiu. Se o provedor recusar ou ela insistir em
+    // chamar ferramenta, fica o recado com a conta dos passos.
+    onLimite?.();
+    this.messages.push({ role: "user", content: NOTA_DO_LIMITE });
+    let contou = false;
+    try {
+      if (!this.semFerramentas) {
+        const { texto } = await this.gerarComModeloValido(
+          {
+            messages: [{ role: "system", content: this.prompt({ canal, provedor: this.provider }) }, ...this.messages],
+            tools: ferramentasOpenAI(),
+            tool_choice: "none",
+            temperature: 0.4,
+            max_tokens: 600,
+          },
+          onSay,
+          onDebug,
+          onModeloProvedor
+        );
+        if (texto?.trim()) {
+          this.messages.push({ role: "assistant", content: texto });
+          contou = true;
+        }
+      }
+    } catch (err) {
+      onDebug?.(`resumo do fim dos passos falhou (${err.message})`);
+    }
+    const i = this.messages.findIndex((m) => m.content === NOTA_DO_LIMITE);
+    if (i >= 0) this.messages.splice(i, 1);
+    if (!contou) onSay(recadoDoLimite(rodar));
   }
 }
 
@@ -2041,7 +2136,7 @@ class ClaudeBrain {
   /// interface poder chamar cancelar() sem saber qual cérebro está ativo.
   cancelar() {}
 
-  async ask(userText, { onSay, onTool, canal, anexo, onUso }) {
+  async ask(userText, { onSay, onTool, canal, anexo, onUso, onLimite }) {
     this.messages.push({ role: "user", content: conteudoClaude(userText, anexo) });
     this.messages = podarHistorico(this.messages, FORMATO_CLAUDE, tetoDe("anthropic"));
     const rodar = guardaDeRepeticao();
@@ -2075,7 +2170,8 @@ class ClaudeBrain {
       this.messages.push({ role: "user", content: results });
     }
 
-    onSay("Executei vários passos e ainda não terminei. Quer que eu continue?");
+    onLimite?.();
+    onSay(recadoDoLimite(rodar));
   }
 }
 
@@ -2377,9 +2473,10 @@ const PROMETE_CONSULTA =
   /\b(?:deixa eu|deixe-me|vou|j[aá] vou|preciso)\s+(?:ver|consultar|checar|conferir|olhar|verificar|calcular|buscar|pesquisar|abrir|anotar|lan[cç]ar|registrar)\b/i;
 
 class CerebroDeDuasVozes {
-  constructor({ acao, conversa, onDebug }) {
+  constructor({ acao, conversa, reserva, onDebug }) {
     this.acao = acao;
     this.conversa = conversa;
+    this.reserva = reserva || null;
     this.onDebugFixo = onDebug || null;
     this.debugDoTurno = null;
   }
@@ -2406,6 +2503,7 @@ class CerebroDeDuasVozes {
   cancelar() {
     this.acao.cancelar?.();
     this.conversa.cancelar?.();
+    this.reserva?.cancelar?.();
   }
 
   /// O histórico de CONVERSA: só o que foi dito, sem chamada de ferramenta nem
@@ -2513,10 +2611,46 @@ class CerebroDeDuasVozes {
       // A voz de conversa é a do Groq, e o Groq seca: 8.000 tokens por minuto
       // dão umas cinco perguntas. Quando ela seca, a resposta que a ação já
       // tinha pronta serve — pior a conversa ficar muda.
-      this.onDebug(`voz de conversa secou (${err.message}); fica a resposta da ação`);
-      if (mensagens && descartada) mensagens.push(descartada);
-      if (guardado.length) for (const t of guardado) onSay(t);
-      else onSay(descartada?.content || "Não consegui responder agora.");
+      //
+      // Mas a resposta da ação é a do nemotron, e é ELA que vaza: 27/11/2026,
+      // 22:38, "Não, eu fui desenvolvido por pesquisadores da NVIDIA." duas
+      // vezes, a uma pergunta sobre o Notion. Então: primeiro a voz de
+      // reserva; sem ela, a da ação só se não vazar.
+      this.onDebug(`voz de conversa secou (${err.message})`);
+      if (await this.conversarNaReserva(userText, antes, onSay, opcoes, mensagens)) return;
+      const pronta = guardado.length ? guardado.join(" ") : descartada?.content || "";
+      if (pronta.trim() && !vazaIdentidade(pronta)) {
+        this.onDebug("fica a resposta da ação");
+        if (mensagens && descartada) mensagens.push(descartada);
+        if (guardado.length) for (const t of guardado) onSay(t);
+        else onSay(pronta);
+        return;
+      }
+      if (pronta.trim()) this.onDebug("a resposta da ação vazava a identidade; descartada");
+      const honesta =
+        "Minha voz de conversa ficou sem cota por um instante e eu não consegui responder direito. " +
+        "Me pergunta de novo em um minuto?";
+      if (mensagens) mensagens.push({ role: "assistant", content: honesta });
+      onSay(honesta);
+    }
+  }
+
+  /// A voz de reserva (outro modelo que mediu zero vazamento) conversa quando
+  /// a principal seca. Devolve true se falou.
+  async conversarNaReserva(userText, antes, onSay, opcoes, mensagens) {
+    if (!this.reserva) return false;
+    try {
+      this.reserva.messages = [...antes];
+      let falado = "";
+      await this.reserva.ask(userText, { ...opcoes, onSay: (t) => { falado += t; onSay(t); } });
+      if (!falado.trim()) return false;
+      this.onDebug(`a voz de reserva (${this.reserva.provider}) conversou`);
+      const ultima = this.reserva.messages[this.reserva.messages.length - 1];
+      if (mensagens && ultima?.role === "assistant" && ultima.content) mensagens.push(ultima);
+      return true;
+    } catch (err) {
+      this.onDebug(`a voz de reserva também secou (${err.message})`);
+      return false;
     }
   }
 
@@ -2548,6 +2682,33 @@ const VOZ_DE_CONVERSA = {
   mistral: "ministral-8b-latest", // 2375ms, 0/6
   nvidia: "nvidia/nemotron-3.5-bolt-e4b", // 2600ms, 0/6
 };
+
+/// A resposta fala de quem a TREINOU em vez de ser a Sexta-Feira?
+/// É o vazamento medido do nemotron (10 de 12 perguntas sobre ela mesma).
+/// Só pega a primeira pessoa: "a NVIDIA lançou uma placa" passa.
+const VAZAMENTO = [
+  /\b(?:fui|sou|eu sou|foi)\s+(?:um\s+|uma\s+)?(?:modelo\s+(?:de\s+linguagem\s+)?)?(?:desenvolvid|treinad|criad|feit|projetad)[oa]s?\s+(?:pel[oa]s?|por)\s+(?:\S+\s+){0,3}?(?:nvidia|openai|google|meta|alibaba|mistral|anthropic)\b/i,
+  /\b(?:sou|eu sou)\s+(?:um\s+|uma\s+)?modelo\s+de\s+linguagem\b/i,
+  /\b(?:sou|eu sou|me chamo)\s+(?:o\s+|a\s+)?(?:nemotron|qwen|llama|gpt|gemini|mistral|claude)\b/i,
+];
+function vazaIdentidade(texto) {
+  const t = String(texto || "");
+  return VAZAMENTO.some((r) => r.test(t));
+}
+
+/// A voz de RESERVA da conversa, para quando a principal seca. Pode ser o
+/// mesmo provedor da ação (com o modelo de conversa dele, que mediu zero
+/// vazamento): só entra no minuto em que o Groq secou, e a NVIDIA não conta
+/// tokens por minuto.
+function escolherVozDeReserva(config, vozPrincipal) {
+  if (!vozPrincipal || config.conversaProvider === "nenhum") return null;
+  for (const p of ["mistral", "nvidia", "groq"]) {
+    if (p === vozPrincipal.provider) continue;
+    const key = chaveDe(config, p);
+    if (key && VOZ_DE_CONVERSA[p]) return { provider: p, key, model: VOZ_DE_CONVERSA[p] };
+  }
+  return null;
+}
 
 /// Quem conversa, dado o que ele tem de chave. A ordem é a da medição, e o
 /// provedor da conversa NUNCA pode ser o mesmo da ação: seriam duas chamadas
@@ -2623,6 +2784,7 @@ function createBrain(config = {}, { prompt } = {}) {
 
   if (!voz) return acao;
 
+  const reserva = escolherVozDeReserva(config, voz);
   return new CerebroDeDuasVozes({
     acao,
     conversa: new OpenAIBrain({
@@ -2632,11 +2794,15 @@ function createBrain(config = {}, { prompt } = {}) {
       prompt,
       semFerramentas: true,
     }),
+    reserva: reserva
+      ? new OpenAIBrain({ provider: reserva.provider, apiKey: reserva.key, model: reserva.model, prompt, semFerramentas: true })
+      : null,
   });
 }
 
 module.exports = {
   CerebroDeDuasVozes,
+  vazaIdentidade,
   normalFrase,
   guardaDeLaco,
   filtroDeFerramenta,
@@ -2644,6 +2810,7 @@ module.exports = {
   createBrain,
   podarHistorico,
   guardaDeRepeticao,
+  MESMO_ERRO_MAXIMO,
   semelhanca,
   SEMELHANCA_MAXIMA,
   criarFalante,

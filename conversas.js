@@ -22,6 +22,7 @@
 //    seguidos dela voltam a ser uma resposta — a mesma regra da bolha na tela.
 
 const fs = require("node:fs/promises");
+const { redigir } = require("./segredos.js");
 const fsSync = require("node:fs");
 const path = require("node:path");
 
@@ -202,7 +203,8 @@ class Conversas {
     if (!atual?.length) return null;
 
     const arquivo = nomeDoArquivo(atual);
-    const conteudo = markdown(atual, this.nomeDela, ligacoes);
+    // Chave colada no chat não vai para o cofre (27/11/2026, 22:51).
+    const conteudo = redigir(markdown(atual, this.nomeDela, ligacoes));
     if (this.ultimoEscrito.get(arquivo) === conteudo) return arquivo;
 
     await fs.mkdir(this.pasta, { recursive: true });

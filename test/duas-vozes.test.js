@@ -17,7 +17,8 @@
 //   • turno sem ferramenta → a resposta da ação é descartada e a CONVERSA fala;
 //   • o pedido da conversa NUNCA leva as ferramentas (é o ponto da economia);
 //   • o histórico da conversa não leva chamada nem resultado de ferramenta;
-//   • conversa secou (429 do Groq) → a resposta da ação é usada, nunca mudez.
+//   • conversa secou (429 do Groq) → a voz de RESERVA conversa; sem reserva,
+//     a resposta da ação só vale se não vazar a identidade (27/11, 22:38).
 // Rode com: node test/duas-vozes.test.js
 
 const http = require("node:http");
@@ -44,7 +45,7 @@ const servidor = http.createServer((req, res) => {
     recebidos.push({ qual, pedido });
 
     if (qual === "conversa") {
-      if (cenario === "conversa-esgotada") {
+      if (cenario === "conversa-esgotada" || cenario === "tudo-esgotado") {
         res.statusCode = 429;
         res.setHeader("content-type", "application/json");
         return res.end(JSON.stringify({ error: { message: "Rate limit reached" } }));
@@ -68,6 +69,16 @@ const servidor = http.createServer((req, res) => {
         ]);
       }
       return sse(res, [delta({ content: "Que bom te ver. " }), delta({ content: "Como foi o dia?" })]);
+    }
+
+    // Pedido SEM ferramentas ao /mistral: é a voz de conversa de RESERVA.
+    if (!pedido.tools) {
+      if (cenario === "tudo-esgotado") {
+        res.statusCode = 429;
+        res.setHeader("content-type", "application/json");
+        return res.end(JSON.stringify({ error: { message: "Rate limit reached" } }));
+      }
+      return sse(res, [delta({ content: "Oi! Tô aqui, pode falar." })]);
     }
 
     const ultimaDele = [...(pedido.messages || [])].reverse().find((m) => m.role === "user");
@@ -216,23 +227,41 @@ servidor.listen(0, async () => {
     "e a pergunta de agora também"
   );
 
-  // ------------- 5. a conversa secou → a resposta da ação serve
-  // O Groq dá umas cinco perguntas por minuto. Quando ele seca, pior do que
-  // uma resposta sem graça é a E.V.E ficar MUDA.
+  // ------------- 5. a conversa secou → a RESERVA conversa
+  // 27/11/2026, 22:38: o Groq secou e a resposta da ação foi usada como
+  // estava — "Não, eu fui desenvolvido por pesquisadores da NVIDIA." DUAS
+  // vezes, a uma pergunta sobre o Notion. Mudez é ruim; o vazamento é pior.
   cenario = "conversa-esgotada";
   recebidos.length = 0;
   const ditos3 = [];
   const b3 = montar();
   const debug3 = [];
   await b3.ask("oi", { ...ops, onDebug: (m) => debug3.push(m), onSay: (t) => ditos3.push(t), onTool: () => {} });
-  // 27/11/2026, 22:38: sem isto o log não dizia que a conversa tinha secado.
   assert.ok(debug3.some((m) => /voz de conversa secou/.test(m)), `o motivo vai para o log: ${JSON.stringify(debug3)}`);
   const fala3 = ditos3.join(" ");
-  assert.ok(fala3.trim().length > 0, "limite da conversa não pode virar silêncio");
-  assert.ok(
-    /modelo de linguagem|NVIDIA/i.test(fala3),
-    `aqui a resposta da ação é o que sobrou, e devia ter sido usada; saiu: ${fala3}`
-  );
+  assert.ok(/Tô aqui/.test(fala3), `a voz de reserva devia responder; saiu: ${fala3}`);
+  assert.ok(!/modelo de linguagem|NVIDIA/i.test(fala3), `o vazamento não pode sair: ${fala3}`);
+
+  // Sem reserva também: o vazamento vira uma frase honesta, nunca silêncio.
+  cenario = "tudo-esgotado";
+  const ditos3b = [];
+  await montar().ask("oi", { ...ops, onSay: (t) => ditos3b.push(t), onTool: () => {} });
+  const fala3b = ditos3b.join(" ");
+  assert.ok(fala3b.trim().length > 0, "limite da conversa não pode virar silêncio");
+  assert.ok(!/modelo de linguagem|NVIDIA/i.test(fala3b), `o vazamento não pode sair: ${fala3b}`);
+
+  // A régua do vazamento: pega o que saiu de verdade, não a conversa comum.
+  const { vazaIdentidade } = require("../brains.js");
+  for (const t of [
+    "Não, eu fui desenvolvido por pesquisadores da NVIDIA.",
+    "Sou um modelo de linguagem treinado por pesquisadores da NVIDIA.",
+    "Eu sou o Nemotron.",
+  ]) assert.ok(vazaIdentidade(t), `devia pegar: ${t}`);
+  for (const t of [
+    "A NVIDIA lançou uma placa nova hoje.",
+    "Fui eu que criei o lembrete por você.",
+    "O app foi desenvolvido pelo Matheus.",
+  ]) assert.ok(!vazaIdentidade(t), `não devia pegar: ${t}`);
 
   // ------------- 6. anexo não atravessa para a voz de conversa
   // Ela foi escolhida por conversar, não por ler imagem nem PDF.

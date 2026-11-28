@@ -170,4 +170,19 @@ const OK = JSON.stringify({ ok: true });
   assert.ok(h4.aviso("Removi os dois."));
 }
 
+// 28/11/2026, 02:45: nove criar_lembrete_app com o mesmo erro viraram um aviso
+// com "criar o lembrete … (o lembrete precisa de um título)" quatro vezes e
+// "e mais 5". A mesma falha no mesmo alvo é UMA falha.
+{
+  const h = new Honestidade();
+  for (let i = 0; i < 9; i++) {
+    h.chamou("criar_lembrete_app", { texto: "Desativar Instagram Premium" });
+    h.resultado("criar_lembrete_app", { ok: false, texto: "erro: o lembrete precisa de um título" });
+  }
+  const aviso = h.aviso("Feito! Criei.");
+  assert.ok(aviso, "a falha continua sendo dita");
+  assert.strictEqual((aviso.match(/precisa de um título/g) || []).length, 1, aviso);
+  assert.ok(!/e mais/.test(aviso), aviso);
+}
+
 console.log("✓ honestidade: falha de ferramenta não vira \"feito\"; falha resolvida não vira \"não consegui\"");

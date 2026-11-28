@@ -135,6 +135,8 @@ function textoDoGlossario({ nome = "Sexta-Feira" } = {}) {
 const QUANDO_TRAVAS =
   "ele perguntar quais são as suas travas, limites, regras ou o que você não pode fazer sozinha";
 
+const { MESMO_ERRO_MAXIMO } = require("./brains.js");
+
 function gruposDeTravas() {
   return [
     [
@@ -157,6 +159,9 @@ function gruposDeTravas() {
         "**Ferramenta que falha devolve erro claro**, nunca um \"ok\" calado.",
         "**Duas vozes:** a nvidia decide e age; o groq/qwen só conversa. Juntas numa só, a voz de conversa dizia ter feito o que não fez.",
         "**Conta é do código:** gastos e cálculos são somados pelo código, nunca pelo modelo. Dinheiro não perde dado nem muda de data em silêncio.",
+        `**Erro repetido para:** a mesma ferramenta com o mesmo erro ${MESMO_ERRO_MAXIMO} vezes no mesmo pedido não roda de novo; ela diz o que falhou em vez de mudar o pedido dele (data, hora, texto) para contornar. Campo com o nome trocado (\`texto\` no lugar de \`titulo\`) é corrigido pelo código.`,
+        "**Identidade:** se a voz de conversa secar, fala a voz de reserva; resposta que diz ter sido \"treinada pela NVIDIA\" nunca chega nele.",
+        "**Chave não sai do Mac:** chave colada no chat é escondida antes de tudo (agentes, log, cofre) e nunca vai numa busca na web. O lugar dela é Ajustes › Conexões.",
       ],
     ],
     [

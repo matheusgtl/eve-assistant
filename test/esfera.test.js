@@ -304,7 +304,7 @@ assert.ok([...chamadas.cores].some((c) => c.includes("rgba(120,255,190")), "o ne
 void arcosAntes;
 
 // --- modelos da esfera (Configurações › Aparência) -------------------------
-assert.deepStrictEqual(window.esfera.modelos(), ["holografica", "neural"]);
+assert.deepStrictEqual(window.esfera.modelos(), ["holografica", "neural", "camadas"]);
 const medirModelo = (m, t) => {
   window.esfera.modelo(m);
   for (const k of Object.keys(chamadas)) if (typeof chamadas[k] === "number") chamadas[k] = 0;
@@ -316,6 +316,23 @@ const neuralQ = medirModelo("neural", 50100);
 assert.ok(neuralQ.arcos > 60, `o modelo neural precisa desenhar os neurônios: ${neuralQ.arcos}`);
 assert.ok(neuralQ.pinturas < 40, `o modelo neural passou do teto de pintura: ${neuralQ.pinturas}`);
 assert.ok(neuralQ.segmentos < holo.segmentos, `o neural tira a casca decorativa: ${neuralQ.segmentos} vs ${holo.segmentos}`);
+// 28/11/2026: "um outro modelo de holograma para ver a rede neural
+// funcionando". Camadas: a MESMA rede, como diagrama de rede neural em 3D —
+// sentidos numa placa, interneurônios e assembleias no meio, motores na outra
+// ponta, e os sinais atravessando de uma placa para a outra.
+const camadasQ = medirModelo("camadas", 50200);
+assert.ok(camadasQ.arcos > 60, `o modelo camadas precisa desenhar os neurônios: ${camadasQ.arcos}`);
+assert.ok(camadasQ.pinturas < 40, `o modelo camadas passou do teto de pintura: ${camadasQ.pinturas}`);
+assert.ok(camadasQ.segmentos < holo.segmentos, `camadas também tira a casca decorativa: ${camadasQ.segmentos} vs ${holo.segmentos}`);
+{
+  // cada grupo numa placa, na ordem do sinal: sentido → inter → assembleia → motor
+  const placas = window.esfera.placas();
+  const ordem = ["sentido", "inter", "assembleia", "motor"].filter((g) => placas[g] !== undefined);
+  assert.ok(ordem.length >= 3, `faltam placas: ${JSON.stringify(placas)}`);
+  for (let i = 1; i < ordem.length; i++) {
+    assert.ok(placas[ordem[i]] > placas[ordem[i - 1]], `a placa ${ordem[i]} vem depois de ${ordem[i - 1]}: ${JSON.stringify(placas)}`);
+  }
+}
 assert.strictEqual(window.esfera.modelo("inexistente"), "holografica", "modelo desconhecido vira holográfica");
 assert.strictEqual(window.esfera.modelo(), "holografica");
 

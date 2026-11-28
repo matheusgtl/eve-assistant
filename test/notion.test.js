@@ -142,6 +142,21 @@ servidor.listen(0, async () => {
     assert.match(vazio.aviso, /chave já está conectada/);
     assert.match(vazio.aviso, /não peça a chave/i);
 
+    // 28/11/2026, 02:44: "ler tudo no notion" → consulta "tudo", que buscou a
+    // PALAVRA "tudo" no título. Pedido de tudo é a lista inteira.
+    const buscas = pedidos.filter((r) => /\/search$/.test(r.url)).length;
+    const tudo = await chamar({ consulta: "tudo" });
+    const ultimaBusca = pedidos.filter((r) => /\/search$/.test(r.url)).pop();
+    assert.ok(pedidos.filter((r) => /\/search$/.test(r.url)).length === buscas + 1);
+    assert.ok(!(ultimaBusca.corpo || {}).query, `"tudo" não pode virar a palavra buscada: ${JSON.stringify(ultimaBusca.corpo)}`);
+    assert.ok(tudo.resultados.length >= 2, "e lista o que há");
+
+    // Vários ids de uma vez, para "ler tudo" caber nos passos.
+    const varias = await chamar({ id: `${PAG}, ${BASE}` });
+    assert.strictEqual(varias.paginas.length, 2);
+    assert.match(varias.paginas[0].texto, /revisar dicionários/);
+    assert.strictEqual(varias.paginas[1].titulo, "Tarefas");
+
     // não é ação: a trava de honestidade não a conta, e ela não pede sim
     const { ACOES } = require("../honestidade.js");
     assert.ok(!ACOES.notion, "ler o Notion não é algo que ela \"fez\"");

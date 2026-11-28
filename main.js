@@ -29,13 +29,14 @@ const {
 const ferramentas = require("./tools.js");
 const { ROTULOS_CONFIRMACAO, filtroDeOpcoes } = require("./escolhas.js");
 const registro = require("./registro.js");
+const { temSegredo, redigir, servicoDe } = require("./segredos.js");
 // O turno em andamento (para o log fechar o bloco) e os botões que a resposta
 // vai deixar no chat (o pedido de sim de uma ferramenta, ou o `[opções: …]`)
 // moram na SESSÃO de cada conversa desde 26/11/2026: s.turno e s.escolhas.
 // Ver "CONVERSAS SIMULTÂNEAS" abaixo.
 // "Executei vários passos e ainda não terminei. Quer que eu continue?" vem do
 // código (brains.js), então os botões dele também.
-const PERGUNTA_CONTINUAR = /ainda não terminei\. Quer que eu continue\?$/;
+const PERGUNTA_CONTINUAR = /ainda não terminei\. Quer que eu continue(?: de onde parei)?\?$/;
 const sistema = require("./sistema.js");
 const { Mente } = require("./iniciativa.js");
 const { Pensamento } = require("./pensamento.js");
@@ -1280,6 +1281,19 @@ function resumirArgs(args) {
 
 async function ask(userText, canal = "texto") {
   if (!userText) return;
+  // 27/11/2026, 22:51: ele colou a chave do Notion no chat e ela foi para uma
+  // busca na web, para catorze curl, para o log e para o cofre. A chave sai
+  // do texto ANTES de tudo (rede, pensamento, agentes, histórico, log); o
+  // modelo fica sabendo só que havia uma, e onde ela deve ser colada.
+  let notaDeSegredo = "";
+  if (temSegredo(userText)) {
+    const servico = servicoDe(userText);
+    userText = redigir(userText);
+    notaDeSegredo =
+      `\n\n(Nota interna, não é dele: ele colou uma chave${servico ? ` do ${servico}` : ""} aqui e o app a escondeu. ` +
+      "Não peça a chave no chat nem tente usá-la: diga para colar em Ajustes › Conexões.)";
+    log("segredos: chave colada no chat foi escondida antes de seguir");
+  }
   // A rede sabe que vocês conversaram; se era resposta a uma iniciativa, aprende.
   try {
     mente?.ouviu(userText);
@@ -1316,7 +1330,7 @@ async function ask(userText, canal = "texto") {
   // O turno é DESTA conversa até o fim, mesmo que ele troque de conversa no
   // meio (CONVERSAS SIMULTÂNEAS, no topo).
   const s = sessoes.aberta;
-  const andando = sessoes.rodar(s, () => turnoDoAgente(s, { userText, textoParaAgente, canal, ferramentasDoTurno }));
+  const andando = sessoes.rodar(s, () => turnoDoAgente(s, { userText, textoParaAgente: textoParaAgente + notaDeSegredo, canal, ferramentasDoTurno }));
   enviarChats(); // o ponto de "trabalhando" na barra lateral
   try {
     await andando;
@@ -1450,6 +1464,11 @@ async function turnoDoAgente(s, { userText, textoParaAgente, canal, ferramentasD
       canal,
       anexo,
       onSay: (texto) => opcoesDaFala.say(texto),
+      // 28/11/2026: no fim dos passos ela agora RESUME o que fez (brains.js),
+      // e o texto muda a cada vez; os botões vêm deste sinal, não da frase.
+      onLimite: () => {
+        if (!s.escolhas) s.escolhas = { opcoes: ["Continua", "Pode parar"], tipo: "oferta" };
+      },
       // O log não registrava ferramenta nenhuma, e por isso não dava para
       // saber, lendo depois, se ela tinha AGIDO ou só conversado. Era o buraco
       // de diagnóstico mais caro que este app tinha.

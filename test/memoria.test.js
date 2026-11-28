@@ -483,6 +483,21 @@ const chamar = async (nome, args) => JSON.parse(await ferramentas.runTool(nome, 
   const outra = await mem.anotar({ nome: "julia", pasta: "fatos", quando: "quando ele falar da Júlia", conteudo: "# Júlia\n\nAmiga." });
   assert.ok(outra.ok, "assunto sem nota parecida passa direto");
 
+  // 27/11/2026, 17:29: "remolde o cérebro" — a nota parecida achada foi a
+  // CEREBRO.md da raiz, que o CÓDIGO gera a cada abertura. A recusa mandou
+  // reescrever com pasta "CEREBRO" (que vira processos/), recusou de novo e
+  // gastou três chamadas. Nota gerada não é candidata.
+  fs.writeFileSync(
+    path.join(cofre, "CEREBRO.md"),
+    "---\nquando: nunca — este arquivo é gerado automaticamente\n---\n\n# Cérebro da Sexta-Feira\n\nTudo se liga: cérebro, notas, fatos, aprendizados, conversas e rede.\n"
+  );
+  const cerebro = await mem.anotar({
+    nome: "cerebro-da-sexta-feira", pasta: "aprendizados",
+    quando: "para o cérebro se alimentar das outras notas, fatos e aprendizados",
+    conteudo: "# Cérebro\n\nUma nota que liga as outras: fatos, aprendizados, conversas.",
+  });
+  assert.ok(cerebro.ok, `a nota gerada da raiz não pode recusar a nova: ${JSON.stringify(cerebro.erro)}`);
+
   fs.rmSync(cofre, { recursive: true, force: true });
   console.log("✓ memória: nota nova parecida com uma que existe volta para ser juntada nela");
 })().catch((e) => { console.error(e); process.exit(1); });
