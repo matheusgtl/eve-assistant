@@ -701,6 +701,7 @@
       <button class="aba" data-folha="visual">Aparência</button>
       <button class="aba" data-folha="lembretes">Lembretes</button>
       <button class="aba" data-folha="chave">Cérebro</button>
+      <button class="aba" data-folha="conexoes">Conexões</button>
     </div>
 
     <div class="folha ativa" id="folhaGeral">
@@ -844,6 +845,20 @@
         Para criar, é só pedir — "me lembra de ligar pro dentista amanhã às dez".
       </div>
       <div class="lista" id="listaLembretes"></div>
+    </div>
+
+    <!-- Conexões (27/11/2026): chaves de serviços que ela LÊ, fora dos
+         cérebros. Mesma lista fechada dos provedores (interface.js, CONEXOES):
+         serviço novo entra só na tabela. -->
+    <div class="folha" id="folhaConexoes">
+      <div class="sub">
+        Serviços que ela lê para responder, além dos cérebros. As chaves ficam só neste computador
+        e são testadas com um pedido de verdade quando você salva.
+      </div>
+      <div class="provedores" id="listaConexoes"></div>
+      <button class="secundario" id="btnSalvarConexoes">Salvar conexões</button>
+      <div class="ajuda" id="ajudaConexoes"></div>
+      <div class="ajuda">Campo em branco não mexe no que já está salvo. Para remover uma chave, escreva <b>-</b> e salve.</div>
     </div>
 
     <div class="folha" id="folhaChave">

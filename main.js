@@ -52,6 +52,7 @@ const { Chats, TETO_ITENS } = require("./chats.js");
 const { Aprendizados, pareceCorrecao, gerarCerebro } = require("./aprendizados.js");
 const { gerarGlossario, gerarTravas } = require("./glossario.js");
 const { Honestidade } = require("./honestidade.js");
+const { Notion } = require("./notion.js");
 const web = require("./web.js");
 
 // Fixa o nome ANTES de qualquer getPath: o app empacotado e o `npm start`
@@ -109,6 +110,7 @@ const PADROES = {
   // Buscadores da pesquisa na web. Nenhum é obrigatório: sem nenhum, sobram as
   // reservas sem chave — que não sabem preço, notícia nem resultado de jogo.
   tavilyKey: "",
+  notionKey: "",
   serperKey: "",
   braveKey: "",
   langsearchKey: "",
@@ -397,6 +399,8 @@ function configPublica() {
     elevenVelocidade: cfg.elevenVelocidade,
     provider: cfg.provider || null,
     model: cfg.model || null,
+    // Conexões: só se há chave, nunca a chave.
+    conexoes: { notion: !!cfg.notionKey },
     // Só os NOMES, nunca as chaves: a tela precisa poder dizer a verdade sobre
     // a pesquisa sem nunca ver uma credencial.
     buscadores: web.buscadoresProntos({
@@ -2004,6 +2008,7 @@ function contextoDoPensamento() {
     rede: () => (mente ? mente.estado() : null),
     // Só leitura: títulos e quais ainda trabalham (intenções conversas e trabalhando).
     conversas: () => (chats ? listarChats() : null),
+    notion: () => !!loadConfig().notionKey,
     sistema: () => sistema.amostrar(),
     bateria: () => sistema.bateria(),
     lembretes: () => (lembretes ? lembretes.listar() : null),
@@ -2353,6 +2358,8 @@ app.whenReady().then(() => {
       if (cfg.geminiModel) return cfg.geminiModel;
       return /^gemini/.test(cfg.model || "") ? cfg.model : "gemini-flash-latest";
     },
+    // A chave do Notion, lida na hora: trocar em Conexões vale já na próxima pergunta.
+    notionKey: () => loadConfig().notionKey || null,
     // A corrente de buscadores inteira. Cada um entra só se tiver chave; sem
     // nenhuma, sobram as reservas sem chave (DuckDuckGo e Wikipédia).
     chavesDeBusca: () => {
@@ -2674,6 +2681,39 @@ ipcMain.handle("ev:save-search", async (_e, chaves = {}) => {
   saveConfig(cfg);
   web.limparCache();
   send("ev:notice", { message: relato.length ? "buscadores salvos." : "nada mudou." });
+  return { ok: true, relato };
+});
+
+/// Conexões (27/11/2026): serviços que ela lê. Mesma regra dos buscadores:
+/// vazio é "não mexi", "-" remove, e chave nova é TESTADA antes de salvar.
+ipcMain.handle("ev:save-connections", async (_e, chaves = {}) => {
+  const cfg = loadConfig();
+  const relato = [];
+  const valor = String(chaves.notionKey || "").trim();
+  if (valor === "-") {
+    if (cfg.notionKey) {
+      cfg.notionKey = "";
+      relato.push("notion: removido");
+    }
+  } else if (valor && valor !== cfg.notionKey) {
+    send("ev:notice", { message: "Testando a chave do Notion…" });
+    try {
+      const { nome } = await new Notion(valor).testar();
+      const paginas = await new Notion(valor).buscar("", 100);
+      cfg.notionKey = valor;
+      relato.push(
+        paginas.length
+          ? `notion: ok (${nome}, ${paginas.length}${paginas.length === 100 ? "+" : ""} página(s) compartilhada(s))`
+          : `notion: ok (${nome}), mas nenhuma página compartilhada ainda — na página: ··· → Conexões → a integração`
+      );
+      log(`conexão notion validada (${paginas.length} página(s))`);
+    } catch (err) {
+      log("conexão notion recusada:", err.message);
+      return { ok: false, erro: `notion: ${err.message}` };
+    }
+  }
+  saveConfig(cfg);
+  send("ev:notice", { message: relato.length ? "conexões salvas." : "nada mudou." });
   return { ok: true, relato };
 });
 

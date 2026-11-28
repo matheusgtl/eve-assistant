@@ -15,6 +15,7 @@
 //   3. Mandar mensagem para outra pessoa exige confirmação — o destinatário é
 //      gente, e não existe desfazer.
 
+const { Notion } = require("./notion.js");
 const { exec, execFile } = require("node:child_process");
 const { promisify } = require("node:util");
 const fs = require("node:fs/promises");
@@ -330,9 +331,9 @@ const toolDefinitions = [
   {
     name: "applescript",
     description:
-      "Roda um AppleScript: é assim que se controla um app POR DENTRO — tocar no Spotify, " +
-      "criar nota, abrir aba, apertar teclas (System Events), ler a janela ativa, ajustar " +
-      "volume. Prefira a run_command quando a ação é dentro de um app.",
+      // 27/11/2026: encolheu para caber o notion sem subir o teto de tokens.
+      "Controla um app POR DENTRO (Spotify, notas, abas, teclas, janela ativa, volume). " +
+      "Para isso, melhor que run_command.",
     input_schema: {
       type: "object",
       properties: {
@@ -402,7 +403,7 @@ const toolDefinitions = [
   },
   {
     name: "find_files",
-    description: "Procura no disco inteiro pelo Spotlight. Aceita nome, parte do nome ou texto.",
+    description: "Busca no disco (Spotlight) por nome ou texto.",
     input_schema: {
       type: "object",
       properties: {
@@ -525,9 +526,18 @@ const toolDefinitions = [
       required: ["query"],
     },
   },
+  // ---------------- notion (só leitura, 27/11/2026) ----------------
+  {
+    name: "notion",
+    description: "Lê o Notion: sem id busca pelo título; com id ou link lê a página.",
+    input_schema: {
+      type: "object",
+      properties: { consulta: { type: "string" }, id: { type: "string" } },
+    },
+  },
   {
     name: "read_webpage",
-    description: "Devolve o texto de uma página. Use depois de pesquisar, ou quando ele mandar um link.",
+    description: "Texto de uma página web: depois de pesquisar, ou quando ele mandar um link.",
     input_schema: {
       type: "object",
       properties: { url: { type: "string" } },
@@ -693,8 +703,8 @@ const toolDefinitions = [
   {
     name: "criar_skill",
     description:
-      "Cria uma skill: um comando dele e o roteiro que você segue. Use quando ele pedir uma " +
-      "skill, ou disser que quer repetir algo com um comando só.",
+      "Cria uma skill (comando dele + roteiro que você segue) quando ele pedir, ou quiser " +
+      "repetir algo com um comando só.",
     input_schema: {
       type: "object",
       properties: {
@@ -1227,6 +1237,25 @@ const executors = {
   },
 
   // ---------------- internet ----------------
+  async notion({ consulta, id } = {}) {
+    try {
+      const n = new Notion(ctx.notionKey?.() || null);
+      if (id) return await n.ler(id);
+      const achados = await n.buscar(consulta || "");
+      if (!achados.length) {
+        return {
+          resultados: [],
+          aviso: consulta
+            ? `nada com "${consulta}" no título. Ela só vê o que ele compartilhou com a integração (na página: ··· → Conexões).`
+            : "nenhuma página compartilhada com a integração ainda (na página: ··· → Conexões → a integração).",
+        };
+      }
+      return { resultados: achados };
+    } catch (err) {
+      return { error: err.message };
+    }
+  },
+
   async web_search({ query }) {
     try {
       const r = await ctx.web.pesquisar(query, {

@@ -433,8 +433,10 @@ const RESPOSTAS = {
   },
   async capacidades(c) {
     const nome = c.nome || "Sexta-Feira";
+    // Só diz que lê o Notion se a chave está em Conexões (27/11/2026).
+    const notion = c.notion?.() ? "ler o seu Notion, " : "";
     return (
-      `Eu sou a ${nome}, sua assistente. Posso pesquisar na web, ler e criar arquivos e PDFs, cuidar de lembretes e da agenda, ` +
+      `Eu sou a ${nome}, sua assistente. Posso pesquisar na web, ler e criar arquivos e PDFs, ${notion}cuidar de lembretes e da agenda, ` +
       "anotar no seu cérebro do Obsidian, controlar gastos e fazer contas, abrir apps e mexer no Mac com o seu sim, " +
       "e trabalhar em mais de uma conversa ao mesmo tempo. O que é rápido (hora, bateria, sistema, lembretes) eu respondo sozinha."
     );

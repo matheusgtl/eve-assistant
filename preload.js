@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("ev", {
   saveKey: (chave) => ipcRenderer.invoke("ev:save-key", chave),
   saveReserves: (chaves) => ipcRenderer.invoke("ev:save-reserves", chaves),
   saveSearch: (chaves) => ipcRenderer.invoke("ev:save-search", chaves),
+  saveConnections: (chaves) => ipcRenderer.invoke("ev:save-connections", chaves),
   attachData: (dados) => ipcRenderer.invoke("ev:attach-data", dados),
   debug: (msg) => ipcRenderer.invoke("ev:debug", msg),
   metricsNow: () => ipcRenderer.invoke("ev:metrics-now"),

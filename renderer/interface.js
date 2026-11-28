@@ -1107,7 +1107,7 @@ for (const aba of telaConfig.querySelectorAll(".aba[data-folha]")) {
     for (const f of telaConfig.querySelectorAll(".folha")) f.classList.remove("ativa");
     const folhas = {
       geral: "folhaGeral", voz: "folhaVoz", visual: "folhaVisual",
-      lembretes: "folhaLembretes", chave: "folhaChave",
+      lembretes: "folhaLembretes", chave: "folhaChave", conexoes: "folhaConexoes",
     };
     document.getElementById(folhas[aba.dataset.folha])?.classList.add("ativa");
   });
@@ -1808,6 +1808,14 @@ const BUSCADORES_UI = [
     ajuda: "As instâncias públicas bloqueiam robô; uma sua funciona e não custa chave." },
 ];
 
+// Conexões (27/11/2026): serviços que ela LÊ, fora dos cérebros. Mesma
+// mecânica dos buscadores: a chave é testada com um pedido de verdade.
+const CONEXOES = [
+  { id: "notionKey", nome: "notion", vazio: "ntn_… ou secret_…", limite: "só leitura",
+    ajuda: "Crie uma integração interna e copie o \"Internal Integration Secret\". Depois, em cada página que ela pode ler: ··· → Conexões → a sua integração. Ela só enxerga o que você compartilhar.",
+    url: "https://www.notion.so/profile/integrations", onde: "notion.so › Integrações" },
+];
+
 /// Monta uma lista de provedores fechada, com o campo escondido até o clique.
 /// `temChave` recebe o id e diz se já existe chave guardada.
 function montarListaProvedores(elId, itens, temChave) {
@@ -1899,6 +1907,8 @@ function limparCampos(itens) {
 function pintarProvedores() {
   const tem = configAtual?.temChaves || {};
   montarListaProvedores("listaProvedores", RESERVAS, (id) => tem[id]);
+  const conexoes = configAtual?.conexoes || {};
+  montarListaProvedores("listaConexoes", CONEXOES, (id) => conexoes[id.replace(/Key$/, "")]);
   const busca = configAtual?.buscadores || [];
   montarListaProvedores("listaBuscadores", BUSCADORES_UI, (id) =>
     busca.includes(id.replace(/Key$|Url$/, ""))
@@ -1932,6 +1942,22 @@ document.getElementById("btnSalvarBusca")?.addEventListener("click", async () =>
   mostrarVelocidade();
   } else {
     ajudaBuscaEl.textContent = r?.erro || "não consegui salvar.";
+  }
+});
+
+const ajudaConexoesEl = document.getElementById("ajudaConexoes");
+document.getElementById("btnSalvarConexoes")?.addEventListener("click", async () => {
+  const chaves = {};
+  for (const c of CONEXOES) chaves[c.id] = valorDoCampo(c.id);
+  ajudaConexoesEl.textContent = "testando…";
+  const r = await window.ev.saveConnections(chaves);
+  if (r?.ok) {
+    limparCampos(CONEXOES);
+    ajudaConexoesEl.textContent = r.relato?.length ? r.relato.join(" · ") : "nada mudou.";
+    configAtual = { ...configAtual, ...(await window.ev.getConfig()) };
+    pintarProvedores();
+  } else {
+    ajudaConexoesEl.textContent = r?.erro || "não consegui salvar.";
   }
 });
 

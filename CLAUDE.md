@@ -21,6 +21,7 @@ Não abra o app (`npm start`) sem pedido. O teste de sistema mede esta máquina.
 - `rede.js`: rede neural pulsada (do Pestinha); `sentidos.js`: o Mac como canais; `iniciativa.js`: travas e mensagens por conta própria. Mudou peso? `npm test mente`
 - `pensamento.js`: rede de linguagem que responde sozinha (só leitura, em código) antes dos agentes; `lembrancas.js`: respostas de conhecimento que ela aprendeu com os agentes; `cerebroRede.js`: diário da rede em `<cofre>/rede/`; `glossario.js`: `GLOSSARIO.md` e `TRAVAS.md` no cofre (números das constantes; mudou uma trava, mude a nota); `renderer/abertura.js`: animação do primeiro uso do dia
 - `gastos.js`, `calculo.js`, `calendario.js`, `lembretes.js`, `web.js`, `pdf.js`, `sistema.js`, `tts.js`
+- `notion.js`: lê o Notion dele (só leitura); a chave fica em Ajustes › Conexões (`notionKey`)
 - `native/*.swift`: escuta, PDF e Calendário
 - `esfera.js`, `index.html` e `interface.js` na **raiz** são cópias ignoradas: edite as de `renderer/`
 
